@@ -291,8 +291,15 @@ def cmd_ticket_add(args):
             conn.close()
             print("Error: Circular dependency detected.", file=sys.stderr)
             sys.exit(2)
+    # Reopen completed/abandoned projects when new tickets are added
+    conn.execute(
+        "UPDATE projects SET status='active', updated_at=? WHERE id=? AND status IN ('completed','abandoned')",
+        (_now(), proj["id"]),
+    )
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     conn.commit()
+    if proj["status"] in ("completed", "abandoned"):
+        print(f"📂 Reopened project '{proj['slug']}' (was {proj['status']})")
     print(f"Added ticket #{num}: {args.title}")
     conn.close()
 
