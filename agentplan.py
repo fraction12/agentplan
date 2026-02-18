@@ -9,7 +9,7 @@ import sqlite3
 import sys
 from datetime import datetime
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 # ---------------------------------------------------------------------------
@@ -47,6 +47,7 @@ def init_db(conn):
         CREATE TABLE IF NOT EXISTS tickets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            num INTEGER NOT NULL,
             title TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
             depends_on TEXT DEFAULT '[]',
@@ -54,6 +55,7 @@ def init_db(conn):
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
             completed_at TEXT
         );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_project_num ON tickets(project_id, num);
         CREATE TABLE IF NOT EXISTS attachments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -72,6 +74,23 @@ def init_db(conn):
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
         );
     """)
+    # Migration: add num column if missing (upgrade from 0.1.0)
+    try:
+        conn.execute("SELECT num FROM tickets LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE tickets ADD COLUMN num INTEGER")
+        # Backfill: assign sequential nums per project
+        projects = conn.execute("SELECT DISTINCT project_id FROM tickets").fetchall()
+        for p in projects:
+            rows = conn.execute(
+                "SELECT id FROM tickets WHERE project_id=? ORDER BY id", (p[0],)
+            ).fetchall()
+            for i, r in enumerate(rows, 1):
+                conn.execute("UPDATE tickets SET num=? WHERE id=?", (i, r[0]))
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_project_num ON tickets(project_id, num)
+        """)
+        conn.commit()
 
 
 def _now():
@@ -82,6 +101,14 @@ def _ensure(conn):
     """Auto-init tables so every command works without explicit init."""
     init_db(conn)
     return conn
+
+
+def _next_ticket_num(conn, project_id):
+    """Get next ticket number for a project (1-based, sequential)."""
+    row = conn.execute(
+        "SELECT MAX(num) FROM tickets WHERE project_id=?", (project_id,)
+    ).fetchone()
+    return (row[0] or 0) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -122,29 +149,32 @@ def resolve_project(conn, ident):
     return row
 
 
-def resolve_ticket(conn, project_id, tid_str, slug=""):
+def resolve_ticket(conn, project_id, num_str, slug=""):
+    """Resolve a ticket by its per-project number."""
     try:
-        tid = int(tid_str)
+        num = int(num_str)
     except (ValueError, TypeError):
-        print(f"Error: Invalid ticket id '{tid_str}'.", file=sys.stderr)
+        print(f"Error: Invalid ticket number '{num_str}'.", file=sys.stderr)
         sys.exit(2)
-    row = conn.execute("SELECT * FROM tickets WHERE id=? AND project_id=?", (tid, project_id)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM tickets WHERE project_id=? AND num=?", (project_id, num)
+    ).fetchone()
     if not row:
-        print(f"Error: Ticket {tid} not found in project '{slug}'.", file=sys.stderr)
+        print(f"Error: Ticket #{num} not found in project '{slug}'.", file=sys.stderr)
         sys.exit(2)
     return row
 
 
 # ---------------------------------------------------------------------------
-# Dependency helpers
+# Dependency helpers (all use ticket num, not internal id)
 # ---------------------------------------------------------------------------
 
-def has_cycle(tickets, ticket_id, new_deps):
-    """Return True if setting ticket_id's deps to new_deps creates a cycle."""
+def has_cycle(tickets, ticket_num, new_deps):
+    """Return True if setting ticket's deps to new_deps creates a cycle. Uses ticket nums."""
     adj = {}
     for t in tickets:
-        adj[t["id"]] = json.loads(t["depends_on"] or "[]")
-    adj[ticket_id] = list(new_deps)
+        adj[t["num"]] = json.loads(t["depends_on"] or "[]")
+    adj[ticket_num] = list(new_deps)
 
     visited, stack = set(), set()
 
@@ -160,17 +190,17 @@ def has_cycle(tickets, ticket_id, new_deps):
         stack.discard(n)
         return False
 
-    return dfs(ticket_id)
+    return dfs(ticket_num)
 
 
 def get_unblocked(tickets):
-    done_ids = {t["id"] for t in tickets if t["status"] in ("done", "skipped")}
+    done_nums = {t["num"] for t in tickets if t["status"] in ("done", "skipped")}
     out = []
     for t in tickets:
         if t["status"] != "pending":
             continue
         deps = json.loads(t["depends_on"] or "[]")
-        if all(d in done_ids for d in deps):
+        if all(d in done_nums for d in deps):
             out.append(t)
     return out
 
@@ -200,9 +230,9 @@ def _ticket_icon(status, blocked):
     return "⏳" if blocked else "○"
 
 
-def _is_blocked(ticket, done_ids):
+def _is_blocked(ticket, done_nums):
     deps = json.loads(ticket["depends_on"] or "[]")
-    return any(d not in done_ids for d in deps)
+    return any(d not in done_nums for d in deps)
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +256,11 @@ def cmd_create(args):
     pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     n = 0
     for t in args.ticket or []:
-        conn.execute("INSERT INTO tickets (project_id, title) VALUES (?,?)", (pid, t))
+        num = n + 1
+        conn.execute(
+            "INSERT INTO tickets (project_id, num, title) VALUES (?,?,?)",
+            (pid, num, t),
+        )
         n += 1
     conn.commit()
     msg = f"Created project '{args.title}' ({slug})"
@@ -244,32 +278,32 @@ def cmd_ticket_add(args):
         deps = [int(x.strip()) for x in args.depends.split(",")]
         for d in deps:
             resolve_ticket(conn, proj["id"], d, proj["slug"])
+    num = _next_ticket_num(conn, proj["id"])
     conn.execute(
-        "INSERT INTO tickets (project_id, title, depends_on, notes) VALUES (?,?,?,?)",
-        (proj["id"], args.title, json.dumps(deps), args.notes),
+        "INSERT INTO tickets (project_id, num, title, depends_on, notes) VALUES (?,?,?,?,?)",
+        (proj["id"], num, args.title, json.dumps(deps), args.notes),
     )
-    tid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     if deps:
         tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
-        if has_cycle(tickets, tid, deps):
-            conn.execute("DELETE FROM tickets WHERE id=?", (tid,))
+        if has_cycle(tickets, num, deps):
+            conn.execute("DELETE FROM tickets WHERE project_id=? AND num=?", (proj["id"], num))
             conn.commit()
             conn.close()
             print("Error: Circular dependency detected.", file=sys.stderr)
             sys.exit(2)
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     conn.commit()
-    print(f"Added ticket #{tid}: {args.title}")
+    print(f"Added ticket #{num}: {args.title}")
     conn.close()
 
 
 def cmd_ticket_done(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
-    for tid_str in args.ticket_ids:
-        t = resolve_ticket(conn, proj["id"], tid_str, proj["slug"])
+    for num_str in args.ticket_ids:
+        t = resolve_ticket(conn, proj["id"], num_str, proj["slug"])
         conn.execute("UPDATE tickets SET status='done', completed_at=? WHERE id=?", (_now(), t["id"]))
-        print(f"✓ Ticket #{t['id']}: {t['title']} → done")
+        print(f"✓ Ticket #{t['num']}: {t['title']} → done")
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     was_active = proj["status"] == "active"
     if check_auto_complete(conn, proj["id"]) and was_active:
@@ -281,10 +315,10 @@ def cmd_ticket_done(args):
 def cmd_ticket_skip(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
-    for tid_str in args.ticket_ids:
-        t = resolve_ticket(conn, proj["id"], tid_str, proj["slug"])
+    for num_str in args.ticket_ids:
+        t = resolve_ticket(conn, proj["id"], num_str, proj["slug"])
         conn.execute("UPDATE tickets SET status='skipped', completed_at=? WHERE id=?", (_now(), t["id"]))
-        print(f"⊘ Ticket #{t['id']}: {t['title']} → skipped")
+        print(f"⊘ Ticket #{t['num']}: {t['title']} → skipped")
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     check_auto_complete(conn, proj["id"])
     conn.commit()
@@ -298,7 +332,7 @@ def cmd_ticket_start(args):
     conn.execute("UPDATE tickets SET status='in-progress' WHERE id=?", (t["id"],))
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     conn.commit()
-    print(f"▶ Ticket #{t['id']}: {t['title']} → in-progress")
+    print(f"▶ Ticket #{t['num']}: {t['title']} → in-progress")
     conn.close()
 
 
@@ -307,29 +341,34 @@ def cmd_ticket_list(args):
     proj = resolve_project(conn, args.project)
     filt = args.status or "all"
     if filt == "all":
-        tickets = conn.execute("SELECT * FROM tickets WHERE project_id=? ORDER BY id", (proj["id"],)).fetchall()
+        tickets = conn.execute(
+            "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (proj["id"],)
+        ).fetchall()
     else:
         tickets = conn.execute(
-            "SELECT * FROM tickets WHERE project_id=? AND status=? ORDER BY id", (proj["id"], filt)
+            "SELECT * FROM tickets WHERE project_id=? AND status=? ORDER BY num",
+            (proj["id"], filt),
         ).fetchall()
     if not tickets:
         print("No tickets found.")
         conn.close()
         sys.exit(1)
-    done_ids = {
-        r["id"]
-        for r in conn.execute("SELECT id, status FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
+    done_nums = {
+        r["num"]
+        for r in conn.execute(
+            "SELECT num, status FROM tickets WHERE project_id=?", (proj["id"],)
+        ).fetchall()
         if r["status"] in ("done", "skipped")
     }
     for t in tickets:
-        blocked = _is_blocked(t, done_ids)
+        blocked = _is_blocked(t, done_nums)
         icon = _ticket_icon(t["status"], blocked)
-        line = f"  {icon} {t['id']}. {t['title']}"
+        line = f"  {icon} {t['num']}. {t['title']}"
         if t["status"] == "in-progress":
             line += " (in-progress)"
         elif blocked and t["status"] == "pending":
             deps = json.loads(t["depends_on"] or "[]")
-            waiting = [str(d) for d in deps if d not in done_ids]
+            waiting = [str(d) for d in deps if d not in done_nums]
             line += f" (blocked — waiting on {', '.join(waiting)})"
         print(line)
     conn.close()
@@ -347,14 +386,16 @@ def cmd_next(args):
         sys.exit(1)
     found = False
     for p in projects:
-        tickets = conn.execute("SELECT * FROM tickets WHERE project_id=? ORDER BY id", (p["id"],)).fetchall()
+        tickets = conn.execute(
+            "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
+        ).fetchall()
         items = [t for t in tickets if t["status"] == "in-progress"] + get_unblocked(tickets)
         if items:
             found = True
             parts = []
             for t in items:
                 m = "▶" if t["status"] == "in-progress" else "○"
-                parts.append(f"[{t['id']}] {t['title']} {m}")
+                parts.append(f"[{t['num']}] {t['title']} {m}")
             print(f"📋 {p['title']}: {', '.join(parts)}")
     if not found:
         print("No unblocked tickets.")
@@ -375,10 +416,12 @@ def cmd_status(args):
         conn.close()
         sys.exit(1)
     for p in projects:
-        tickets = conn.execute("SELECT * FROM tickets WHERE project_id=? ORDER BY id", (p["id"],)).fetchall()
+        tickets = conn.execute(
+            "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
+        ).fetchall()
         done_count = sum(1 for t in tickets if t["status"] in ("done", "skipped"))
         total = len(tickets)
-        done_ids = {t["id"] for t in tickets if t["status"] in ("done", "skipped")}
+        done_nums = {t["num"] for t in tickets if t["status"] in ("done", "skipped")}
 
         if fmt == "json":
             data = {
@@ -393,7 +436,7 @@ def cmd_status(args):
         if fmt == "compact":
             items = [t for t in tickets if t["status"] == "in-progress"] + get_unblocked(tickets)
             nxt = ", ".join(
-                f"[{t['id']}] {t['title']} {'▶' if t['status']=='in-progress' else '○'}"
+                f"[{t['num']}] {t['title']} {'▶' if t['status']=='in-progress' else '○'}"
                 for t in items[:3]
             )
             line = f"📋 {p['title']}: {done_count}/{total} done"
@@ -405,18 +448,20 @@ def cmd_status(args):
         # Full
         print(f"{p['title']} [{p['status']}] — {done_count}/{total} done")
         for t in tickets:
-            blocked = _is_blocked(t, done_ids)
+            blocked = _is_blocked(t, done_nums)
             icon = _ticket_icon(t["status"], blocked)
-            line = f"  {icon} {t['id']}. {t['title']}"
+            line = f"  {icon} {t['num']}. {t['title']}"
             if t["status"] == "in-progress":
                 line += " (in-progress)"
             elif blocked and t["status"] == "pending":
                 deps = json.loads(t["depends_on"] or "[]")
-                waiting = [str(d) for d in deps if d not in done_ids]
+                waiting = [str(d) for d in deps if d not in done_nums]
                 line += f" (blocked — waiting on {', '.join(waiting)})"
             print(line)
 
-        atts = conn.execute("SELECT * FROM attachments WHERE project_id=? ORDER BY id", (p["id"],)).fetchall()
+        atts = conn.execute(
+            "SELECT * FROM attachments WHERE project_id=? ORDER BY id", (p["id"],)
+        ).fetchall()
         if atts:
             print("\n  📎 Attachments:")
             for a in atts:
@@ -424,7 +469,9 @@ def cmd_status(args):
                 extra = f" (ticket #{a['ticket_id']})" if a["ticket_id"] else ""
                 print(f"    {a['label']} → {target}{extra}")
 
-        logs = conn.execute("SELECT * FROM log WHERE project_id=? ORDER BY id DESC LIMIT 5", (p["id"],)).fetchall()
+        logs = conn.execute(
+            "SELECT * FROM log WHERE project_id=? ORDER BY id DESC LIMIT 5", (p["id"],)
+        ).fetchall()
         if logs:
             print("\n  📝 Recent log:")
             for l in reversed(logs):
@@ -442,13 +489,17 @@ def cmd_list(args):
     if filt == "all":
         projects = conn.execute("SELECT * FROM projects ORDER BY id").fetchall()
     else:
-        projects = conn.execute("SELECT * FROM projects WHERE status=? ORDER BY id", (filt,)).fetchall()
+        projects = conn.execute(
+            "SELECT * FROM projects WHERE status=? ORDER BY id", (filt,)
+        ).fetchall()
     if not projects:
         print(f"No {filt} projects.")
         conn.close()
         sys.exit(1)
     for p in projects:
-        rows = conn.execute("SELECT status FROM tickets WHERE project_id=?", (p["id"],)).fetchall()
+        rows = conn.execute(
+            "SELECT status FROM tickets WHERE project_id=?", (p["id"],)
+        ).fetchall()
         dc = sum(1 for r in rows if r["status"] in ("done", "skipped"))
         prog = f"{dc}/{len(rows)} done" if rows else "no tickets"
         print(f"  {p['slug']} [{p['status']}] — {prog}")
@@ -460,8 +511,8 @@ def cmd_attach(args):
     proj = resolve_project(conn, args.project)
     ticket_id = None
     if args.ticket:
-        resolve_ticket(conn, proj["id"], args.ticket, proj["slug"])
-        ticket_id = int(args.ticket)
+        t = resolve_ticket(conn, proj["id"], args.ticket, proj["slug"])
+        ticket_id = t["id"]
     loc = args.location
     is_url = loc.startswith(("http://", "https://"))
     conn.execute(
@@ -479,8 +530,8 @@ def cmd_log(args):
     proj = resolve_project(conn, args.project)
     ticket_id = None
     if args.ticket:
-        resolve_ticket(conn, proj["id"], args.ticket, proj["slug"])
-        ticket_id = int(args.ticket)
+        t = resolve_ticket(conn, proj["id"], args.ticket, proj["slug"])
+        ticket_id = t["id"]
     conn.execute(
         "INSERT INTO log (project_id, ticket_id, entry) VALUES (?,?,?)",
         (proj["id"], ticket_id, args.entry),
@@ -505,12 +556,15 @@ def cmd_note(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     if args.ticket:
-        resolve_ticket(conn, proj["id"], args.ticket, proj["slug"])
-        conn.execute("UPDATE tickets SET notes=? WHERE id=?", (args.text, int(args.ticket)))
+        t = resolve_ticket(conn, proj["id"], args.ticket, proj["slug"])
+        conn.execute("UPDATE tickets SET notes=? WHERE id=?", (args.text, t["id"]))
         conn.commit()
-        print(f"Updated note on ticket #{args.ticket}")
+        print(f"Updated note on ticket #{t['num']}")
     else:
-        conn.execute("UPDATE projects SET notes=?, updated_at=? WHERE id=?", (args.text, _now(), proj["id"]))
+        conn.execute(
+            "UPDATE projects SET notes=?, updated_at=? WHERE id=?",
+            (args.text, _now(), proj["id"]),
+        )
         conn.commit()
         print(f"Updated note on project '{proj['slug']}'")
     conn.close()
@@ -526,14 +580,14 @@ def cmd_depend(args):
     existing = json.loads(t["depends_on"] or "[]")
     merged = list(set(existing + new_deps))
     tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
-    if has_cycle(tickets, t["id"], merged):
+    if has_cycle(tickets, t["num"], merged):
         print("Error: Circular dependency detected.", file=sys.stderr)
         conn.close()
         sys.exit(2)
     conn.execute("UPDATE tickets SET depends_on=? WHERE id=?", (json.dumps(sorted(merged)), t["id"]))
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     conn.commit()
-    print(f"Ticket #{t['id']} now depends on: {sorted(merged)}")
+    print(f"Ticket #{t['num']} now depends on: {sorted(merged)}")
     conn.close()
 
 
@@ -542,18 +596,20 @@ def cmd_remove(args):
     proj = resolve_project(conn, args.project)
     if args.ticket:
         t = resolve_ticket(conn, proj["id"], args.ticket, proj["slug"])
-        tid = t["id"]
-        conn.execute("DELETE FROM tickets WHERE id=?", (tid,))
+        tnum = t["num"]
+        conn.execute("DELETE FROM tickets WHERE id=?", (t["id"],))
         # Clean up dangling deps
-        others = conn.execute("SELECT id, depends_on FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
+        others = conn.execute(
+            "SELECT id, depends_on FROM tickets WHERE project_id=?", (proj["id"],)
+        ).fetchall()
         for o in others:
             deps = json.loads(o["depends_on"] or "[]")
-            if tid in deps:
-                deps.remove(tid)
+            if tnum in deps:
+                deps.remove(tnum)
                 conn.execute("UPDATE tickets SET depends_on=? WHERE id=?", (json.dumps(deps), o["id"]))
         conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
         conn.commit()
-        print(f"Removed ticket #{tid}: {t['title']}")
+        print(f"Removed ticket #{tnum}: {t['title']}")
     else:
         slug = proj["slug"]
         conn.execute("DELETE FROM projects WHERE id=?", (proj["id"],))

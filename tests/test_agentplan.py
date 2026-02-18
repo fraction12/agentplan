@@ -565,7 +565,7 @@ class TestEdgeCases(Base):
 class TestCLIParsing(Base):
     def test_version_command(self):
         out, _, _ = self.cli(["version"])
-        self.assertIn("0.1.0", out)
+        self.assertIn("0.1.1", out)
 
     def test_version_flag(self):
         _, _, code = self.cli(["--version"])
