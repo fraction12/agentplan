@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "agentplan"
+version = "0.1.0"
+description = "Project management CLI for AI agents"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{name = "Dushyant Garg"}]
+
+[project.scripts]
+agentplan = "agentplan:main"
