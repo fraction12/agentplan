@@ -501,7 +501,7 @@ def cmd_ticket_add(args):
             sys.exit(2)
     # Reopen completed/abandoned projects when new tickets are added
     conn.execute(
-        "UPDATE projects SET status='active', updated_at=? WHERE id=? AND status IN ('completed','abandoned')",
+        "UPDATE projects SET status='active', updated_at=? WHERE id=? AND status IN ('completed','abandoned','archived')",
         (_now(), proj["id"]),
     )
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
@@ -937,15 +937,24 @@ def cmd_status(args):
 
 def cmd_list(args):
     conn = _ensure(get_connection())
-    filt = args.status or "active"
-    if filt == "all":
+    if getattr(args, "all", False):
         projects = conn.execute("SELECT * FROM projects ORDER BY id").fetchall()
+        filt = "all"
     else:
-        projects = conn.execute(
-            "SELECT * FROM projects WHERE status=? ORDER BY id", (filt,)
-        ).fetchall()
+        filt = args.status or "active"
+        if filt == "all":
+            projects = conn.execute(
+                "SELECT * FROM projects WHERE status!='archived' ORDER BY id"
+            ).fetchall()
+        else:
+            projects = conn.execute(
+                "SELECT * FROM projects WHERE status=? ORDER BY id", (filt,)
+            ).fetchall()
     if not projects:
-        print(f"No {filt} projects.")
+        if filt == "all":
+            print("No projects.")
+        else:
+            print(f"No {filt} projects.")
         conn.close()
         sys.exit(1)
     for p in projects:
@@ -955,6 +964,25 @@ def cmd_list(args):
         dc = sum(1 for r in rows if r["status"] in ("done", "skipped"))
         prog = f"{dc}/{len(rows)} done" if rows else "no tickets"
         print(f"  {p['slug']} [{p['status']}] — {prog}")
+    conn.close()
+
+
+def cmd_archive(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    if proj["status"] not in ("completed", "abandoned"):
+        conn.close()
+        print(
+            "Error: Only completed or abandoned projects can be archived.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    conn.execute(
+        "UPDATE projects SET status=?, updated_at=? WHERE id=?",
+        ("archived", _now(), proj["id"]),
+    )
+    conn.commit()
+    print(f"Archived project '{proj['slug']}'")
     conn.close()
 
 
@@ -1239,7 +1267,11 @@ def build_parser():
     srch.add_argument("query")
 
     ls = sub.add_parser("list", help="List projects")
-    ls.add_argument("--status", choices=["active", "completed", "paused", "abandoned", "all"], default="active")
+    ls.add_argument("--status", choices=["active", "completed", "paused", "abandoned", "archived", "all"], default="active")
+    ls.add_argument("--all", action="store_true", help="Include archived projects")
+
+    ar = sub.add_parser("archive", help="Archive a completed or abandoned project")
+    ar.add_argument("project")
 
     at = sub.add_parser("attach", help="Attach file or URL")
     at.add_argument("project"); at.add_argument("label"); at.add_argument("location"); at.add_argument("--ticket")
@@ -1278,6 +1310,7 @@ def build_parser():
 DISPATCH = {
     "init": cmd_init, "create": cmd_create, "next": cmd_next, "claim": cmd_claim, "status": cmd_status,
     "list": cmd_list, "search": cmd_search, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
+    "archive": cmd_archive,
     "note": cmd_note, "depend": cmd_depend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version,
 }
 

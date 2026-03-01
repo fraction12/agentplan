@@ -590,6 +590,44 @@ def test_delete_project():
     assert "to-delete" not in out2.lower()
 
 
+def test_archive_hides_project_from_default_list_and_keeps_data():
+    cli("create", "Archive Me")
+    cli("ticket", "add", "archive-me", "Keep this ticket")
+    cli("close", "archive-me")
+
+    out, err, code = cli("archive", "archive-me")
+    assert code == 0, err
+    assert "Archived project 'archive-me'" in out
+
+    list_out, list_err, list_code = cli("list")
+    assert list_code == 1
+    assert list_err == ""
+    assert "archive-me" not in list_out.lower()
+
+    status_out, status_err, status_code = cli("status", "archive-me")
+    assert status_code == 0, status_err
+    assert "archive me [archived]" in status_out.lower()
+    assert "1. Keep this ticket" in status_out
+
+
+def test_list_all_includes_archived_projects():
+    cli("create", "Archived Project")
+    cli("close", "archived-project")
+    cli("archive", "archived-project")
+
+    out, err, code = cli("list", "--all")
+    assert code == 0, err
+    assert "archived-project [archived]" in out.lower()
+
+
+def test_archive_requires_completed_or_abandoned_project():
+    cli("create", "Still Active")
+    out, err, code = cli("archive", "still-active")
+    assert code == 2
+    assert out == ""
+    assert "Only completed or abandoned projects can be archived" in err
+
+
 # ---------------------------------------------------------------------------
 # DB isolation between tests
 # ---------------------------------------------------------------------------
