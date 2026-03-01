@@ -53,6 +53,7 @@ def init_db(conn):
             title TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
             priority TEXT NOT NULL DEFAULT 'none',
+            tags TEXT NOT NULL DEFAULT '',
             depends_on TEXT DEFAULT '[]',
             notes TEXT,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
@@ -106,6 +107,13 @@ def init_db(conn):
         conn.execute("SELECT close_note FROM tickets LIMIT 0")
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE tickets ADD COLUMN close_note TEXT")
+        conn.commit()
+    # Migration: add tags column if missing
+    try:
+        conn.execute("SELECT tags FROM tickets LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE tickets ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+        conn.execute("UPDATE tickets SET tags='' WHERE tags IS NULL")
         conn.commit()
 
 
@@ -270,6 +278,21 @@ def _sort_next_items(items):
     )
 
 
+def _parse_tags(tags_arg):
+    if not tags_arg:
+        return ""
+    tags = sorted({t.strip().lower() for t in tags_arg.split(",") if t.strip()})
+    return ",".join(tags)
+
+
+def _ticket_has_tag(ticket, tag):
+    if not tag:
+        return True
+    tags = ticket["tags"] or ""
+    target = tag.strip().lower()
+    return f",{target}," in f",{tags},"
+
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -314,9 +337,10 @@ def cmd_ticket_add(args):
         for d in deps:
             resolve_ticket(conn, proj["id"], d, proj["slug"])
     num = _next_ticket_num(conn, proj["id"])
+    tags = _parse_tags(args.tag)
     conn.execute(
-        "INSERT INTO tickets (project_id, num, title, priority, depends_on, notes) VALUES (?,?,?,?,?,?)",
-        (proj["id"], num, args.title, args.priority or "none", json.dumps(deps), args.notes),
+        "INSERT INTO tickets (project_id, num, title, priority, tags, depends_on, notes) VALUES (?,?,?,?,?,?,?)",
+        (proj["id"], num, args.title, args.priority or "none", tags, json.dumps(deps), args.notes),
     )
     if deps:
         tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
@@ -469,6 +493,7 @@ def cmd_ticket_list(args):
 
 def cmd_next(args):
     conn = _ensure(get_connection())
+    tag_filter = (args.tag or "").strip().lower()
     if args.project:
         projects = [resolve_project(conn, args.project)]
     else:
@@ -483,6 +508,8 @@ def cmd_next(args):
             "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
         ).fetchall()
         items = [t for t in tickets if t["status"] == "in-progress"] + get_unblocked(tickets)
+        if tag_filter:
+            items = [t for t in items if _ticket_has_tag(t, tag_filter)]
         items = _sort_next_items(items)
         if items:
             found = True
@@ -501,6 +528,7 @@ def cmd_next(args):
 def cmd_status(args):
     conn = _ensure(get_connection())
     fmt = args.format or "full"
+    tag_filter = (args.tag or "").strip().lower()
     if args.project:
         projects = [resolve_project(conn, args.project)]
     else:
@@ -510,12 +538,13 @@ def cmd_status(args):
         conn.close()
         sys.exit(1)
     for p in projects:
-        tickets = conn.execute(
+        all_tickets = conn.execute(
             "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
         ).fetchall()
+        tickets = [t for t in all_tickets if _ticket_has_tag(t, tag_filter)] if tag_filter else all_tickets
+        done_nums = {t["num"] for t in all_tickets if t["status"] in ("done", "skipped")}
         done_count = sum(1 for t in tickets if t["status"] in ("done", "skipped"))
         total = len(tickets)
-        done_nums = {t["num"] for t in tickets if t["status"] in ("done", "skipped")}
         open_tickets = [t for t in tickets if t["status"] in ("pending", "in-progress")]
         blocked_count = sum(1 for t in open_tickets if _is_blocked(t, done_nums))
         unblocked_open = [t for t in open_tickets if not _is_blocked(t, done_nums)]
@@ -752,6 +781,7 @@ def build_parser():
     ts = tp.add_subparsers(dest="ticket_command")
     a = ts.add_parser("add")
     a.add_argument("project"); a.add_argument("title"); a.add_argument("--depends"); a.add_argument("--notes")
+    a.add_argument("--tag", help="Comma-separated tags (e.g. security,css)")
     a.add_argument("--priority", choices=PRIORITY_CHOICES[:-1], default="none")
     u = ts.add_parser("update")
     u.add_argument("project"); u.add_argument("ticket_id")
@@ -773,10 +803,12 @@ def build_parser():
 
     n = sub.add_parser("next", help="Show next unblocked tickets")
     n.add_argument("project", nargs="?")
+    n.add_argument("--tag", help="Filter by a single tag")
 
     ss = sub.add_parser("status", help="Project status")
     ss.add_argument("project", nargs="?")
     ss.add_argument("--format", choices=["compact", "full", "json"], default="full")
+    ss.add_argument("--tag", help="Filter tickets by a single tag")
 
     ls = sub.add_parser("list", help="List projects")
     ls.add_argument("--status", choices=["active", "completed", "paused", "abandoned", "all"], default="active")

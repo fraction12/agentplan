@@ -134,6 +134,17 @@ def test_add_ticket_priority_persisted():
     assert row["priority"] == "high"
 
 
+def test_add_ticket_tags_persisted():
+    cli("create", "Tag Project")
+    out, err, code = cli("ticket", "add", "tag-project", "Harden auth", "--tag", "security,css")
+    assert code == 0, err
+    assert "added ticket #1" in out.lower()
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT tags FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["tags"] == "css,security"
+
+
 def test_ticket_update_priority():
     cli("create", "Update Project")
     cli("ticket", "add", "update-project", "Task one")
@@ -168,6 +179,16 @@ def test_next_orders_by_priority():
     assert out.index("High task") < out.index("Medium task") < out.index("Low task")
 
 
+def test_next_filters_by_tag():
+    cli("create", "Next Tag Project")
+    cli("ticket", "add", "next-tag-project", "Patch CSS reset", "--tag", "css")
+    cli("ticket", "add", "next-tag-project", "Rotate service key", "--tag", "security")
+    out, err, code = cli("next", "next-tag-project", "--tag", "security")
+    assert code == 0, err
+    assert "Rotate service key" in out
+    assert "Patch CSS reset" not in out
+
+
 def test_status_shows_priority():
     cli("create", "Status Project")
     cli("ticket", "add", "status-project", "No priority task")
@@ -176,6 +197,17 @@ def test_status_shows_priority():
     assert code == 0, err
     assert "priority: none" in out.lower()
     assert "priority: high" in out.lower()
+
+
+def test_status_filters_by_tag():
+    cli("create", "Status Tag Project")
+    cli("ticket", "add", "status-tag-project", "Implement CSP", "--tag", "security")
+    cli("ticket", "add", "status-tag-project", "Fix button spacing", "--tag", "css")
+    out, err, code = cli("status", "status-tag-project", "--tag", "security")
+    assert code == 0, err
+    assert "Implement CSP" in out
+    assert "Fix button spacing" not in out
+    assert out.strip().splitlines()[0] == "0/1 done, 0 blocked, next: [1] Implement CSP"
 
 
 def test_status_summary_line_with_blocked_and_next():
