@@ -59,6 +59,7 @@ def init_db(conn):
             notes TEXT,
             started_by TEXT,
             done_by TEXT,
+            due_date TEXT,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
             completed_at TEXT
         );
@@ -145,6 +146,12 @@ def init_db(conn):
         conn.execute("SELECT description FROM tickets LIMIT 0")
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE tickets ADD COLUMN description TEXT")
+        conn.commit()
+    # Migration: add due_date column if missing
+    try:
+        conn.execute("SELECT due_date FROM tickets LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE tickets ADD COLUMN due_date TEXT")
         conn.commit()
     # Migration: create subtasks table/index if missing
     conn.execute("""
@@ -339,10 +346,32 @@ def _priority_label(priority):
     return (priority or "none").lower()
 
 
+def _parse_due_date(raw):
+    if raw in (None, ""):
+        return None
+    value = raw.strip()
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        print("Error: Invalid due date. Use YYYY-MM-DD.", file=sys.stderr)
+        sys.exit(2)
+    return value
+
+
+def _is_overdue(ticket, today=None):
+    due = ticket["due_date"]
+    if not due or ticket["status"] in ("done", "skipped"):
+        return False
+    if today is None:
+        today = datetime.now().strftime("%Y-%m-%d")
+    return due < today
+
+
 def _sort_next_items(items):
     return sorted(
         items,
         key=lambda t: (
+            0 if _is_overdue(t) else 1,
             _priority_value(t["priority"]),
             0 if t["status"] == "in-progress" else 1,
             t["num"],
@@ -438,9 +467,10 @@ def cmd_ticket_add(args):
             resolve_ticket(conn, proj["id"], d, proj["slug"])
     num = _next_ticket_num(conn, proj["id"])
     tags = _parse_tags(args.tag)
+    due_date = _parse_due_date(getattr(args, "due", None))
     conn.execute(
-        "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes) VALUES (?,?,?,?,?,?,?,?)",
-        (proj["id"], num, args.title, args.desc, args.priority or "none", tags, json.dumps(deps), args.notes),
+        "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes, due_date) VALUES (?,?,?,?,?,?,?,?,?)",
+        (proj["id"], num, args.title, args.desc, args.priority or "none", tags, json.dumps(deps), args.notes, due_date),
     )
     if deps:
         tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
@@ -526,11 +556,14 @@ def cmd_ticket_edit(args):
     if args.tag is not None:
         updates.append("tags=?")
         values.append(_parse_tags(args.tag))
+    if args.due is not None:
+        updates.append("due_date=?")
+        values.append(_parse_due_date(args.due))
 
     if not updates:
         conn.close()
         print(
-            "Error: No updates provided. Use at least one of --title, --desc, --priority, --tag.",
+            "Error: No updates provided. Use at least one of --title, --desc, --priority, --tag, --due.",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -1065,6 +1098,7 @@ def build_parser():
     a.add_argument("project"); a.add_argument("title"); a.add_argument("--desc"); a.add_argument("--depends"); a.add_argument("--notes")
     a.add_argument("--tag", help="Comma-separated tags (e.g. security,css)")
     a.add_argument("--priority", choices=PRIORITY_CHOICES[:-1], default="none")
+    a.add_argument("--due", help="Due date in YYYY-MM-DD format")
     u = ts.add_parser("update")
     u.add_argument("project"); u.add_argument("ticket_id")
     u.add_argument("--title"); u.add_argument("--notes"); u.add_argument("--depends")
@@ -1073,6 +1107,7 @@ def build_parser():
     e.add_argument("project"); e.add_argument("ticket_id")
     e.add_argument("--title"); e.add_argument("--desc"); e.add_argument("--tag")
     e.add_argument("--priority", choices=PRIORITY_CHOICES)
+    e.add_argument("--due", help="Due date in YYYY-MM-DD format")
     d = ts.add_parser("done")
     d.add_argument("project"); d.add_argument("ticket_ids", nargs="+")
     d.add_argument("--note", help="Optional closing note/reason")

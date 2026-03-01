@@ -294,6 +294,30 @@ def test_add_ticket_desc_persisted():
     conn.close()
     assert row["description"] == "Longer context for implementers."
 
+def test_add_ticket_due_date_persisted():
+    cli("create", "Due Project")
+    out, err, code = cli(
+        "ticket",
+        "add",
+        "due-project",
+        "Ship v1",
+        "--due",
+        "2026-03-01",
+    )
+    assert code == 0, err
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT due_date FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["due_date"] == "2026-03-01"
+
+
+def test_add_ticket_invalid_due_date_fails():
+    cli("create", "Bad Due Project")
+    out, err, code = cli("ticket", "add", "bad-due-project", "Ship v1", "--due", "03-01-2026")
+    assert code == 2
+    assert out == ""
+    assert "invalid due date" in err.lower()
+
 
 def test_ticket_update_priority():
     cli("create", "Update Project")
@@ -307,7 +331,7 @@ def test_ticket_update_priority():
     assert row["priority"] == "medium"
 
 
-def test_ticket_edit_updates_title_desc_priority_and_tags():
+def test_ticket_edit_updates_title_desc_priority_tags_and_due_date():
     cli("create", "Edit Project")
     cli(
         "ticket",
@@ -334,18 +358,21 @@ def test_ticket_edit_updates_title_desc_priority_and_tags():
         "low",
         "--tag",
         "css,security",
+        "--due",
+        "2026-03-01",
     )
     assert code == 0, err
     assert "updated ticket #1" in out.lower()
     conn = agentplan.get_connection("/tmp/test_agentplan.db")
     row = conn.execute(
-        "SELECT title, description, priority, tags FROM tickets WHERE project_id=1 AND num=1"
+        "SELECT title, description, priority, tags, due_date FROM tickets WHERE project_id=1 AND num=1"
     ).fetchone()
     conn.close()
     assert row["title"] == "Task one updated"
     assert row["description"] == "Updated description"
     assert row["priority"] == "low"
     assert row["tags"] == "css,security"
+    assert row["due_date"] == "2026-03-01"
 
 
 def test_ticket_edit_requires_edit_fields():
@@ -354,7 +381,7 @@ def test_ticket_edit_requires_edit_fields():
     out, err, code = cli("ticket", "edit", "edit-missing-fields", "1")
     assert code == 2
     assert out == ""
-    assert "use at least one of --title, --desc, --priority, --tag" in err.lower()
+    assert "use at least one of --title, --desc, --priority, --tag, --due" in err.lower()
 
 
 def test_next_orders_by_priority():
@@ -365,6 +392,14 @@ def test_next_orders_by_priority():
     out, err, code = cli("next", "order-project")
     assert code == 0, err
     assert out.index("High task") < out.index("Medium task") < out.index("Low task")
+
+def test_next_prioritizes_overdue_tickets_above_priority():
+    cli("create", "Overdue Project")
+    cli("ticket", "add", "overdue-project", "Future high", "--priority", "high", "--due", "2099-01-01")
+    cli("ticket", "add", "overdue-project", "Overdue medium", "--priority", "medium", "--due", "2000-01-01")
+    out, err, code = cli("next", "overdue-project")
+    assert code == 0, err
+    assert out.index("Overdue medium") < out.index("Future high")
 
 
 def test_next_filters_by_tag():
