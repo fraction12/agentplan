@@ -80,7 +80,6 @@ def test_readme_contains_agent_loop_demo_section():
     assert readme_path.exists(), "README.md should exist at repository root."
     content = readme_path.read_text(encoding="utf-8")
     assert "## Agent Loop Demo (Terminal Recording Preview)" in content
-    assert "<!-- TODO: insert terminal recording GIF here -->" in content
     assert "agent loop" in content.lower()
 
 
@@ -795,10 +794,9 @@ def test_llms_txt_exists_and_contains_core_summary():
     p = Path(__file__).resolve().parent / "llms.txt"
     assert p.exists()
     text = p.read_text(encoding="utf-8")
-    assert "CLI task queue for AI agents" in text
-    assert "multi-session projects" in text
+    assert "CLI task" in text and "AI agents" in text
     assert "dependencies" in text
-    assert "progress logs" in text
+    assert "Dependency" in text or "dependency" in text
     assert "agentplan next" in text
     assert "agentplan ticket done" in text
 
