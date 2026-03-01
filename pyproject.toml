@@ -34,5 +34,10 @@ Repository = "https://github.com/fraction12/agentplan"
 [project.scripts]
 agentplan = "agentplan:main"
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
 [tool.setuptools]
 py-modules = ["agentplan"]
