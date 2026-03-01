@@ -50,7 +50,7 @@ INDEX_TEMPLATE = """
           <div class="card h-100 shadow-sm">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start mb-2">
-                <h2 class="h5 mb-0"><a class="text-decoration-none" href="{{ url_for('project_detail', project_id=project.id) }}">{{ project.title }}</a></h2>
+                <h2 class="h5 mb-0"><a class="text-decoration-none" href="{{ url_for('project_detail', slug=project.slug) }}">{{ project.title }}</a></h2>
                 <span class="badge text-bg-secondary">{{ project.slug }}</span>
               </div>
               <p class="text-muted small mb-2">Status: <span class="project-status">{{ project.status }}</span></p>
@@ -174,7 +174,7 @@ PROJECT_TEMPLATE = """
         </div>
         <div class="col-12 d-flex gap-2">
           <button class="btn btn-primary btn-sm" type="submit">Apply filters</button>
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_detail', project_id=project.id) }}">Reset</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_detail', slug=project.slug) }}">Reset</a>
         </div>
       </form>
 
@@ -187,7 +187,7 @@ PROJECT_TEMPLATE = """
           <article class="list-group-item">
             <div class="d-flex justify-content-between align-items-start gap-3">
               <div>
-                <div><strong><a class="text-decoration-none" href="{{ url_for('ticket_detail', project_id=project.id, ticket_num=ticket.num) }}">#{{ ticket.num }} {{ ticket.title }}</a></strong></div>
+                <div><strong><a class="text-decoration-none" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}">#{{ ticket.num }} {{ ticket.title }}</a></strong></div>
                 {% if ticket.description %}<div class="small mt-1">{{ ticket.description }}</div>{% endif %}
                 {% if ticket.tags %}<div class="small text-muted mt-1">tags: {{ ticket.tags|join(', ') }}</div>{% endif %}
                 {% if ticket.dependencies %}<div class="small text-muted">depends on: {{ ticket.dependencies|join(', ') }}</div>{% endif %}
@@ -222,7 +222,7 @@ TICKET_TEMPLATE = """
     <main class="container py-4">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h4 m-0">#{{ ticket.num }} {{ ticket.title }}</h1>
-        <a href="{{ url_for('project_detail', project_id=project.id) }}" class="btn btn-sm btn-outline-secondary">Back to project</a>
+        <a href="{{ url_for('project_detail', slug=project.slug) }}" class="btn btn-sm btn-outline-secondary">Back to project</a>
       </div>
 
       <div class="card shadow-sm mb-3">
@@ -259,7 +259,7 @@ TICKET_TEMPLATE = """
               {% if blocked_by %}
               <ul class="mb-3">
                 {% for dep in blocked_by %}
-                <li><a href="{{ url_for('ticket_detail', project_id=project.id, ticket_num=dep.num) }}">#{{ dep.num }} {{ dep.title }}</a></li>
+                <li><a href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=dep.num) }}">#{{ dep.num }} {{ dep.title }}</a></li>
                 {% endfor %}
               </ul>
               {% else %}
@@ -270,7 +270,7 @@ TICKET_TEMPLATE = """
               {% if blocks %}
               <ul class="mb-0">
                 {% for dep in blocks %}
-                <li><a href="{{ url_for('ticket_detail', project_id=project.id, ticket_num=dep.num) }}">#{{ dep.num }} {{ dep.title }}</a></li>
+                <li><a href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=dep.num) }}">#{{ dep.num }} {{ dep.title }}</a></li>
                 {% endfor %}
               </ul>
               {% else %}
@@ -426,15 +426,15 @@ def create_app():
 
         return Response(event_stream(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache"})
 
-    @app.route("/project/<int:project_id>")
-    def project_detail(project_id):
+    @app.route("/project/<slug>")
+    def project_detail(slug):
         status_filter = request.args.get("status", "").strip().lower()
         priority_filter = request.args.get("priority", "").strip().lower()
         tag_filter = request.args.get("tag", "").strip().lower()
 
         conn = get_connection(_db_path())
         try:
-            project = conn.execute("SELECT id, slug, title, status FROM projects WHERE id=?", (project_id,)).fetchone()
+            project = conn.execute("SELECT id, slug, title, status FROM projects WHERE slug=?", (slug,)).fetchone()
             if not project:
                 abort(404)
             rows = conn.execute(
@@ -444,7 +444,7 @@ def create_app():
                 WHERE project_id=?
                 ORDER BY num
                 """,
-                (project_id,),
+                (project["id"],),
             ).fetchall()
         finally:
             conn.close()
@@ -473,11 +473,11 @@ def create_app():
             filters={"status": status_filter, "priority": priority_filter, "tag": tag_filter},
         )
 
-    @app.route("/project/<int:project_id>/ticket/<int:ticket_num>")
-    def ticket_detail(project_id, ticket_num):
+    @app.route("/project/<slug>/ticket/<int:ticket_num>")
+    def ticket_detail(slug, ticket_num):
         conn = get_connection(_db_path())
         try:
-            project = conn.execute("SELECT id, slug, title, status FROM projects WHERE id=?", (project_id,)).fetchone()
+            project = conn.execute("SELECT id, slug, title, status FROM projects WHERE slug=?", (slug,)).fetchone()
             if not project:
                 abort(404)
 
@@ -487,7 +487,7 @@ def create_app():
                 FROM tickets
                 WHERE project_id=? AND num=?
                 """,
-                (project_id, ticket_num),
+                (project["id"], ticket_num),
             ).fetchone()
             if not row:
                 abort(404)
@@ -506,13 +506,13 @@ def create_app():
                 placeholders = ",".join("?" for _ in dep_nums)
                 blocked_rows = conn.execute(
                     f"SELECT num, title FROM tickets WHERE project_id=? AND num IN ({placeholders}) ORDER BY num",
-                    (project_id, *dep_nums),
+                    (project["id"], *dep_nums),
                 ).fetchall()
                 blocked_by = [dict(r) for r in blocked_rows]
 
             project_ticket_rows = conn.execute(
                 "SELECT num, title, depends_on FROM tickets WHERE project_id=? AND id!=? ORDER BY num",
-                (project_id, ticket["id"]),
+                (project["id"], ticket["id"]),
             ).fetchall()
             blocks = []
             for r in project_ticket_rows:
