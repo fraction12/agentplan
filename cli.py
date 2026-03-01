@@ -1115,6 +1115,32 @@ def cmd_version(_args):
     print(f"agentplan {__version__}")
 
 def cmd_dashboard(args):
+    import socket
+    import subprocess
+
+    port = args.port
+
+    if getattr(args, "stop", False):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            in_use = s.connect_ex(("127.0.0.1", port)) == 0
+        if not in_use:
+            print(f"No dashboard running on port {port}")
+            return
+        try:
+            result = subprocess.run(
+                f"lsof -ti:{port} | xargs kill",
+                shell=True,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                print("Dashboard stopped")
+            else:
+                print(f"Failed to stop dashboard: {result.stderr.strip()}")
+        except Exception as e:
+            print(f"Error stopping dashboard: {e}")
+        return
+
     try:
         from dashboard import run_dashboard
     except ImportError:
@@ -1210,6 +1236,7 @@ def build_parser():
     dash_p.add_argument("--port", type=int, default=5001, help="Port to listen on (default: 5001)")
     dash_p.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
     dash_p.add_argument("--open", action="store_true", dest="open_browser", help="Open dashboard in default browser")
+    dash_p.add_argument("--stop", action="store_true", help="Stop the running dashboard")
 
     c = sub.add_parser("create", help="Create a project")
     c.add_argument("title")
