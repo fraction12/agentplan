@@ -259,35 +259,19 @@
     </div>
   </section>
 
-  <section class="section">
+  <section id="demo" class="section">
     <div class="container">
-      <h2 class="section-heading">See the CLI</h2>
-      <div class="cli-block">
-        <div class="cli-topbar">
-          <div class="cli-dot"></div><div class="cli-dot"></div><div class="cli-dot"></div>
-          <span class="cli-label">zsh — agentplan demo</span>
+      <h2 class="section-heading">See it in action</h2>
+      <div class="terminal-demo-card">
+        <div class="terminal-topbar">
+          <div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+          <span class="terminal-label">agentplan live demo</span>
         </div>
-        <div class="cli-body">
-<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan create sprint-1</span></span>
-<span class="cli-line cli-out">Created project 'sprint-1' (sprint-1)</span>
-<span class="cli-line">&nbsp;</span>
-<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan ticket add sprint-1 "Build API" --priority high --tag backend</span></span>
-<span class="cli-line cli-out">Added ticket #1: Build API [priority: high]</span>
-<span class="cli-line">&nbsp;</span>
-<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan ticket add sprint-1 "Write tests" --priority medium --tag testing</span></span>
-<span class="cli-line cli-out">Added ticket #2: Write tests [priority: medium]</span>
-<span class="cli-line">&nbsp;</span>
-<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan depend sprint-1 2 --on 1</span></span>
-<span class="cli-line cli-out">Ticket #2 now depends on: [1]</span>
-<span class="cli-line">&nbsp;</span>
-<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan next sprint-1</span></span>
-<span class="cli-line cli-out">📋 sprint-1: [1] Build API ○ (priority: high)</span>
-<span class="cli-line">&nbsp;</span>
-<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan ticket done sprint-1 1 --agent dash --note "API shipped"</span></span>
-<span class="cli-line cli-success">✓ Ticket #1: Build API → done [API shipped] (by dash)</span>
-<span class="cli-line">&nbsp;</span>
-<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan status sprint-1</span></span>
-<span class="cli-line cli-out">1/2 done, 0 blocked, next: [2] Write tests</span>
+        <div id="demo-terminal" class="terminal-screen" role="log" aria-live="polite" aria-label="Animated terminal demo"></div>
+        <div class="demo-controls" aria-label="Terminal demo controls">
+          <button id="demo-play" type="button">&#9654; Play</button>
+          <button id="demo-pause" type="button" disabled>&#9646;&#9646; Pause</button>
+          <button id="demo-replay" type="button">&#8635; Replay</button>
         </div>
       </div>
     </div>
@@ -357,24 +341,6 @@
             <tr><td>Parallel safety</td><td class="check">SQLite locks</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
           </tbody>
         </table>
-      </div>
-    </div>
-  </section>
-
-  <section class="section">
-    <div class="container">
-      <h2 class="section-heading">See it in action</h2>
-      <div class="terminal-demo-card">
-        <div class="terminal-topbar">
-          <div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-          <span class="terminal-label">agentplan live demo</span>
-        </div>
-        <div id="demo-terminal" class="terminal-screen" role="log" aria-live="polite" aria-label="Animated terminal demo"></div>
-        <div class="demo-controls" aria-label="Terminal demo controls">
-          <button id="demo-play" type="button">&#9654; Play</button>
-          <button id="demo-pause" type="button" disabled>&#9646;&#9646; Pause</button>
-          <button id="demo-replay" type="button">&#8635; Replay</button>
-        </div>
       </div>
     </div>
   </section>
