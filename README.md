@@ -141,7 +141,7 @@ You already have agents. agentplan gives them a shared to-do list.
 ```
 agentplan create <title> [--ticket "..."]   # Create project with tickets
 agentplan ticket add <project> <title>      # Add a ticket
-agentplan ticket done <project> <id...>     # Mark ticket(s) done
+agentplan ticket done <project> <id...>     # Mark ticket(s) done (supports 1 2 3 or 1,2,3)
 agentplan ticket skip <project> <id...>     # Skip ticket(s)
 agentplan ticket start <project> <id>       # Mark in-progress
 agentplan ticket list <project>             # List all tickets

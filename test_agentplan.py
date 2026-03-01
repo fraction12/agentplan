@@ -125,6 +125,26 @@ def test_mark_ticket_done():
     assert code == 0, err
 
 
+def test_mark_ticket_done_bulk_comma_separated_ids():
+    cli("create", "Bulk Done Project")
+    cli("ticket", "add", "bulk-done-project", "Task one")
+    cli("ticket", "add", "bulk-done-project", "Task two")
+    cli("ticket", "add", "bulk-done-project", "Task three")
+
+    out, err, code = cli("ticket", "done", "bulk-done-project", "1,2,3")
+    assert code == 0, err
+    assert "Ticket #1" in out
+    assert "Ticket #2" in out
+    assert "Ticket #3" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute(
+        "SELECT num, status FROM tickets WHERE project_id=1 ORDER BY num"
+    ).fetchall()
+    conn.close()
+    assert [r["status"] for r in rows] == ["done", "done", "done"]
+
+
 def test_ticket_start_with_agent_stores_started_by_and_shows_in_status():
     cli("create", "Start Agent Project")
     cli("ticket", "add", "start-agent-project", "Implement parser")

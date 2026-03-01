@@ -595,12 +595,21 @@ def cmd_ticket_edit(args):
     conn.close()
 
 
+def _expand_ticket_ids(ticket_ids):
+    """Expand ticket ID args to support comma-separated values (e.g. 1,2,3)."""
+    expanded = []
+    for raw in ticket_ids:
+        parts = [p.strip() for p in raw.split(",")]
+        expanded.extend(p for p in parts if p)
+    return expanded
+
+
 def cmd_ticket_done(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     close_note = getattr(args, 'note', None)
     done_by = getattr(args, "agent", None)
-    for num_str in args.ticket_ids:
+    for num_str in _expand_ticket_ids(args.ticket_ids):
         t = resolve_ticket(conn, proj["id"], num_str, proj["slug"])
         conn.execute(
             "UPDATE tickets SET status='done', completed_at=?, close_note=?, done_by=? WHERE id=?",
@@ -1237,7 +1246,7 @@ def build_parser():
     e.add_argument("--priority", choices=PRIORITY_CHOICES)
     e.add_argument("--due", help="Due date in YYYY-MM-DD format")
     d = ts.add_parser("done")
-    d.add_argument("project"); d.add_argument("ticket_ids", nargs="+")
+    d.add_argument("project"); d.add_argument("ticket_ids", nargs="+", help="Ticket IDs (space or comma-separated, e.g. 1 2 or 1,2,3)")
     d.add_argument("--note", help="Optional closing note/reason")
     d.add_argument("--agent", help="Agent name marking ticket done (e.g. dash)")
     s = ts.add_parser("skip")
