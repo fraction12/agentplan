@@ -31,7 +31,7 @@ from db import (
     unique_slug,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.1"
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3}
 PRIORITY_CHOICES = ["high", "medium", "low", "none"]
 COMPLETION_SHELLS = ["bash", "zsh", "fish"]
