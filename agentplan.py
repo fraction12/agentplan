@@ -1501,7 +1501,7 @@ def build_parser():
     dp.add_argument("project"); dp.add_argument("ticket_id"); dp.add_argument("--on", required=True)
 
     udp = sub.add_parser("undepend", help="Remove a ticket dependency")
-    udp.add_argument("project"); udp.add_argument("ticket_id"); udp.add_argument("dep_id")
+    udp.add_argument("project"); udp.add_argument("ticket_id"); udp.add_argument("--on", dest="dep_id", required=True, metavar="dep_id")
 
     rm = sub.add_parser("remove", help="Remove project or ticket")
     rm.add_argument("project"); rm.add_argument("--ticket")

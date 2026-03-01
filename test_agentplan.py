@@ -657,7 +657,7 @@ def test_undepend_removes_existing_dependency():
     cli("ticket", "add", "dependency-project", "Base task")
     cli("ticket", "add", "dependency-project", "Blocked task", "--depends", "1")
 
-    out, err, code = cli("undepend", "dependency-project", "2", "1")
+    out, err, code = cli("undepend", "dependency-project", "2", "--on", "1")
     assert code == 0, err
     assert "Removed dependency #1 from ticket #2." in out
 
@@ -672,7 +672,7 @@ def test_undepend_requires_existing_dependency_link():
     cli("ticket", "add", "no-link-project", "Task A")
     cli("ticket", "add", "no-link-project", "Task B")
 
-    out, err, code = cli("undepend", "no-link-project", "2", "1")
+    out, err, code = cli("undepend", "no-link-project", "2", "--on", "1")
     assert code == 2
     assert out == ""
     assert "does not depend on ticket #1" in err
