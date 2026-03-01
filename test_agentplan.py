@@ -307,16 +307,54 @@ def test_ticket_update_priority():
     assert row["priority"] == "medium"
 
 
-def test_ticket_edit_priority_alias():
+def test_ticket_edit_updates_title_desc_priority_and_tags():
     cli("create", "Edit Project")
-    cli("ticket", "add", "edit-project", "Task one", "--priority", "high")
-    out, err, code = cli("ticket", "edit", "edit-project", "1", "--priority", "low")
+    cli(
+        "ticket",
+        "add",
+        "edit-project",
+        "Task one",
+        "--desc",
+        "Original description",
+        "--priority",
+        "high",
+        "--tag",
+        "security",
+    )
+    out, err, code = cli(
+        "ticket",
+        "edit",
+        "edit-project",
+        "1",
+        "--title",
+        "Task one updated",
+        "--desc",
+        "Updated description",
+        "--priority",
+        "low",
+        "--tag",
+        "css,security",
+    )
     assert code == 0, err
     assert "updated ticket #1" in out.lower()
     conn = agentplan.get_connection("/tmp/test_agentplan.db")
-    row = conn.execute("SELECT priority FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    row = conn.execute(
+        "SELECT title, description, priority, tags FROM tickets WHERE project_id=1 AND num=1"
+    ).fetchone()
     conn.close()
+    assert row["title"] == "Task one updated"
+    assert row["description"] == "Updated description"
     assert row["priority"] == "low"
+    assert row["tags"] == "css,security"
+
+
+def test_ticket_edit_requires_edit_fields():
+    cli("create", "Edit Missing Fields")
+    cli("ticket", "add", "edit-missing-fields", "Task one")
+    out, err, code = cli("ticket", "edit", "edit-missing-fields", "1")
+    assert code == 2
+    assert out == ""
+    assert "use at least one of --title, --desc, --priority, --tag" in err.lower()
 
 
 def test_next_orders_by_priority():

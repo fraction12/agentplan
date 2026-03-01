@@ -507,6 +507,42 @@ def cmd_ticket_update(args):
     conn.close()
 
 
+def cmd_ticket_edit(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+
+    updates = []
+    values = []
+    if args.title is not None:
+        updates.append("title=?")
+        values.append(args.title)
+    if args.desc is not None:
+        updates.append("description=?")
+        values.append(args.desc)
+    if args.priority is not None:
+        updates.append("priority=?")
+        values.append(args.priority)
+    if args.tag is not None:
+        updates.append("tags=?")
+        values.append(_parse_tags(args.tag))
+
+    if not updates:
+        conn.close()
+        print(
+            "Error: No updates provided. Use at least one of --title, --desc, --priority, --tag.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    values.append(t["id"])
+    conn.execute(f"UPDATE tickets SET {', '.join(updates)} WHERE id=?", values)
+    conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
+    conn.commit()
+    print(f"Updated ticket #{t['num']}.")
+    conn.close()
+
+
 def cmd_ticket_done(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
@@ -1035,7 +1071,7 @@ def build_parser():
     u.add_argument("--priority", choices=PRIORITY_CHOICES)
     e = ts.add_parser("edit")
     e.add_argument("project"); e.add_argument("ticket_id")
-    e.add_argument("--title"); e.add_argument("--notes"); e.add_argument("--depends")
+    e.add_argument("--title"); e.add_argument("--desc"); e.add_argument("--tag")
     e.add_argument("--priority", choices=PRIORITY_CHOICES)
     d = ts.add_parser("done")
     d.add_argument("project"); d.add_argument("ticket_ids", nargs="+")
@@ -1105,7 +1141,7 @@ DISPATCH = {
 TICKET_DISPATCH = {
     "add": cmd_ticket_add, "done": cmd_ticket_done, "skip": cmd_ticket_skip,
     "start": cmd_ticket_start, "list": cmd_ticket_list,
-    "update": cmd_ticket_update, "edit": cmd_ticket_update,
+    "update": cmd_ticket_update, "edit": cmd_ticket_edit,
 }
 
 SUBTASK_DISPATCH = {
