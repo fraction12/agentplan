@@ -1118,7 +1118,7 @@ def cmd_dashboard(args):
     try:
         from dashboard import app
     except ImportError:
-        print('Error: Flask not installed. Run: pip install agentplan[dashboard]', __import__("sys").stderr)
+        print('Error: Flask not installed. Run: pip install agentplan[dashboard]', file=__import__('sys').stderr)
         __import__("sys").exit(1)
     app.run(host=args.host, port=args.port)
 
@@ -1205,6 +1205,10 @@ def build_parser():
 
     sub.add_parser("init", help="Initialize database")
     sub.add_parser("version", help="Show version")
+
+    dash_p = sub.add_parser("dashboard", help="Launch web dashboard")
+    dash_p.add_argument("--port", type=int, default=5001, help="Port to listen on (default: 5001)")
+    dash_p.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
 
     c = sub.add_parser("create", help="Create a project")
     c.add_argument("title")
@@ -1313,7 +1317,7 @@ DISPATCH = {
     "init": cmd_init, "create": cmd_create, "next": cmd_next, "claim": cmd_claim, "status": cmd_status,
     "list": cmd_list, "search": cmd_search, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
     "archive": cmd_archive,
-    "note": cmd_note, "depend": cmd_depend, "undepend": cmd_undepend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version,
+    "note": cmd_note, "depend": cmd_depend, "undepend": cmd_undepend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version, "dashboard": cmd_dashboard,
     "completion": cmd_completion, "__complete": cmd_internal_complete,
 }
 
