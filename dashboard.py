@@ -490,7 +490,7 @@ PROJECT_TEMPLATE = """
       }
       .kanban-column-body { padding: 10px; display: grid; gap: 10px; }
       .kanban-empty { color: var(--color-muted); font-size: 0.84rem; margin: 4px; }
-      .ticket-link { text-decoration: none; color: inherit; display: block; }
+      .ticket-link { text-decoration: none; color: inherit; display: block; cursor: pointer; }
       .ticket-card {
         position: relative;
         background: var(--color-panel);
@@ -514,7 +514,7 @@ PROJECT_TEMPLATE = """
       .ticket-card.priority-high::before { background: var(--color-high); }
       .ticket-card.priority-medium::before { background: var(--color-medium); }
       .ticket-card.priority-low::before, .ticket-card.priority-none::before { background: var(--color-low); }
-      .ticket-link:hover .ticket-card { transform: translateY(-1px); border-color: rgba(59,130,246,0.55); }
+      .ticket-link:hover .ticket-card, .ticket-link:focus-visible .ticket-card { transform: translateY(-1px); border-color: rgba(59,130,246,0.55); }
       .ticket-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
       .ticket-id { font-family: var(--font-mono); color: var(--color-muted); font-size: 0.75rem; }
       .ticket-title { margin: 2px 0 0; font-size: 0.94rem; font-weight: 600; line-height: 1.32; }
@@ -583,6 +583,93 @@ PROJECT_TEMPLATE = """
       .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .btn-primary { background: rgba(59,130,246,0.18); color: #dbeafe; border-color: rgba(59,130,246,0.35); }
 
+      .ticket-panel-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(2, 6, 23, 0.6);
+        backdrop-filter: blur(2px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 220ms ease;
+        z-index: 40;
+      }
+      .ticket-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: min(520px, 96vw);
+        height: 100vh;
+        background: linear-gradient(180deg, rgba(21,27,43,0.98), rgba(15,20,32,0.98));
+        border-left: 1px solid var(--color-border);
+        box-shadow: -24px 0 64px rgba(0,0,0,0.55);
+        transform: translateX(100%);
+        transition: transform 280ms cubic-bezier(.22,.61,.36,1);
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+      }
+      .ticket-panel.is-open { transform: translateX(0); }
+      .ticket-panel-backdrop.is-open { opacity: 1; pointer-events: auto; }
+      .ticket-panel-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .ticket-panel-id { font-family: var(--font-mono); font-size: 0.76rem; color: var(--color-muted); }
+      .ticket-panel-title { margin: 4px 0 0; font-size: 1.1rem; line-height: 1.25; }
+      .ticket-panel-close {
+        flex-shrink: 0;
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        border: 1px solid var(--color-border);
+        background: transparent;
+        color: var(--color-muted);
+        cursor: pointer;
+      }
+      .ticket-panel-close:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .ticket-panel-content { padding: 16px; overflow-y: auto; display: grid; gap: 14px; }
+      .panel-block {
+        background: rgba(255,255,255,0.02);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .panel-block h3 {
+        margin: 0 0 10px;
+        font-size: 0.83rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-family: var(--font-body);
+        color: var(--color-muted);
+      }
+      .panel-muted { margin: 0; color: var(--color-muted); font-size: 0.84rem; }
+      .panel-description { margin: 0; white-space: pre-wrap; line-height: 1.45; }
+      .subtask-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      .subtask-item { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center; font-size: 0.88rem; }
+      .subtask-item input { accent-color: #3b82f6; }
+      .dep-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .dep-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+      .dep-item { font-family: var(--font-mono); font-size: 0.78rem; color: #c7d2fe; }
+      .audit-timeline { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 1px solid var(--color-border); display: grid; gap: 10px; }
+      .audit-item { position: relative; }
+      .audit-item::before {
+        content: "";
+        position: absolute;
+        left: -19px;
+        top: 4px;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #3b82f6;
+        box-shadow: 0 0 0 4px rgba(59,130,246,0.2);
+      }
+      .audit-meta { font-family: var(--font-mono); color: var(--color-muted); font-size: 0.72rem; margin-bottom: 2px; }
+      .audit-message { margin: 0; font-size: 0.86rem; line-height: 1.35; }
+
       @media (max-width: 1180px) {
         .kanban-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       }
@@ -633,7 +720,7 @@ PROJECT_TEMPLATE = """
           <div class="kanban-column-body">
             {% if grouped[status] %}
               {% for ticket in grouped[status] %}
-              <a class="ticket-link" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}">
+              <a class="ticket-link" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}" data-ticket-num="{{ ticket.num }}" role="button" aria-label="Open ticket #{{ ticket.num }} details panel">
                 <article class="ticket-card priority-{{ ticket.priority|lower }}">
                   <div class="ticket-head">
                     <div>
@@ -679,7 +766,124 @@ PROJECT_TEMPLATE = """
         </article>
         {% endfor %}
       </section>
+      <div id="ticket-panel-backdrop" class="ticket-panel-backdrop" hidden></div>
+      <aside id="ticket-panel" class="ticket-panel" aria-hidden="true" aria-label="Ticket detail panel">
+        <header class="ticket-panel-header">
+          <div>
+            <div id="panel-ticket-id" class="ticket-panel-id">Ticket</div>
+            <h2 id="panel-ticket-title" class="ticket-panel-title">Loading…</h2>
+          </div>
+          <button id="ticket-panel-close" class="ticket-panel-close" type="button" aria-label="Close ticket detail">✕</button>
+        </header>
+        <div id="ticket-panel-content" class="ticket-panel-content"></div>
+      </aside>
+
     </main>
+    <script>
+      (() => {
+        const panel = document.getElementById("ticket-panel");
+        const backdrop = document.getElementById("ticket-panel-backdrop");
+        const closeBtn = document.getElementById("ticket-panel-close");
+        const panelId = document.getElementById("panel-ticket-id");
+        const panelTitle = document.getElementById("panel-ticket-title");
+        const panelContent = document.getElementById("ticket-panel-content");
+        const projectSlug = {{ project.slug|tojson }};
+
+        function esc(v) {
+          return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+        }
+
+        function renderList(items, emptyText) {
+          if (!items || items.length === 0) return `<p class="panel-muted">${esc(emptyText)}</p>`;
+          return `<ul class="dep-list">${items.map((item) => `<li class="dep-item">#${esc(item.num)} ${esc(item.title)}</li>`).join("")}</ul>`;
+        }
+
+        function renderSubtasks(subtasks) {
+          if (!subtasks || subtasks.length === 0) return '<p class="panel-muted">No subtasks.</p>';
+          return `<ul class="subtask-list">${subtasks.map((subtask) => `<li class="subtask-item"><input type="checkbox" disabled ${subtask.status === "done" ? "checked" : ""}><span>#${esc(subtask.num)} ${esc(subtask.title)}</span></li>`).join("")}</ul>`;
+        }
+
+        function renderHistory(history) {
+          if (!history || history.length === 0) return '<p class="panel-muted">No audit entries.</p>';
+          return `<ul class="audit-timeline">${history.map((item) => `<li class="audit-item"><div class="audit-meta">${esc(item.timestamp)} · ${esc(item.agent || "system")}${item.transition ? ` · ${esc(item.transition.old_state || "(none)")} → ${esc(item.transition.new_state || "")}` : ""}</div><p class="audit-message">${esc(item.message || "")}</p></li>`).join("")}</ul>`;
+        }
+
+        function renderPanel(data) {
+          panelId.textContent = `#${data.num}`;
+          panelTitle.textContent = data.title || "Ticket details";
+          panelContent.innerHTML = `
+            <section class="panel-block">
+              <h3>Description</h3>
+              <p class="panel-description">${esc(data.description || "No description.")}</p>
+            </section>
+            <section class="panel-block">
+              <h3>Subtasks</h3>
+              ${renderSubtasks(data.subtasks)}
+            </section>
+            <section class="panel-block">
+              <h3>Dependency Graph</h3>
+              <div class="dep-grid">
+                <div><div class="panel-muted" style="margin-bottom:6px;">blocked by</div>${renderList(data.blocked_by, "No blockers.")}</div>
+                <div><div class="panel-muted" style="margin-bottom:6px;">blocks</div>${renderList(data.blocks, "No blocked tickets.")}</div>
+              </div>
+            </section>
+            <section class="panel-block">
+              <h3>Audit Timeline</h3>
+              ${renderHistory(data.audit_history)}
+            </section>
+            <section class="panel-block">
+              <h3>Close Notes</h3>
+              <p class="panel-description">${esc(data.close_note || "No close notes.")}</p>
+            </section>
+          `;
+        }
+
+        function openPanel() {
+          backdrop.hidden = false;
+          panel.setAttribute("aria-hidden", "false");
+          requestAnimationFrame(() => {
+            backdrop.classList.add("is-open");
+            panel.classList.add("is-open");
+          });
+        }
+
+        function closePanel() {
+          panel.classList.remove("is-open");
+          backdrop.classList.remove("is-open");
+          panel.setAttribute("aria-hidden", "true");
+          setTimeout(() => { backdrop.hidden = true; }, 260);
+        }
+
+        async function loadTicket(ticketNum) {
+          panelId.textContent = `#${ticketNum}`;
+          panelTitle.textContent = "Loading…";
+          panelContent.innerHTML = '<section class="panel-block"><p class="panel-muted">Fetching ticket details…</p></section>';
+          openPanel();
+          try {
+            const response = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/${encodeURIComponent(ticketNum)}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            renderPanel(data);
+          } catch (error) {
+            panelContent.innerHTML = `<section class="panel-block"><p class="panel-muted">Failed to load ticket details (${esc(error.message)}).</p></section>`;
+          }
+        }
+
+        document.querySelectorAll(".ticket-link[data-ticket-num]").forEach((link) => {
+          link.addEventListener("click", (event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            loadTicket(link.dataset.ticketNum);
+          });
+        });
+
+        closeBtn.addEventListener("click", closePanel);
+        backdrop.addEventListener("click", closePanel);
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && panel.classList.contains("is-open")) closePanel();
+        });
+      })();
+    </script>
   </body>
 </html>
 """
@@ -990,6 +1194,112 @@ def _project_stats_payload():
 
 
 
+
+
+def _extract_agent(entry):
+    text = (entry or "").strip()
+    if not text:
+        return "system"
+    if "(by " in text:
+        marker = text.split("(by ", 1)[1]
+        return marker.split(")", 1)[0].strip() or "system"
+    tokens = text.replace("✓", "").replace("🎉", "").strip().split()
+    if len(tokens) >= 2 and tokens[1].lower() in {"started", "completed", "closed", "claimed", "reopened", "blocked", "unblocked", "abandoned"}:
+        return tokens[0]
+    return "system"
+
+
+def _ticket_detail_payload(conn, project_id, ticket_num):
+    row = conn.execute(
+        """
+        SELECT id, num, title, description, status, priority, tags, depends_on, close_note, started_by, done_by, due_date
+        FROM tickets
+        WHERE project_id=? AND num=?
+        """,
+        (project_id, ticket_num),
+    ).fetchone()
+    if not row:
+        return None
+
+    ticket = _normalize_ticket(row)
+    ticket["close_note"] = row["close_note"] or ""
+
+    subtasks = [dict(r) for r in conn.execute(
+        "SELECT num, title, status FROM subtasks WHERE ticket_id=? ORDER BY num",
+        (ticket["id"],),
+    ).fetchall()]
+
+    dep_nums = ticket["dependencies"]
+    blocked_by = []
+    if dep_nums:
+        placeholders = ",".join("?" for _ in dep_nums)
+        blocked_rows = conn.execute(
+            f"SELECT num, title FROM tickets WHERE project_id=? AND num IN ({placeholders}) ORDER BY num",
+            (project_id, *dep_nums),
+        ).fetchall()
+        blocked_by = [dict(r) for r in blocked_rows]
+
+    project_ticket_rows = conn.execute(
+        "SELECT num, title, depends_on FROM tickets WHERE project_id=? AND id!=? ORDER BY num",
+        (project_id, ticket["id"]),
+    ).fetchall()
+    blocks = []
+    for r in project_ticket_rows:
+        try:
+            ticket_deps = json.loads(r["depends_on"] or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            ticket_deps = []
+        if ticket["num"] in ticket_deps:
+            blocks.append({"num": r["num"], "title": r["title"]})
+
+    history_rows = conn.execute(
+        "SELECT changed_at, old_state, new_state FROM ticket_history WHERE ticket_id=? ORDER BY id DESC",
+        (ticket["id"],),
+    ).fetchall()
+    log_rows = conn.execute(
+        "SELECT created_at, entry FROM log WHERE ticket_id=? ORDER BY id DESC",
+        (ticket["id"],),
+    ).fetchall()
+
+    audit_history = []
+    for r in history_rows:
+        old_state = r["old_state"] or "(none)"
+        new_state = r["new_state"] or ""
+        audit_history.append(
+            {
+                "timestamp": r["changed_at"],
+                "agent": "system",
+                "message": f"state transition: {old_state} → {new_state}",
+                "transition": {"old_state": old_state, "new_state": new_state},
+            }
+        )
+    for r in log_rows:
+        entry = r["entry"] or ""
+        audit_history.append(
+            {
+                "timestamp": r["created_at"],
+                "agent": _extract_agent(entry),
+                "message": entry,
+                "transition": None,
+            }
+        )
+    audit_history.sort(key=lambda item: item["timestamp"], reverse=True)
+
+    return {
+        "id": ticket["id"],
+        "num": ticket["num"],
+        "title": ticket["title"],
+        "status": ticket["status"],
+        "priority": ticket["priority"],
+        "description": ticket["description"],
+        "subtasks": subtasks,
+        "blocked_by": blocked_by,
+        "blocks": blocks,
+        "audit_history": audit_history,
+        "close_note": ticket["close_note"],
+    }
+
+
 def create_app():
     app = Flask(__name__)
 
@@ -1087,6 +1397,21 @@ def create_app():
             filters={"status": status_filter, "priority": priority_filter, "tag": tag_filter},
         )
 
+    @app.route("/api/ticket/<slug>/<int:ticket_num>")
+    def api_ticket_detail(slug, ticket_num):
+        conn = get_connection(_db_path())
+        try:
+            project = conn.execute("SELECT id, slug, title, status FROM projects WHERE slug=?", (slug,)).fetchone()
+            if not project:
+                abort(404)
+            payload = _ticket_detail_payload(conn, project["id"], ticket_num)
+            if not payload:
+                abort(404)
+            payload["project"] = {"slug": project["slug"], "title": project["title"]}
+            return payload
+        finally:
+            conn.close()
+
     @app.route("/project/<slug>/ticket/<int:ticket_num>")
     def ticket_detail(slug, ticket_num):
         conn = get_connection(_db_path())
@@ -1094,75 +1419,24 @@ def create_app():
             project = conn.execute("SELECT id, slug, title, status FROM projects WHERE slug=?", (slug,)).fetchone()
             if not project:
                 abort(404)
-
-            row = conn.execute(
-                """
-                SELECT id, num, title, description, status, priority, tags, depends_on, close_note, started_by, done_by, due_date
-                FROM tickets
-                WHERE project_id=? AND num=?
-                """,
-                (project["id"], ticket_num),
-            ).fetchone()
-            if not row:
+            payload = _ticket_detail_payload(conn, project["id"], ticket_num)
+            if not payload:
                 abort(404)
-
-            ticket = _normalize_ticket(row)
-            ticket["close_note"] = row["close_note"] or ""
-
-            subtasks = conn.execute(
-                "SELECT num, title, status FROM subtasks WHERE ticket_id=? ORDER BY num",
-                (ticket["id"],),
-            ).fetchall()
-
-            dep_nums = ticket["dependencies"]
-            blocked_by = []
-            if dep_nums:
-                placeholders = ",".join("?" for _ in dep_nums)
-                blocked_rows = conn.execute(
-                    f"SELECT num, title FROM tickets WHERE project_id=? AND num IN ({placeholders}) ORDER BY num",
-                    (project["id"], *dep_nums),
-                ).fetchall()
-                blocked_by = [dict(r) for r in blocked_rows]
-
-            project_ticket_rows = conn.execute(
-                "SELECT num, title, depends_on FROM tickets WHERE project_id=? AND id!=? ORDER BY num",
-                (project["id"], ticket["id"]),
-            ).fetchall()
-            blocks = []
-            for r in project_ticket_rows:
-                try:
-                    ticket_deps = json.loads(r["depends_on"] or "[]")
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    ticket_deps = []
-                if ticket["num"] in ticket_deps:
-                    blocks.append({"num": r["num"], "title": r["title"]})
-
-            history_rows = conn.execute(
-                "SELECT changed_at, old_state, new_state FROM ticket_history WHERE ticket_id=? ORDER BY id DESC",
-                (ticket["id"],),
-            ).fetchall()
-            log_rows = conn.execute(
-                "SELECT created_at, entry FROM log WHERE ticket_id=? ORDER BY id DESC",
-                (ticket["id"],),
-            ).fetchall()
         finally:
             conn.close()
 
-        history = []
-        for r in history_rows:
-            old_state = r["old_state"] or "(none)"
-            history.append({"changed_at": r["changed_at"], "message": f"state: {old_state} → {r['new_state']}"})
-        for r in log_rows:
-            history.append({"changed_at": r["created_at"], "message": r["entry"]})
-        history.sort(key=lambda item: item["changed_at"], reverse=True)
+        history = [
+            {"changed_at": item["timestamp"], "message": item["message"]}
+            for item in payload["audit_history"]
+        ]
 
         return render_template_string(
             TICKET_TEMPLATE,
             project=project,
-            ticket=ticket,
-            subtasks=subtasks,
-            blocked_by=blocked_by,
-            blocks=blocks,
+            ticket=payload,
+            subtasks=payload["subtasks"],
+            blocked_by=payload["blocked_by"],
+            blocks=payload["blocks"],
             history=history,
         )
 
