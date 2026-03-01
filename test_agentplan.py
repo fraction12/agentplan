@@ -649,6 +649,36 @@ def test_search_no_matches_exits_one_with_message():
 
 
 # ---------------------------------------------------------------------------
+# Dependency management
+# ---------------------------------------------------------------------------
+
+def test_undepend_removes_existing_dependency():
+    cli("create", "Dependency Project")
+    cli("ticket", "add", "dependency-project", "Base task")
+    cli("ticket", "add", "dependency-project", "Blocked task", "--depends", "1")
+
+    out, err, code = cli("undepend", "dependency-project", "2", "1")
+    assert code == 0, err
+    assert "Removed dependency #1 from ticket #2." in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT depends_on FROM tickets WHERE project_id=1 AND num=2").fetchone()
+    conn.close()
+    assert json.loads(row["depends_on"] or "[]") == []
+
+
+def test_undepend_requires_existing_dependency_link():
+    cli("create", "No Link Project")
+    cli("ticket", "add", "no-link-project", "Task A")
+    cli("ticket", "add", "no-link-project", "Task B")
+
+    out, err, code = cli("undepend", "no-link-project", "2", "1")
+    assert code == 2
+    assert out == ""
+    assert "does not depend on ticket #1" in err
+
+
+# ---------------------------------------------------------------------------
 # Delete project
 # ---------------------------------------------------------------------------
 

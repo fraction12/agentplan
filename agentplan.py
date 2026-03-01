@@ -30,6 +30,7 @@ TOP_LEVEL_COMMANDS = [
     "close",
     "note",
     "depend",
+    "undepend",
     "remove",
     "history",
     "subtask",
@@ -47,6 +48,7 @@ PROJECT_TOP_LEVEL_COMMANDS = {
     "close",
     "note",
     "depend",
+    "undepend",
     "remove",
     "history",
 }
@@ -1270,6 +1272,29 @@ def cmd_depend(args):
     conn.close()
 
 
+def cmd_undepend(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+    dep_id = int(args.dep_id)
+    resolve_ticket(conn, proj["id"], dep_id, proj["slug"])
+
+    existing = json.loads(t["depends_on"] or "[]")
+    if dep_id not in existing:
+        conn.close()
+        fail(
+            f"Ticket #{t['num']} does not depend on ticket #{dep_id}.",
+            suggestions=["Run `agentplan status <project>` to review current dependencies."],
+        )
+
+    updated = [d for d in existing if d != dep_id]
+    conn.execute("UPDATE tickets SET depends_on=? WHERE id=?", (json.dumps(updated), t["id"]))
+    conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
+    conn.commit()
+    print(f"Removed dependency #{dep_id} from ticket #{t['num']}.")
+    conn.close()
+
+
 def cmd_remove(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
@@ -1475,6 +1500,9 @@ def build_parser():
     dp = sub.add_parser("depend", help="Add ticket dependencies")
     dp.add_argument("project"); dp.add_argument("ticket_id"); dp.add_argument("--on", required=True)
 
+    udp = sub.add_parser("undepend", help="Remove a ticket dependency")
+    udp.add_argument("project"); udp.add_argument("ticket_id"); udp.add_argument("dep_id")
+
     rm = sub.add_parser("remove", help="Remove project or ticket")
     rm.add_argument("project"); rm.add_argument("--ticket")
 
@@ -1506,7 +1534,7 @@ DISPATCH = {
     "init": cmd_init, "create": cmd_create, "next": cmd_next, "claim": cmd_claim, "status": cmd_status,
     "list": cmd_list, "search": cmd_search, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
     "archive": cmd_archive,
-    "note": cmd_note, "depend": cmd_depend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version,
+    "note": cmd_note, "depend": cmd_depend, "undepend": cmd_undepend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version,
     "completion": cmd_completion, "__complete": cmd_internal_complete,
 }
 
