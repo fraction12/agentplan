@@ -5,31 +5,45 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentplan"
 version = "0.3.3"
-description = "Multi-agent task queue and project planner CLI"
+description = "A shared to-do list for AI agents. Dependency-aware task queue, zero dependencies, pure Python."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [{name = "Dushyant Garg", email = "dushyantgarg3@gmail.com"}]
-keywords = ["cli", "agent", "project-management", "task-queue", "ai"]
+keywords = [
+    "ai-agent", "agent", "multi-agent", "task-queue", "project-management",
+    "cli", "automation", "orchestration", "ticket-tracking", "dependency-graph",
+    "llm", "claude", "codex", "openai", "anthropic", "ai-coordination",
+    "agent-framework", "sqlite", "zero-dependencies",
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development",
+    "Topic :: Software Development :: Build Tools",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Distributed Computing",
     "Topic :: Utilities",
 ]
 
 [project.urls]
-Homepage = "https://github.com/fraction12/agentplan"
+Homepage = "https://fraction12.github.io/agentplan/"
 Repository = "https://github.com/fraction12/agentplan"
+Documentation = "https://fraction12.github.io/agentplan/quickstart.html"
 "Bug Tracker" = "https://github.com/fraction12/agentplan/issues"
+Changelog = "https://github.com/fraction12/agentplan/blob/main/CHANGELOG.md"
 
 [project.scripts]
 agentplan = "agentplan:main"

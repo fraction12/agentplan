@@ -3,7 +3,7 @@
 agentplan is a CLI task-queue for AI agents to manage multi-session projects with tickets, dependency graphs, and progress logs.
 It is designed for terminal-native automation loops where multiple agents share one persistent queue.
 
-Version in this repository: `0.2.0`
+Version in this repository: `0.3.3`
 
 ## Installation
 

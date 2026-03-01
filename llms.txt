@@ -1,42 +1,98 @@
 # agentplan
 
-agentplan is a CLI task queue for AI agents to coordinate multi-session projects.
-It stores projects and tickets in SQLite, supports ticket dependencies, and keeps progress logs and attachments so multiple agent runs can share state.
+> A shared to-do list for AI agents. Zero dependencies, pure Python.
 
-## Core model
-- Project: a named workstream (`active`, `completed`, `abandoned`, etc.).
-- Ticket: numbered task within a project (`pending`, `in-progress`, `done`, `skipped`).
-- Dependencies: ticket numbers that must be done/skipped before a ticket is unblocked.
-- Log/Attachment: timeline entries and references linked to project or ticket.
+agentplan is a CLI task queue that gives AI agents a persistent, dependency-aware ticket system. Any agent that can run shell commands can use it — no SDK, no framework, no runtime required.
+
+## When to use agentplan
+
+Use agentplan when you need to:
+- Coordinate multiple AI agents working on the same project
+- Break complex work into tickets with dependencies that auto-unblock
+- Track which agent did what (attribution on every ticket)
+- Run autonomous build loops where agents claim and complete work
+- Give an agent a structured backlog instead of free-form instructions
+
+## Install
+
+```bash
+pip install agentplan
+```
+
+## Quick start (copy-paste this)
+
+```bash
+# Create a project with tickets
+agentplan create "Build my app" \
+  --ticket "Set up database schema" \
+  --ticket "Build API endpoints" \
+  --ticket "Write tests"
+
+# Add dependencies — tests need API
+agentplan depend build-my-app 3 --on 2
+
+# Get the next unblocked ticket
+agentplan next build-my-app
+# → [1] Set up database schema
+
+# Mark it done
+agentplan ticket done build-my-app 1 --agent my-agent --note "Schema created"
+
+# Check status
+agentplan status build-my-app
+```
+
+## The agent loop pattern
+
+```
+1. ticket = agentplan next <project>        # What should I work on?
+2. [do the work]                             # Agent executes the task
+3. agentplan ticket done <project> <id>      # Mark complete
+4. agentplan ticket add <project> "..."      # Add follow-up work if needed
+5. repeat until queue is empty
+```
 
 ## Key commands
-- `agentplan create "Build my app" --ticket "Schema" --ticket "API"`
-- `agentplan ticket add build-my-app "Write tests" --depends 2`
-- `agentplan depend build-my-app 4 --on 1,2,3`
-- `agentplan next build-my-app`
-- `agentplan status build-my-app --format compact`
-- `agentplan ticket start build-my-app 3`
-- `agentplan ticket done build-my-app 3`
-- `agentplan ticket skip build-my-app 5`
-- `agentplan log build-my-app "Implemented endpoint contract" --ticket 3`
-- `agentplan attach build-my-app "PR" https://github.com/org/repo/pull/123 --ticket 3`
-- `agentplan list --status active`
-- `agentplan close build-my-app`
-- `agentplan remove build-my-app --ticket 8`
 
-## Typical agent loop
-1. `agentplan next <project>` to pick unblocked work.
-2. Execute task in codebase.
-3. `agentplan ticket done <project> <id>` when complete.
-4. Add follow-up work with `ticket add` and progress context with `log`.
+| Command | What it does |
+|---------|-------------|
+| `agentplan create <title>` | Create a project |
+| `agentplan ticket add <project> <title>` | Add a ticket (supports --priority, --tag, --desc, --due) |
+| `agentplan next <project>` | Get next unblocked ticket (respects priority + deps) |
+| `agentplan ticket done <project> <id>` | Mark ticket done (supports --agent, --note) |
+| `agentplan depend <project> <id> --on <id>` | Add dependency |
+| `agentplan status <project>` | Show project progress |
+| `agentplan search "<query>"` | Search tickets across all projects |
+| `agentplan claim <project>` | Atomically claim next ticket (parallel-safe) |
+| `agentplan dashboard` | Launch web UI (requires flask) |
 
 ## Output formats
-- `status --format full`: detailed board view.
-- `status --format compact`: short token-efficient line for prompt injection.
-- `status --format json`: machine-readable project/ticket payload.
+
+- `--format compact` — single line, token-efficient for prompt injection
+- `--format json` — machine-readable for programmatic use
+- Default — human-readable board view
+
+## Features
+
+- Dependency graph with auto-unblock
+- Priority levels (high/medium/low) with smart ordering
+- Tags for filtering (--tag backend,urgent)
+- Subtasks within tickets
+- Due dates with overdue prioritization
+- Audit log tracking all state transitions
+- Agent attribution (--agent flag on start/done)
+- Parallel-safe claims (SQLite BEGIN IMMEDIATE)
+- Built-in web dashboard with live SSE updates
+- Shell completions (bash/zsh/fish)
+- Zero runtime dependencies (Flask optional for dashboard)
 
 ## Configuration
-- `AGENTPLAN_DIR` (default `~/.agentplan`)
-- `AGENTPLAN_DB` (default `~/.agentplan/agentplan.db`)
 
-Use `agentplan --help` and subcommand help for full syntax.
+- `AGENTPLAN_DB` — override database path (default: ~/.agentplan/agentplan.db)
+- `AGENTPLAN_DIR` — override data directory (default: ~/.agentplan)
+
+## Links
+
+- PyPI: https://pypi.org/project/agentplan/
+- GitHub: https://github.com/fraction12/agentplan
+- Docs: https://fraction12.github.io/agentplan/quickstart.html
