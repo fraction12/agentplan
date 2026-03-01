@@ -15,12 +15,11 @@
   <a href="#the-agent-loop">The Agent Loop</a> ·
   <a href="#commands">Commands</a> ·
   <a href="#why-agentplan">Why agentplan?</a> ·
-  <a href="https://discord.com/invite/clawd">Community</a>
+  <a href="https://github.com/fraction12/agentplan/issues">Issues</a>
 </p>
 
 ## Agent Loop Demo (Terminal Recording Preview)
 
-<!-- TODO: insert terminal recording GIF here -->
 
 ```text
 $ agentplan create "Launch docs portal" \
@@ -80,7 +79,7 @@ $ agentplan next launch-docs-portal --format compact
 
 Multiple AI agents. One shared work queue. Zero infrastructure.
 
-`agentplan` is a CLI that gives your agents a persistent task queue with dependency resolution. Any agent that can run shell commands can use it — Claude Code, Codex, GPT, Cursor, Windsurf, [OpenClaw](https://openclaw.ai), or your own.
+`agentplan` is a CLI that gives your agents a persistent task queue with dependency resolution. Any agent that can run shell commands can use it — Claude Code, Codex, OpenClaw, or any CLI-capable agent.
 
 No SDK. No framework. No Python dependencies beyond stdlib. Just three commands:
 
