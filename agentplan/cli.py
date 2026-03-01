@@ -31,7 +31,7 @@ from agentplan.db import (
     unique_slug,
 )
 
-__version__ = "0.3.8"
+__version__ = "0.3.9"
 
 # ---------------------------------------------------------------------------
 # Input validation limits
