@@ -751,7 +751,7 @@ PROJECT_TEMPLATE = """
         font-family: var(--font-mono);
         font-size: 0.76rem;
       }
-      .kanban-column-body { padding: 10px; display: grid; gap: 10px; }
+      .kanban-column-body { padding: 10px; display: grid; gap: 10px; overflow-y: auto; max-height: 70vh; }
       .kanban-empty { color: var(--color-muted); font-size: 0.84rem; margin: 4px; }
       .ticket-link { text-decoration: none; color: inherit; display: block; cursor: pointer; transition: transform 0.42s ease, opacity 0.3s ease; }
       .ticket-card {
@@ -801,7 +801,7 @@ PROJECT_TEMPLATE = """
 
       .ticket-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
       .ticket-id { font-family: var(--font-mono); color: var(--color-muted); font-size: 0.75rem; }
-      .ticket-title { margin: 2px 0 0; font-size: 0.94rem; font-weight: 600; line-height: 1.32; }
+      .ticket-title { margin: 2px 0 0; font-size: 0.94rem; font-weight: 600; line-height: 1.32; word-break: break-word; overflow: hidden; }
       .ticket-due { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-muted); white-space: nowrap; }
       .ticket-due.overdue { color: var(--color-due-overdue); font-weight: 600; }
       .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
@@ -1893,6 +1893,8 @@ def _project_board_payload(slug, status_filter="", priority_filter="", tag_filte
     finally:
         conn.close()
 
+    ticket_status_map = {row["num"]: row["status"] for row in rows}
+
     grouped = {s: [] for s in KANBAN_STATUS_ORDER}
     for row in rows:
         ticket = _normalize_ticket(row)
@@ -1902,7 +1904,11 @@ def _project_board_payload(slug, status_filter="", priority_filter="", tag_filte
         ticket["subtask_pct"] = int(round((subtask["done"] / subtask["total"]) * 100)) if subtask["total"] else 0
         ticket["active_agent"] = bool(ticket["assignee"] and ticket["status"] == "in-progress")
 
-        is_blocked = bool(ticket["dependencies"]) and ticket["status"] == "pending"
+        is_blocked = (
+            ticket["status"] == "pending"
+            and bool(ticket["dependencies"])
+            and any(ticket_status_map.get(dep_num) not in ("done", "skipped") for dep_num in ticket["dependencies"])
+        )
         group_key = "blocked" if is_blocked else ticket["status"]
         if group_key == "skipped":
             group_key = "done"
@@ -1948,6 +1954,10 @@ def create_app():
                 activity_payload = _activity_feed_payload()
                 yield f"event: project_stats\\ndata: {json.dumps(stats_payload)}\\n\\n"
                 yield f"event: activity_feed\\ndata: {json.dumps(activity_payload)}\\n\\n"
+                if project_slug:
+                    board_payload = _project_board_payload(project_slug, status_filter, priority_filter, tag_filter)
+                    if board_payload is not None:
+                        yield f"event: project_board\\ndata: {json.dumps(board_payload)}\\n\\n"
                 time.sleep(interval)
 
         return Response(event_stream(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache"})
@@ -1997,6 +2007,8 @@ def create_app():
         finally:
             conn.close()
 
+        ticket_status_map = {row["num"]: row["status"] for row in rows}
+
         grouped = {s: [] for s in KANBAN_STATUS_ORDER}
         done_count = 0
         for row in rows:
@@ -2010,7 +2022,11 @@ def create_app():
             ticket["subtask_pct"] = int(round((subtask["done"] / subtask["total"]) * 100)) if subtask["total"] else 0
             ticket["active_agent"] = bool(ticket["assignee"] and ticket["status"] == "in-progress")
 
-            is_blocked = bool(ticket["dependencies"]) and ticket["status"] == "pending"
+            is_blocked = (
+                ticket["status"] == "pending"
+                and bool(ticket["dependencies"])
+                and any(ticket_status_map.get(dep_num) not in ("done", "skipped") for dep_num in ticket["dependencies"])
+            )
             group_key = "blocked" if is_blocked else ticket["status"]
             if group_key == "skipped":
                 group_key = "done"
