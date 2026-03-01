@@ -18,6 +18,64 @@
   <a href="https://discord.com/invite/clawd">Community</a>
 </p>
 
+## Agent Loop Demo (Terminal Recording Preview)
+
+<!-- TODO: insert terminal recording GIF here -->
+
+```text
+$ agentplan create "Launch docs portal" \
+    --ticket "Initialize repo + CI" \
+    --ticket "Build docs site shell" \
+    --ticket "Write auth middleware" \
+    --ticket "Add onboarding guide"
+✓ Created project: launch-docs-portal
+
+# agent-a (builder) claims the next highest-priority unblocked ticket
+$ agentplan next launch-docs-portal --format compact
+📋 launch-docs-portal: 0/4 done | Next: [1] Initialize repo + CI
+
+$ agentplan ticket start launch-docs-portal 1 --agent agent-a
+▶ Ticket #1 started (by agent-a)
+
+$ codex exec --full-auto "Initialize repo + CI"
+... creates repo scaffolding, CI workflow, pyproject ...
+
+$ agentplan ticket done launch-docs-portal 1 --agent agent-a
+✓ Ticket #1 marked done (by agent-a)
+
+# agent-b (reviewer) checks status and discovers follow-up work
+$ agentplan status launch-docs-portal
+1/4 done, 0 blocked, next: [2] Build docs site shell
+  ✓ 1. Initialize repo + CI
+  ☐ 2. Build docs site shell
+  ☐ 3. Write auth middleware
+  ☐ 4. Add onboarding guide
+
+$ agentplan ticket add launch-docs-portal \
+    "Harden CI cache keys to avoid stale lockfile reuse"
+✓ Added ticket #5
+
+$ agentplan depend launch-docs-portal 5 --on 1
+✓ Added dependency: #5 depends on #1
+
+# agent-c (security) takes the newly discovered work
+$ agentplan next launch-docs-portal --tag security --format compact
+📋 launch-docs-portal: 1/5 done | Next: [5] Harden CI cache keys to avoid stale lockfile reuse
+
+$ agentplan ticket start launch-docs-portal 5 --agent agent-c
+▶ Ticket #5 started (by agent-c)
+
+$ codex exec --full-auto "Harden CI cache keys to avoid stale lockfile reuse"
+... updates workflow cache key + lockfile checks ...
+
+$ agentplan ticket done launch-docs-portal 5 --agent agent-c
+✓ Ticket #5 marked done (by agent-c)
+
+# loop continues until queue drains
+$ agentplan next launch-docs-portal --format compact
+📋 launch-docs-portal: 2/5 done | Next: [2] Build docs site shell
+```
+
 ---
 
 Multiple AI agents. One shared work queue. Zero infrastructure.

@@ -75,6 +75,15 @@ def test_version():
     assert agentplan.__version__ in out
 
 
+def test_readme_contains_agent_loop_demo_section():
+    readme_path = Path(__file__).resolve().parent / "README.md"
+    assert readme_path.exists(), "README.md should exist at repository root."
+    content = readme_path.read_text(encoding="utf-8")
+    assert "## Agent Loop Demo (Terminal Recording Preview)" in content
+    assert "<!-- TODO: insert terminal recording GIF here -->" in content
+    assert "agent loop" in content.lower()
+
+
 def test_invalid_arguments_are_human_friendly():
     out, err, code = cli("ticket", "add")
     assert code == 2
