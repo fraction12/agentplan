@@ -84,6 +84,15 @@ def test_readme_contains_agent_loop_demo_section():
     assert "agent loop" in content.lower()
 
 
+def test_changelog_exists_and_has_v020_header():
+    changelog_path = Path(__file__).resolve().parent / "CHANGELOG.md"
+    assert changelog_path.exists(), "CHANGELOG.md should exist at repository root."
+    content = changelog_path.read_text(encoding="utf-8")
+    assert "# Changelog" in content
+    assert "## [Unreleased]" in content
+    assert "## [0.2.0]" in content
+
+
 def test_invalid_arguments_are_human_friendly():
     out, err, code = cli("ticket", "add")
     assert code == 2
