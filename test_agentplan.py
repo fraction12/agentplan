@@ -178,6 +178,36 @@ def test_status_shows_priority():
     assert "priority: high" in out.lower()
 
 
+def test_status_summary_line_with_blocked_and_next():
+    cli("create", "Summary Project")
+    cli("ticket", "add", "summary-project", "Setup env", "--priority", "high")
+    cli("ticket", "add", "summary-project", "Fix cache", "--priority", "medium")
+    cli("ticket", "add", "summary-project", "Deploy", "--depends", "1", "--priority", "low")
+    cli("ticket", "done", "summary-project", "1")
+    out, err, code = cli("status", "summary-project")
+    assert code == 0, err
+    first_line = out.strip().splitlines()[0]
+    assert first_line == "1/3 done, 0 blocked, next: [2] Fix cache"
+
+
+def test_status_summary_counts_blocked():
+    cli("create", "Blocked Summary Project")
+    cli("ticket", "add", "blocked-summary-project", "Base task")
+    cli("ticket", "add", "blocked-summary-project", "Blocked task", "--depends", "1")
+    out, err, code = cli("status", "blocked-summary-project")
+    assert code == 0, err
+    first_line = out.strip().splitlines()[0]
+    assert first_line == "0/2 done, 1 blocked, next: [1] Base task"
+
+
+def test_status_summary_shows_no_next_for_empty_project():
+    cli("create", "Empty Summary Project")
+    out, err, code = cli("status", "empty-summary-project")
+    assert code == 0, err
+    first_line = out.strip().splitlines()[0]
+    assert first_line == "0/0 done, 0 blocked, next: none"
+
+
 # ---------------------------------------------------------------------------
 # Delete project
 # ---------------------------------------------------------------------------

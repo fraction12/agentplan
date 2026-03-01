@@ -516,20 +516,29 @@ def cmd_status(args):
         done_count = sum(1 for t in tickets if t["status"] in ("done", "skipped"))
         total = len(tickets)
         done_nums = {t["num"] for t in tickets if t["status"] in ("done", "skipped")}
+        open_tickets = [t for t in tickets if t["status"] in ("pending", "in-progress")]
+        blocked_count = sum(1 for t in open_tickets if _is_blocked(t, done_nums))
+        unblocked_open = [t for t in open_tickets if not _is_blocked(t, done_nums)]
+        next_ticket = _sort_next_items(unblocked_open)[0] if unblocked_open else None
 
         if fmt == "json":
             data = {
                 "id": p["id"], "slug": p["slug"], "title": p["title"],
                 "status": p["status"], "notes": p["notes"],
                 "done": done_count, "total": total,
+                "blocked": blocked_count,
+                "next": (
+                    {"num": next_ticket["num"], "title": next_ticket["title"]}
+                    if next_ticket
+                    else None
+                ),
                 "tickets": [dict(t) for t in tickets],
             }
             print(json.dumps(data, indent=2))
             continue
 
         if fmt == "compact":
-            items = [t for t in tickets if t["status"] == "in-progress"] + get_unblocked(tickets)
-            items = _sort_next_items(items)
+            items = _sort_next_items(unblocked_open)
             nxt = ", ".join(
                 f"[{t['num']}] {t['title']} {'▶' if t['status']=='in-progress' else '○'} ({_priority_label(t['priority'])})"
                 for t in items[:3]
@@ -541,6 +550,9 @@ def cmd_status(args):
             continue
 
         # Full
+        summary = f"{done_count}/{total} done, {blocked_count} blocked, next: "
+        summary += f"[{next_ticket['num']}] {next_ticket['title']}" if next_ticket else "none"
+        print(summary)
         print(f"{p['title']} [{p['status']}] — {done_count}/{total} done")
         for t in tickets:
             blocked = _is_blocked(t, done_nums)
