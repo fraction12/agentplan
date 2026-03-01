@@ -123,6 +123,49 @@ def test_mark_ticket_done():
     assert code == 0, err
 
 
+def test_subtask_add_and_list():
+    cli("create", "Subtask Project")
+    cli("ticket", "add", "subtask-project", "Implement feature")
+    out, err, code = cli("subtask", "add", "subtask-project", "1", "Write tests")
+    assert code == 0, err
+    assert "added subtask #1" in out.lower()
+    out, err, code = cli("subtask", "list", "subtask-project", "1")
+    assert code == 0, err
+    assert "1. Write tests" in out
+
+
+def test_subtask_done_and_persisted():
+    cli("create", "Subtask Done Project")
+    cli("ticket", "add", "subtask-done-project", "Implement feature")
+    cli("subtask", "add", "subtask-done-project", "1", "Write tests")
+    out, err, code = cli("subtask", "done", "subtask-done-project", "1", "1")
+    assert code == 0, err
+    assert "subtask #1" in out.lower()
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status FROM subtasks WHERE ticket_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["status"] == "done"
+
+
+def test_status_shows_subtask_progress():
+    cli("create", "Subtask Status Project")
+    cli("ticket", "add", "subtask-status-project", "Implement feature")
+    cli("subtask", "add", "subtask-status-project", "1", "Write tests")
+    cli("subtask", "add", "subtask-status-project", "1", "Update docs")
+    cli("subtask", "done", "subtask-status-project", "1", "1")
+    out, err, code = cli("status", "subtask-status-project")
+    assert code == 0, err
+    assert "[1/2]" in out
+
+
+def test_subtask_done_invalid_subtask_id():
+    cli("create", "Subtask Invalid Project")
+    cli("ticket", "add", "subtask-invalid-project", "Implement feature")
+    out, err, code = cli("subtask", "done", "subtask-invalid-project", "1", "999")
+    assert code == 2
+    assert "subtask #999 not found" in err.lower()
+
+
 def test_add_ticket_priority_persisted():
     cli("create", "Priority Project")
     out, err, code = cli("ticket", "add", "priority-project", "Important work", "--priority", "high")

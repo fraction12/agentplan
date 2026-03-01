@@ -77,6 +77,16 @@ def init_db(conn):
             entry TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
         );
+        CREATE TABLE IF NOT EXISTS subtasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            num INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
+            completed_at TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_subtask_ticket_num ON subtasks(ticket_id, num);
     """)
     # Migration: add num column if missing (upgrade from 0.1.0)
     try:
@@ -115,6 +125,20 @@ def init_db(conn):
         conn.execute("ALTER TABLE tickets ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
         conn.execute("UPDATE tickets SET tags='' WHERE tags IS NULL")
         conn.commit()
+    # Migration: create subtasks table/index if missing
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS subtasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            num INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
+            completed_at TEXT
+        )
+    """)
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_subtask_ticket_num ON subtasks(ticket_id, num)")
+    conn.commit()
 
 
 def _now():
@@ -131,6 +155,14 @@ def _next_ticket_num(conn, project_id):
     """Get next ticket number for a project (1-based, sequential)."""
     row = conn.execute(
         "SELECT MAX(num) FROM tickets WHERE project_id=?", (project_id,)
+    ).fetchone()
+    return (row[0] or 0) + 1
+
+
+def _next_subtask_num(conn, ticket_id):
+    """Get next subtask number for a ticket (1-based, sequential)."""
+    row = conn.execute(
+        "SELECT MAX(num) FROM subtasks WHERE ticket_id=?", (ticket_id,)
     ).fetchone()
     return (row[0] or 0) + 1
 
@@ -185,6 +217,25 @@ def resolve_ticket(conn, project_id, num_str, slug=""):
     ).fetchone()
     if not row:
         print(f"Error: Ticket #{num} not found in project '{slug}'.", file=sys.stderr)
+        sys.exit(2)
+    return row
+
+
+def resolve_subtask(conn, ticket_id, num_str, ticket_num, slug=""):
+    """Resolve a subtask by its per-ticket number."""
+    try:
+        num = int(num_str)
+    except (ValueError, TypeError):
+        print(f"Error: Invalid subtask number '{num_str}'.", file=sys.stderr)
+        sys.exit(2)
+    row = conn.execute(
+        "SELECT * FROM subtasks WHERE ticket_id=? AND num=?", (ticket_id, num)
+    ).fetchone()
+    if not row:
+        print(
+            f"Error: Subtask #{num} not found for ticket #{ticket_num} in project '{slug}'.",
+            file=sys.stderr,
+        )
         sys.exit(2)
     return row
 
@@ -291,6 +342,34 @@ def _ticket_has_tag(ticket, tag):
     tags = ticket["tags"] or ""
     target = tag.strip().lower()
     return f",{target}," in f",{tags},"
+
+
+def _get_subtask_progress_map(conn, ticket_ids):
+    if not ticket_ids:
+        return {}
+    placeholders = ",".join("?" for _ in ticket_ids)
+    rows = conn.execute(
+        f"""
+        SELECT
+            ticket_id,
+            COUNT(*) AS total,
+            SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done
+        FROM subtasks
+        WHERE ticket_id IN ({placeholders})
+        GROUP BY ticket_id
+        """,
+        ticket_ids,
+    ).fetchall()
+    return {
+        row["ticket_id"]: {"done": int(row["done"] or 0), "total": int(row["total"] or 0)}
+        for row in rows
+    }
+
+
+def _subtask_progress_label(progress):
+    if not progress or progress["total"] == 0:
+        return ""
+    return f"[{progress['done']}/{progress['total']}]"
 
 
 # ---------------------------------------------------------------------------
@@ -477,10 +556,13 @@ def cmd_ticket_list(args):
         ).fetchall()
         if r["status"] in ("done", "skipped")
     }
+    subtask_progress = _get_subtask_progress_map(conn, [t["id"] for t in tickets])
     for t in tickets:
         blocked = _is_blocked(t, done_nums)
         icon = _ticket_icon(t["status"], blocked)
-        line = f"  {icon} {t['num']}. {t['title']} [priority: {_priority_label(t['priority'])}]"
+        progress = _subtask_progress_label(subtask_progress.get(t["id"]))
+        progress_segment = f" {progress}" if progress else ""
+        line = f"  {icon} {t['num']}. {t['title']}{progress_segment} [priority: {_priority_label(t['priority'])}]"
         if t["status"] == "in-progress":
             line += " (in-progress)"
         elif blocked and t["status"] == "pending":
@@ -541,6 +623,7 @@ def cmd_status(args):
         all_tickets = conn.execute(
             "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
         ).fetchall()
+        subtask_progress = _get_subtask_progress_map(conn, [t["id"] for t in all_tickets])
         tickets = [t for t in all_tickets if _ticket_has_tag(t, tag_filter)] if tag_filter else all_tickets
         done_nums = {t["num"] for t in all_tickets if t["status"] in ("done", "skipped")}
         done_count = sum(1 for t in tickets if t["status"] in ("done", "skipped"))
@@ -561,17 +644,29 @@ def cmd_status(args):
                     if next_ticket
                     else None
                 ),
-                "tickets": [dict(t) for t in tickets],
+                "tickets": [
+                    {
+                        **dict(t),
+                        "subtasks_done": subtask_progress.get(t["id"], {}).get("done", 0),
+                        "subtasks_total": subtask_progress.get(t["id"], {}).get("total", 0),
+                    }
+                    for t in tickets
+                ],
             }
             print(json.dumps(data, indent=2))
             continue
 
         if fmt == "compact":
             items = _sort_next_items(unblocked_open)
-            nxt = ", ".join(
-                f"[{t['num']}] {t['title']} {'▶' if t['status']=='in-progress' else '○'} ({_priority_label(t['priority'])})"
-                for t in items[:3]
-            )
+            parts = []
+            for t in items[:3]:
+                progress = _subtask_progress_label(subtask_progress.get(t["id"]))
+                progress_segment = f" {progress}" if progress else ""
+                marker = "▶" if t["status"] == "in-progress" else "○"
+                parts.append(
+                    f"[{t['num']}] {t['title']}{progress_segment} {marker} ({_priority_label(t['priority'])})"
+                )
+            nxt = ", ".join(parts)
             line = f"📋 {p['title']}: {done_count}/{total} done"
             if nxt:
                 line += f" | Next: {nxt}"
@@ -586,7 +681,9 @@ def cmd_status(args):
         for t in tickets:
             blocked = _is_blocked(t, done_nums)
             icon = _ticket_icon(t["status"], blocked)
-            line = f"  {icon} {t['num']}. {t['title']} [priority: {_priority_label(t['priority'])}]"
+            progress = _subtask_progress_label(subtask_progress.get(t["id"]))
+            progress_segment = f" {progress}" if progress else ""
+            line = f"  {icon} {t['num']}. {t['title']}{progress_segment} [priority: {_priority_label(t['priority'])}]"
             if t["status"] == "in-progress":
                 line += " (in-progress)"
             elif blocked and t["status"] == "pending":
@@ -760,6 +857,54 @@ def cmd_version(_args):
     print(f"agentplan {__version__}")
 
 
+def cmd_subtask_add(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+    num = _next_subtask_num(conn, ticket["id"])
+    conn.execute(
+        "INSERT INTO subtasks (ticket_id, num, title) VALUES (?,?,?)",
+        (ticket["id"], num, args.title),
+    )
+    conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
+    conn.commit()
+    print(f"Added subtask #{num} to ticket #{ticket['num']}: {args.title}")
+    conn.close()
+
+
+def cmd_subtask_done(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+    subtask = resolve_subtask(conn, ticket["id"], args.subtask_id, ticket["num"], proj["slug"])
+    conn.execute(
+        "UPDATE subtasks SET status='done', completed_at=? WHERE id=?",
+        (_now(), subtask["id"]),
+    )
+    conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
+    conn.commit()
+    print(f"✓ Subtask #{subtask['num']} on ticket #{ticket['num']}: {subtask['title']} → done")
+    conn.close()
+
+
+def cmd_subtask_list(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+    subtasks = conn.execute(
+        "SELECT * FROM subtasks WHERE ticket_id=? ORDER BY num",
+        (ticket["id"],),
+    ).fetchall()
+    if not subtasks:
+        print(f"No subtasks found for ticket #{ticket['num']}.")
+        conn.close()
+        return
+    for s in subtasks:
+        icon = "✓" if s["status"] == "done" else "○"
+        print(f"  {icon} {s['num']}. {s['title']}")
+    conn.close()
+
+
 # ---------------------------------------------------------------------------
 # CLI parser
 # ---------------------------------------------------------------------------
@@ -831,6 +976,15 @@ def build_parser():
     rm = sub.add_parser("remove", help="Remove project or ticket")
     rm.add_argument("project"); rm.add_argument("--ticket")
 
+    sp = sub.add_parser("subtask", help="Manage ticket subtasks")
+    sps = sp.add_subparsers(dest="subtask_command")
+    sa = sps.add_parser("add")
+    sa.add_argument("project"); sa.add_argument("ticket_id"); sa.add_argument("title")
+    sd = sps.add_parser("done")
+    sd.add_argument("project"); sd.add_argument("ticket_id"); sd.add_argument("subtask_id")
+    sl = sps.add_parser("list")
+    sl.add_argument("project"); sl.add_argument("ticket_id")
+
     return p
 
 
@@ -846,6 +1000,12 @@ TICKET_DISPATCH = {
     "update": cmd_ticket_update, "edit": cmd_ticket_update,
 }
 
+SUBTASK_DISPATCH = {
+    "add": cmd_subtask_add,
+    "done": cmd_subtask_done,
+    "list": cmd_subtask_list,
+}
+
 
 def main():
     parser = build_parser()
@@ -858,6 +1018,10 @@ def main():
             if not getattr(args, "ticket_command", None):
                 parser.parse_args(["ticket", "--help"])
             TICKET_DISPATCH[args.ticket_command](args)
+        elif args.command == "subtask":
+            if not getattr(args, "subtask_command", None):
+                parser.parse_args(["subtask", "--help"])
+            SUBTASK_DISPATCH[args.subtask_command](args)
         else:
             DISPATCH[args.command](args)
     except SystemExit:
