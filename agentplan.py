@@ -13,6 +13,43 @@ from datetime import datetime
 __version__ = "0.2.0"
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3}
 PRIORITY_CHOICES = ["high", "medium", "low", "none"]
+COMPLETION_SHELLS = ["bash", "zsh", "fish"]
+TOP_LEVEL_COMMANDS = [
+    "init",
+    "version",
+    "create",
+    "ticket",
+    "next",
+    "claim",
+    "status",
+    "search",
+    "list",
+    "archive",
+    "attach",
+    "log",
+    "close",
+    "note",
+    "depend",
+    "remove",
+    "history",
+    "subtask",
+    "completion",
+]
+TICKET_COMMANDS = ["add", "update", "edit", "done", "skip", "start", "list"]
+SUBTASK_COMMANDS = ["add", "done", "list"]
+PROJECT_TOP_LEVEL_COMMANDS = {
+    "status",
+    "next",
+    "claim",
+    "archive",
+    "attach",
+    "log",
+    "close",
+    "note",
+    "depend",
+    "remove",
+    "history",
+}
 
 
 class CliError(Exception):
@@ -468,6 +505,90 @@ def _subtask_progress_label(progress):
     if not progress or progress["total"] == 0:
         return ""
     return f"[{progress['done']}/{progress['total']}]"
+
+
+def _completion_bash_script():
+    return """# bash completion for agentplan
+_agentplan_completion() {
+    local cur args out
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    args=("${COMP_WORDS[@]:1:$COMP_CWORD}")
+    out="$(agentplan __complete bash "$cur" "${args[@]}" 2>/dev/null)"
+    COMPREPLY=($(compgen -W "$out" -- "$cur"))
+}
+complete -F _agentplan_completion agentplan
+"""
+
+
+def _completion_zsh_script():
+    return """#compdef agentplan
+_agentplan_completion() {
+    local cur out
+    cur="${words[CURRENT]}"
+    out="$(agentplan __complete zsh "$cur" "${words[@]:2:$((CURRENT-2))}" 2>/dev/null)"
+    compadd -- ${(f)out}
+}
+compdef _agentplan_completion agentplan
+"""
+
+
+def _completion_fish_script():
+    return """function __agentplan_completion
+    set -l tokens (commandline -opc)
+    set -e tokens[1]
+    set -l current (commandline -ct)
+    if test (count $tokens) -gt 0
+        set -e tokens[-1]
+    end
+    agentplan __complete fish "$current" $tokens
+end
+complete -c agentplan -f -a "(__agentplan_completion)"
+"""
+
+
+def _completion_project_slugs():
+    try:
+        conn = get_connection()
+        rows = conn.execute("SELECT slug FROM projects ORDER BY slug").fetchall()
+        conn.close()
+        return [row["slug"] for row in rows]
+    except sqlite3.Error:
+        return []
+
+
+def _completion_filter(items, current):
+    prefix = current or ""
+    return [item for item in items if item.startswith(prefix)]
+
+
+def _completion_suggestions(words, current):
+    if not words:
+        return _completion_filter(TOP_LEVEL_COMMANDS, current)
+
+    command = words[0]
+    if command == "completion":
+        if len(words) == 1:
+            return _completion_filter(COMPLETION_SHELLS, current)
+        return []
+
+    if command == "ticket":
+        if len(words) == 1:
+            return _completion_filter(TICKET_COMMANDS, current)
+        if len(words) == 2 and words[1] in TICKET_COMMANDS:
+            return _completion_filter(_completion_project_slugs(), current)
+        return []
+
+    if command == "subtask":
+        if len(words) == 1:
+            return _completion_filter(SUBTASK_COMMANDS, current)
+        if len(words) == 2 and words[1] in SUBTASK_COMMANDS:
+            return _completion_filter(_completion_project_slugs(), current)
+        return []
+
+    if command in PROJECT_TOP_LEVEL_COMMANDS and len(words) == 1:
+        return _completion_filter(_completion_project_slugs(), current)
+
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -1199,6 +1320,20 @@ def cmd_version(_args):
     print(f"agentplan {__version__}")
 
 
+def cmd_completion(args):
+    scripts = {
+        "bash": _completion_bash_script,
+        "zsh": _completion_zsh_script,
+        "fish": _completion_fish_script,
+    }
+    print(scripts[args.shell](), end="")
+
+
+def cmd_internal_complete(args):
+    suggestions = _completion_suggestions(args.words, args.current)
+    print("\n".join(sorted(set(suggestions))))
+
+
 def cmd_subtask_add(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
@@ -1356,6 +1491,14 @@ def build_parser():
     sl = sps.add_parser("list")
     sl.add_argument("project"); sl.add_argument("ticket_id")
 
+    cp = sub.add_parser("completion", help="Print shell completion script")
+    cp.add_argument("shell", choices=COMPLETION_SHELLS)
+
+    internal = sub.add_parser("__complete", help=argparse.SUPPRESS)
+    internal.add_argument("shell", choices=COMPLETION_SHELLS, help=argparse.SUPPRESS)
+    internal.add_argument("current", help=argparse.SUPPRESS)
+    internal.add_argument("words", nargs="*", help=argparse.SUPPRESS)
+
     return p
 
 
@@ -1364,6 +1507,7 @@ DISPATCH = {
     "list": cmd_list, "search": cmd_search, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
     "archive": cmd_archive,
     "note": cmd_note, "depend": cmd_depend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version,
+    "completion": cmd_completion, "__complete": cmd_internal_complete,
 }
 
 TICKET_DISPATCH = {

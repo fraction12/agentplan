@@ -799,3 +799,59 @@ def test_history_command_shows_ticket_audit_trail():
     assert "- -> created" in out
     assert "pending -> started" in out
     assert "in-progress -> done" in out
+
+
+# ---------------------------------------------------------------------------
+# Shell completion
+# ---------------------------------------------------------------------------
+
+def test_completion_bash_script_output():
+    out, err, code = cli("completion", "bash")
+    assert code == 0, err
+    assert "_agentplan_completion" in out
+    assert "agentplan __complete bash" in out
+    assert "complete -F _agentplan_completion agentplan" in out
+
+
+def test_completion_zsh_script_output():
+    out, err, code = cli("completion", "zsh")
+    assert code == 0, err
+    assert "#compdef agentplan" in out
+    assert "agentplan __complete zsh" in out
+    assert "compdef _agentplan_completion agentplan" in out
+
+
+def test_completion_fish_script_output():
+    out, err, code = cli("completion", "fish")
+    assert code == 0, err
+    assert "function __agentplan_completion" in out
+    assert "agentplan __complete fish" in out
+    assert "complete -c agentplan" in out
+
+
+def test_internal_completion_top_level_commands():
+    out, err, code = cli("__complete", "bash", "s")
+    assert code == 0, err
+    lines = out.strip().splitlines()
+    assert "status" in lines
+    assert "subtask" in lines
+
+
+def test_internal_completion_status_project_slugs_from_db():
+    cli("create", "Alpha Project")
+    cli("create", "Beta Project")
+    out, err, code = cli("__complete", "bash", "a", "status")
+    assert code == 0, err
+    lines = out.strip().splitlines()
+    assert "alpha-project" in lines
+    assert "beta-project" not in lines
+
+
+def test_internal_completion_ticket_project_slugs_from_db():
+    cli("create", "Core Project")
+    cli("create", "Other Project")
+    out, err, code = cli("__complete", "bash", "co", "ticket", "add")
+    assert code == 0, err
+    lines = out.strip().splitlines()
+    assert "core-project" in lines
+    assert "other-project" not in lines
