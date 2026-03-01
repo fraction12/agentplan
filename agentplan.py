@@ -958,6 +958,40 @@ def cmd_list(args):
     conn.close()
 
 
+def cmd_search(args):
+    conn = _ensure(get_connection())
+    query = (args.query or "").strip()
+    if not query:
+        conn.close()
+        print("Error: Query cannot be empty.", file=sys.stderr)
+        sys.exit(2)
+
+    like = f"%{query.lower()}%"
+    rows = conn.execute(
+        """
+        SELECT
+            p.slug AS project_slug,
+            t.num AS ticket_num,
+            t.title AS ticket_title
+        FROM tickets t
+        JOIN projects p ON p.id = t.project_id
+        WHERE
+            LOWER(t.title) LIKE ?
+            OR LOWER(COALESCE(t.description, '')) LIKE ?
+        ORDER BY p.slug, t.num
+        """,
+        (like, like),
+    ).fetchall()
+    if not rows:
+        print("No matching tickets found.")
+        conn.close()
+        sys.exit(1)
+
+    for row in rows:
+        print(f"{row['project_slug']} #{row['ticket_num']}: {row['ticket_title']}")
+    conn.close()
+
+
 def cmd_attach(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
@@ -1201,6 +1235,9 @@ def build_parser():
     ss.add_argument("--format", choices=["compact", "full", "json"], default="full")
     ss.add_argument("--tag", help="Filter tickets by a single tag")
 
+    srch = sub.add_parser("search", help="Search ticket titles and descriptions across all projects")
+    srch.add_argument("query")
+
     ls = sub.add_parser("list", help="List projects")
     ls.add_argument("--status", choices=["active", "completed", "paused", "abandoned", "all"], default="active")
 
@@ -1240,7 +1277,7 @@ def build_parser():
 
 DISPATCH = {
     "init": cmd_init, "create": cmd_create, "next": cmd_next, "claim": cmd_claim, "status": cmd_status,
-    "list": cmd_list, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
+    "list": cmd_list, "search": cmd_search, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
     "note": cmd_note, "depend": cmd_depend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version,
 }
 

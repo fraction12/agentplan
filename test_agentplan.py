@@ -538,6 +538,46 @@ def test_status_summary_shows_no_next_for_empty_project():
 
 
 # ---------------------------------------------------------------------------
+# Search across projects
+# ---------------------------------------------------------------------------
+
+def test_search_matches_ticket_titles_across_all_projects_and_prints_slug_and_ticket_num():
+    cli("create", "Alpha Search")
+    cli("create", "Beta Search")
+    cli("ticket", "add", "alpha-search", "Implement global search")
+    cli("ticket", "add", "beta-search", "Add parser improvements")
+    cli("close", "alpha-search")
+    out, err, code = cli("search", "search")
+    assert code == 0, err
+    assert "alpha-search #1: Implement global search" in out
+    assert "beta-search #1: Add parser improvements" not in out
+
+
+def test_search_matches_ticket_descriptions_case_insensitively():
+    cli("create", "Desc Search")
+    cli(
+        "ticket",
+        "add",
+        "desc-search",
+        "Refactor command parser",
+        "--desc",
+        "Need FAST lookup across Projects.",
+    )
+    out, err, code = cli("search", "fast lookup")
+    assert code == 0, err
+    assert "desc-search #1: Refactor command parser" in out
+
+
+def test_search_no_matches_exits_one_with_message():
+    cli("create", "No Hits")
+    cli("ticket", "add", "no-hits", "Unrelated ticket")
+    out, err, code = cli("search", "does-not-exist")
+    assert code == 1
+    assert err == ""
+    assert "No matching tickets found." in out
+
+
+# ---------------------------------------------------------------------------
 # Delete project
 # ---------------------------------------------------------------------------
 
