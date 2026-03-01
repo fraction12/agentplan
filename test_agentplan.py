@@ -903,3 +903,32 @@ def test_internal_completion_ticket_project_slugs_from_db():
     lines = out.strip().splitlines()
     assert "core-project" in lines
     assert "other-project" not in lines
+
+
+def test_dashboard_index_returns_projects():
+    from dashboard import app
+
+    cli("create", "Web Alpha")
+    cli("create", "Web Beta")
+
+    client = app.test_client()
+    resp = client.get("/")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Web Alpha" in body
+    assert "Web Beta" in body
+
+
+def test_dashboard_project_detail_returns_ticket_titles():
+    from dashboard import app
+
+    cli("create", "Web Detail")
+    cli("ticket", "add", "web-detail", "Dashboard ticket one")
+    cli("ticket", "add", "web-detail", "Dashboard ticket two")
+
+    client = app.test_client()
+    resp = client.get("/project/1")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Dashboard ticket one" in body
+    assert "Dashboard ticket two" in body
