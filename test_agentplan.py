@@ -1026,11 +1026,19 @@ def test_database_file_is_not_world_writable():
 
 def test_read_only_database_failure_is_handled_gracefully():
     db_path = "/tmp/test_agentplan.db"
+    # Also restore WAL/SHM files so the fixture teardown can remove them
+    related = [db_path + "-wal", db_path + "-shm"]
     os.chmod(db_path, 0o444)
+    for f in related:
+        if os.path.exists(f):
+            os.chmod(f, 0o444)
     try:
         out, err, code = cli("create", "Read Only DB")
     finally:
         os.chmod(db_path, 0o644)
+        for f in related:
+            if os.path.exists(f):
+                os.chmod(f, 0o644)
 
     assert code == 2
     assert out == ""
