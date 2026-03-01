@@ -123,6 +123,61 @@ def test_mark_ticket_done():
     assert code == 0, err
 
 
+def test_add_ticket_priority_persisted():
+    cli("create", "Priority Project")
+    out, err, code = cli("ticket", "add", "priority-project", "Important work", "--priority", "high")
+    assert code == 0, err
+    assert "priority: high" in out.lower()
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT priority FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["priority"] == "high"
+
+
+def test_ticket_update_priority():
+    cli("create", "Update Project")
+    cli("ticket", "add", "update-project", "Task one")
+    out, err, code = cli("ticket", "update", "update-project", "1", "--priority", "medium")
+    assert code == 0, err
+    assert "updated ticket #1" in out.lower()
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT priority FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["priority"] == "medium"
+
+
+def test_ticket_edit_priority_alias():
+    cli("create", "Edit Project")
+    cli("ticket", "add", "edit-project", "Task one", "--priority", "high")
+    out, err, code = cli("ticket", "edit", "edit-project", "1", "--priority", "low")
+    assert code == 0, err
+    assert "updated ticket #1" in out.lower()
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT priority FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["priority"] == "low"
+
+
+def test_next_orders_by_priority():
+    cli("create", "Order Project")
+    cli("ticket", "add", "order-project", "Low task", "--priority", "low")
+    cli("ticket", "add", "order-project", "High task", "--priority", "high")
+    cli("ticket", "add", "order-project", "Medium task", "--priority", "medium")
+    out, err, code = cli("next", "order-project")
+    assert code == 0, err
+    assert out.index("High task") < out.index("Medium task") < out.index("Low task")
+
+
+def test_status_shows_priority():
+    cli("create", "Status Project")
+    cli("ticket", "add", "status-project", "No priority task")
+    cli("ticket", "add", "status-project", "High priority task", "--priority", "high")
+    out, err, code = cli("status", "status-project")
+    assert code == 0, err
+    assert "priority: none" in out.lower()
+    assert "priority: high" in out.lower()
+
+
 # ---------------------------------------------------------------------------
 # Delete project
 # ---------------------------------------------------------------------------

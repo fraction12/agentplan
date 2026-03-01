@@ -10,6 +10,8 @@ import sys
 from datetime import datetime
 
 __version__ = "0.2.0"
+PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3}
+PRIORITY_CHOICES = ["high", "medium", "low", "none"]
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +52,7 @@ def init_db(conn):
             num INTEGER NOT NULL,
             title TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
+            priority TEXT NOT NULL DEFAULT 'none',
             depends_on TEXT DEFAULT '[]',
             notes TEXT,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
@@ -90,6 +93,13 @@ def init_db(conn):
         conn.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_project_num ON tickets(project_id, num)
         """)
+        conn.commit()
+    # Migration: add priority column if missing (upgrade from pre-priority schema)
+    try:
+        conn.execute("SELECT priority FROM tickets LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE tickets ADD COLUMN priority TEXT NOT NULL DEFAULT 'none'")
+        conn.execute("UPDATE tickets SET priority='none' WHERE priority IS NULL OR priority=''")
         conn.commit()
 
 
@@ -235,6 +245,25 @@ def _is_blocked(ticket, done_nums):
     return any(d not in done_nums for d in deps)
 
 
+def _priority_value(priority):
+    return PRIORITY_ORDER.get((priority or "none").lower(), PRIORITY_ORDER["none"])
+
+
+def _priority_label(priority):
+    return (priority or "none").lower()
+
+
+def _sort_next_items(items):
+    return sorted(
+        items,
+        key=lambda t: (
+            _priority_value(t["priority"]),
+            0 if t["status"] == "in-progress" else 1,
+            t["num"],
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -280,8 +309,8 @@ def cmd_ticket_add(args):
             resolve_ticket(conn, proj["id"], d, proj["slug"])
     num = _next_ticket_num(conn, proj["id"])
     conn.execute(
-        "INSERT INTO tickets (project_id, num, title, depends_on, notes) VALUES (?,?,?,?,?)",
-        (proj["id"], num, args.title, json.dumps(deps), args.notes),
+        "INSERT INTO tickets (project_id, num, title, priority, depends_on, notes) VALUES (?,?,?,?,?,?)",
+        (proj["id"], num, args.title, args.priority or "none", json.dumps(deps), args.notes),
     )
     if deps:
         tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
@@ -300,7 +329,51 @@ def cmd_ticket_add(args):
     conn.commit()
     if proj["status"] in ("completed", "abandoned"):
         print(f"📂 Reopened project '{proj['slug']}' (was {proj['status']})")
-    print(f"Added ticket #{num}: {args.title}")
+    print(f"Added ticket #{num}: {args.title} [priority: {_priority_label(args.priority)}]")
+    conn.close()
+
+
+def cmd_ticket_update(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+
+    updates = []
+    values = []
+    if args.title is not None:
+        updates.append("title=?")
+        values.append(args.title)
+    if args.notes is not None:
+        updates.append("notes=?")
+        values.append(args.notes)
+    if args.depends is not None:
+        deps = [int(x.strip()) for x in args.depends.split(",") if x.strip()]
+        for d in deps:
+            resolve_ticket(conn, proj["id"], d, proj["slug"])
+        tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
+        if has_cycle(tickets, t["num"], deps):
+            conn.close()
+            print("Error: Circular dependency detected.", file=sys.stderr)
+            sys.exit(2)
+        updates.append("depends_on=?")
+        values.append(json.dumps(sorted(set(deps))))
+    if args.priority is not None:
+        updates.append("priority=?")
+        values.append(args.priority)
+
+    if not updates:
+        conn.close()
+        print(
+            "Error: No updates provided. Use at least one of --title, --notes, --depends, --priority.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    values.append(t["id"])
+    conn.execute(f"UPDATE tickets SET {', '.join(updates)} WHERE id=?", values)
+    conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
+    conn.commit()
+    print(f"Updated ticket #{t['num']}.")
     conn.close()
 
 
@@ -370,7 +443,7 @@ def cmd_ticket_list(args):
     for t in tickets:
         blocked = _is_blocked(t, done_nums)
         icon = _ticket_icon(t["status"], blocked)
-        line = f"  {icon} {t['num']}. {t['title']}"
+        line = f"  {icon} {t['num']}. {t['title']} [priority: {_priority_label(t['priority'])}]"
         if t["status"] == "in-progress":
             line += " (in-progress)"
         elif blocked and t["status"] == "pending":
@@ -397,12 +470,13 @@ def cmd_next(args):
             "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
         ).fetchall()
         items = [t for t in tickets if t["status"] == "in-progress"] + get_unblocked(tickets)
+        items = _sort_next_items(items)
         if items:
             found = True
             parts = []
             for t in items:
                 m = "▶" if t["status"] == "in-progress" else "○"
-                parts.append(f"[{t['num']}] {t['title']} {m}")
+                parts.append(f"[{t['num']}] {t['title']} {m} (priority: {_priority_label(t['priority'])})")
             print(f"📋 {p['title']}: {', '.join(parts)}")
     if not found:
         print("No unblocked tickets.")
@@ -442,8 +516,9 @@ def cmd_status(args):
 
         if fmt == "compact":
             items = [t for t in tickets if t["status"] == "in-progress"] + get_unblocked(tickets)
+            items = _sort_next_items(items)
             nxt = ", ".join(
-                f"[{t['num']}] {t['title']} {'▶' if t['status']=='in-progress' else '○'}"
+                f"[{t['num']}] {t['title']} {'▶' if t['status']=='in-progress' else '○'} ({_priority_label(t['priority'])})"
                 for t in items[:3]
             )
             line = f"📋 {p['title']}: {done_count}/{total} done"
@@ -457,7 +532,7 @@ def cmd_status(args):
         for t in tickets:
             blocked = _is_blocked(t, done_nums)
             icon = _ticket_icon(t["status"], blocked)
-            line = f"  {icon} {t['num']}. {t['title']}"
+            line = f"  {icon} {t['num']}. {t['title']} [priority: {_priority_label(t['priority'])}]"
             if t["status"] == "in-progress":
                 line += " (in-progress)"
             elif blocked and t["status"] == "pending":
@@ -650,6 +725,15 @@ def build_parser():
     ts = tp.add_subparsers(dest="ticket_command")
     a = ts.add_parser("add")
     a.add_argument("project"); a.add_argument("title"); a.add_argument("--depends"); a.add_argument("--notes")
+    a.add_argument("--priority", choices=PRIORITY_CHOICES[:-1], default="none")
+    u = ts.add_parser("update")
+    u.add_argument("project"); u.add_argument("ticket_id")
+    u.add_argument("--title"); u.add_argument("--notes"); u.add_argument("--depends")
+    u.add_argument("--priority", choices=PRIORITY_CHOICES)
+    e = ts.add_parser("edit")
+    e.add_argument("project"); e.add_argument("ticket_id")
+    e.add_argument("--title"); e.add_argument("--notes"); e.add_argument("--depends")
+    e.add_argument("--priority", choices=PRIORITY_CHOICES)
     d = ts.add_parser("done")
     d.add_argument("project"); d.add_argument("ticket_ids", nargs="+")
     s = ts.add_parser("skip")
@@ -699,6 +783,7 @@ DISPATCH = {
 TICKET_DISPATCH = {
     "add": cmd_ticket_add, "done": cmd_ticket_done, "skip": cmd_ticket_skip,
     "start": cmd_ticket_start, "list": cmd_ticket_list,
+    "update": cmd_ticket_update, "edit": cmd_ticket_update,
 }
 
 
