@@ -1,0 +1,42 @@
+# agentplan
+
+agentplan is a CLI task queue for AI agents to coordinate multi-session projects.
+It stores projects and tickets in SQLite, supports ticket dependencies, and keeps progress logs and attachments so multiple agent runs can share state.
+
+## Core model
+- Project: a named workstream (`active`, `completed`, `abandoned`, etc.).
+- Ticket: numbered task within a project (`pending`, `in-progress`, `done`, `skipped`).
+- Dependencies: ticket numbers that must be done/skipped before a ticket is unblocked.
+- Log/Attachment: timeline entries and references linked to project or ticket.
+
+## Key commands
+- `agentplan create "Build my app" --ticket "Schema" --ticket "API"`
+- `agentplan ticket add build-my-app "Write tests" --depends 2`
+- `agentplan depend build-my-app 4 --on 1,2,3`
+- `agentplan next build-my-app`
+- `agentplan status build-my-app --format compact`
+- `agentplan ticket start build-my-app 3`
+- `agentplan ticket done build-my-app 3`
+- `agentplan ticket skip build-my-app 5`
+- `agentplan log build-my-app "Implemented endpoint contract" --ticket 3`
+- `agentplan attach build-my-app "PR" https://github.com/org/repo/pull/123 --ticket 3`
+- `agentplan list --status active`
+- `agentplan close build-my-app`
+- `agentplan remove build-my-app --ticket 8`
+
+## Typical agent loop
+1. `agentplan next <project>` to pick unblocked work.
+2. Execute task in codebase.
+3. `agentplan ticket done <project> <id>` when complete.
+4. Add follow-up work with `ticket add` and progress context with `log`.
+
+## Output formats
+- `status --format full`: detailed board view.
+- `status --format compact`: short token-efficient line for prompt injection.
+- `status --format json`: machine-readable project/ticket payload.
+
+## Configuration
+- `AGENTPLAN_DIR` (default `~/.agentplan`)
+- `AGENTPLAN_DB` (default `~/.agentplan/agentplan.db`)
+
+Use `agentplan --help` and subcommand help for full syntax.

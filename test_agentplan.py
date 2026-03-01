@@ -7,6 +7,7 @@ The real database is never touched.
 import os
 import sys
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -20,17 +21,21 @@ import agentplan
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def temp_db(tmp_path):
-    """Point AGENTPLAN_DB at a temp file; init schema; clean up after each test."""
-    db_path = str(tmp_path / "test_agentplan.db")
+def temp_db():
+    """Use AGENTPLAN_DB=/tmp/test_agentplan.db; init schema; clean up after each test."""
+    db_path = "/tmp/test_agentplan.db"
     os.environ["AGENTPLAN_DB"] = db_path
-    os.environ["AGENTPLAN_DIR"] = str(tmp_path)
+    os.environ["AGENTPLAN_DIR"] = "/tmp"
+    if os.path.exists(db_path):
+        os.remove(db_path)
     # Initialise schema directly (no CLI side-effects)
     conn = agentplan.get_connection(db_path)
     agentplan.init_db(conn)
     conn.commit()
     conn.close()
     yield db_path
+    if os.path.exists(db_path):
+        os.remove(db_path)
     os.environ.pop("AGENTPLAN_DB", None)
     os.environ.pop("AGENTPLAN_DIR", None)
 
@@ -145,3 +150,32 @@ def test_db_isolation_b():
     """isolation-a must NOT exist — each test gets a fresh temp DB."""
     out, _, _ = cli("list")
     assert "isolation-a" not in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# LLM discoverability docs
+# ---------------------------------------------------------------------------
+
+def test_llms_txt_exists_and_contains_core_summary():
+    p = Path(__file__).resolve().parent / "llms.txt"
+    assert p.exists()
+    text = p.read_text(encoding="utf-8")
+    assert "CLI task queue for AI agents" in text
+    assert "multi-session projects" in text
+    assert "dependencies" in text
+    assert "progress logs" in text
+    assert "agentplan next" in text
+    assert "agentplan ticket done" in text
+
+
+def test_llms_full_txt_exists_and_contains_reference_material():
+    p = Path(__file__).resolve().parent / "llms-full.txt"
+    assert p.exists()
+    text = p.read_text(encoding="utf-8")
+    assert "agentplan Full Reference" in text
+    assert "Command index" in text
+    assert "agentplan ticket add <project> <title>" in text
+    assert "--format compact|full|json" in text
+    assert "Data model and schema" in text
+    assert "CREATE TABLE IF NOT EXISTS projects" not in text
+    assert "projects" in text and "tickets" in text and "attachments" in text and "log" in text

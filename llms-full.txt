@@ -1,0 +1,337 @@
+# agentplan Full Reference
+
+agentplan is a CLI task-queue for AI agents to manage multi-session projects with tickets, dependency graphs, and progress logs.
+It is designed for terminal-native automation loops where multiple agents share one persistent queue.
+
+Version in this repository: `0.2.0`
+
+## Installation
+
+```bash
+pip install agentplan
+```
+
+## Runtime and storage
+
+- Backend: SQLite (single file)
+- DB defaults:
+  - `AGENTPLAN_DIR=~/.agentplan`
+  - `AGENTPLAN_DB=~/.agentplan/agentplan.db`
+- Important env vars:
+  - `AGENTPLAN_DIR`: directory that stores default DB
+  - `AGENTPLAN_DB`: explicit DB path (overrides default path)
+
+## Command index
+
+```text
+agentplan init
+agentplan version
+agentplan create <title> [--ticket <text> ...] [--notes <text>]
+agentplan ticket add <project> <title> [--depends <id_csv>] [--notes <text>]
+agentplan ticket done <project> <ticket_id...>
+agentplan ticket skip <project> <ticket_id...>
+agentplan ticket start <project> <ticket_id>
+agentplan ticket list <project> [--status pending|done|in-progress|skipped|all]
+agentplan next [project]
+agentplan status [project] [--format compact|full|json]
+agentplan list [--status active|completed|paused|abandoned|all]
+agentplan attach <project> <label> <location> [--ticket <id>]
+agentplan log <project> <entry> [--ticket <id>]
+agentplan close <project> [--abandon]
+agentplan note <project> <text> [--ticket <id>]
+agentplan depend <project> <ticket_id> --on <id_csv>
+agentplan remove <project> [--ticket <id>]
+```
+
+## Command details
+
+### `agentplan init`
+Initializes database tables in configured DB path.
+
+Example:
+```bash
+agentplan init
+```
+
+### `agentplan version`
+Prints CLI version.
+
+Example:
+```bash
+agentplan version
+```
+
+### `agentplan create <title> [--ticket ...] [--notes ...]`
+Creates a project with slug derived from title.
+- `title` (positional): project title
+- `--ticket` (repeatable): seed tickets in order
+- `--notes`: optional project note
+
+Examples:
+```bash
+agentplan create "Build API"
+agentplan create "Build API" --ticket "Schema" --ticket "Endpoints" --notes "MVP first"
+```
+
+### `agentplan ticket add <project> <title> [--depends ...] [--notes ...]`
+Adds a ticket to project.
+- `project`: slug or numeric project id
+- `title`: ticket text
+- `--depends`: CSV list of ticket numbers in same project
+- `--notes`: optional ticket note
+
+Behavior:
+- Assigns next sequential `num` within project.
+- Validates dependency ticket numbers.
+- Rejects circular dependencies.
+- Reopens `completed`/`abandoned` projects when adding new ticket.
+
+Examples:
+```bash
+agentplan ticket add build-api "Write tests"
+agentplan ticket add build-api "Load test" --depends 2,3 --notes "k6 baseline"
+```
+
+### `agentplan ticket done <project> <ticket_id...>`
+Marks one or more ticket numbers as `done`.
+- Auto-completes active project when all tickets are done/skipped.
+
+Examples:
+```bash
+agentplan ticket done build-api 2
+agentplan ticket done build-api 3 4 5
+```
+
+### `agentplan ticket skip <project> <ticket_id...>`
+Marks one or more ticket numbers as `skipped`.
+
+Example:
+```bash
+agentplan ticket skip build-api 9
+```
+
+### `agentplan ticket start <project> <ticket_id>`
+Marks one ticket as `in-progress`.
+
+Example:
+```bash
+agentplan ticket start build-api 4
+```
+
+### `agentplan ticket list <project> [--status ...]`
+Lists tickets in project.
+- `--status`: `pending|done|in-progress|skipped|all`
+- Default behavior in parser: `all` when omitted
+
+Examples:
+```bash
+agentplan ticket list build-api
+agentplan ticket list build-api --status pending
+```
+
+### `agentplan next [project]`
+Shows currently actionable tickets.
+- If project provided: checks only that project.
+- If omitted: scans active projects.
+- Includes `in-progress` tickets plus pending tickets whose dependencies are satisfied.
+
+Examples:
+```bash
+agentplan next
+agentplan next build-api
+```
+
+### `agentplan status [project] [--format ...]`
+Shows project status.
+- `--format`: `full|compact|json`
+- Default: `full`
+- With no project: active projects
+
+Examples:
+```bash
+agentplan status
+agentplan status build-api --format compact
+agentplan status build-api --format json
+```
+
+### `agentplan list [--status ...]`
+Lists projects.
+- `--status`: `active|completed|paused|abandoned|all`
+- Default: `active`
+
+Examples:
+```bash
+agentplan list
+agentplan list --status all
+```
+
+### `agentplan attach <project> <label> <location> [--ticket ...]`
+Adds attachment at project or ticket level.
+- If `location` starts with `http://` or `https://`, stored as URL.
+- Otherwise stored as path text.
+
+Examples:
+```bash
+agentplan attach build-api "Spec" docs/spec.md
+agentplan attach build-api "PR" https://github.com/org/repo/pull/10 --ticket 4
+```
+
+### `agentplan log <project> <entry> [--ticket ...]`
+Writes log entry at project or ticket level.
+
+Examples:
+```bash
+agentplan log build-api "Merged schema migration"
+agentplan log build-api "Fixed flaky test" --ticket 7
+```
+
+### `agentplan close <project> [--abandon]`
+Closes a project.
+- Default status set to `completed`.
+- `--abandon` sets status to `abandoned`.
+
+Examples:
+```bash
+agentplan close build-api
+agentplan close build-api --abandon
+```
+
+### `agentplan note <project> <text> [--ticket ...]`
+Sets note text on project or one ticket.
+
+Examples:
+```bash
+agentplan note build-api "Track breaking changes"
+agentplan note build-api "Need canary rollout" --ticket 6
+```
+
+### `agentplan depend <project> <ticket_id> --on <id_csv>`
+Adds dependencies to an existing ticket.
+- `--on` required CSV of ticket numbers
+- Merges with existing dependencies
+- Rejects circular dependencies
+
+Examples:
+```bash
+agentplan depend build-api 4 --on 1,2
+agentplan depend build-api 5 --on 4
+```
+
+### `agentplan remove <project> [--ticket ...]`
+Removes a ticket or whole project.
+- With `--ticket`: deletes that ticket and removes dangling deps from other tickets.
+- Without `--ticket`: deletes whole project and cascading rows.
+
+Examples:
+```bash
+agentplan remove build-api --ticket 3
+agentplan remove build-api
+```
+
+## Exit behavior summary
+
+- Exit code `0`: successful command.
+- Exit code `1`: generally used for empty result views (`list`/`next`/`ticket list` without items).
+- Exit code `2`: argument/lookup/validation/runtime errors (not found, invalid ticket id, circular deps, etc.).
+
+## Output formats
+
+### `status --format full`
+- Human-readable multiline board including ticket icons, blocked reason, attachments, recent logs, project notes.
+
+### `status --format compact`
+- Single concise line suitable for LLM prompt context.
+
+### `status --format json`
+- JSON object with project metadata and embedded tickets.
+
+## Data model and schema
+
+All tables are created by `init_db`.
+
+### `projects`
+- `id INTEGER PRIMARY KEY AUTOINCREMENT`
+- `slug TEXT NOT NULL UNIQUE`
+- `title TEXT NOT NULL`
+- `status TEXT NOT NULL DEFAULT 'active'`
+- `notes TEXT`
+- `created_at TEXT NOT NULL DEFAULT local timestamp`
+- `updated_at TEXT NOT NULL DEFAULT local timestamp`
+
+### `tickets`
+- `id INTEGER PRIMARY KEY AUTOINCREMENT`
+- `project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE`
+- `num INTEGER NOT NULL` (human-facing ticket number scoped to project)
+- `title TEXT NOT NULL`
+- `status TEXT NOT NULL DEFAULT 'pending'`
+- `depends_on TEXT DEFAULT '[]'` (JSON array of ticket numbers)
+- `notes TEXT`
+- `created_at TEXT NOT NULL DEFAULT local timestamp`
+- `completed_at TEXT`
+
+Indexes:
+- `UNIQUE INDEX idx_ticket_project_num ON tickets(project_id, num)`
+
+### `attachments`
+- `id INTEGER PRIMARY KEY AUTOINCREMENT`
+- `project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE`
+- `ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE`
+- `label TEXT NOT NULL`
+- `path TEXT`
+- `url TEXT`
+- `notes TEXT`
+- `created_at TEXT NOT NULL DEFAULT local timestamp`
+
+### `log`
+- `id INTEGER PRIMARY KEY AUTOINCREMENT`
+- `project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE`
+- `ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE`
+- `entry TEXT NOT NULL`
+- `created_at TEXT NOT NULL DEFAULT local timestamp`
+
+## State conventions
+
+Project statuses seen in CLI:
+- `active`
+- `completed`
+- `abandoned`
+- `paused` (accepted by list filter)
+
+Ticket statuses:
+- `pending`
+- `in-progress`
+- `done`
+- `skipped`
+
+## Practical agent workflow examples
+
+### Example 1: bootstrap
+```bash
+agentplan create "Website redesign" \
+  --ticket "Audit current UX" \
+  --ticket "Implement homepage" \
+  --ticket "Add visual regression tests"
+agentplan depend website-redesign 3 --on 2
+```
+
+### Example 2: execution loop
+```bash
+agentplan next website-redesign
+agentplan ticket start website-redesign 2
+# ... do work in repository ...
+agentplan log website-redesign "Hero section migrated" --ticket 2
+agentplan ticket done website-redesign 2
+```
+
+### Example 3: review and follow-up
+```bash
+agentplan status website-redesign --format compact
+agentplan ticket add website-redesign "Fix mobile nav overflow" --depends 2
+agentplan attach website-redesign "Preview" https://staging.example.com --ticket 4
+```
+
+## Notes for automation
+
+- Project argument usually accepts slug or numeric id.
+- Ticket arguments use per-project ticket number (`num`), not raw row id.
+- For robust scripts, parse JSON mode from `status` when exact structure is needed.
