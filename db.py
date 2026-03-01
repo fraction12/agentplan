@@ -6,6 +6,8 @@ import os
 import sqlite3
 from datetime import datetime
 
+from models import HistoryEntry, Project, Subtask, Ticket
+
 
 def get_db_path():
     dir_path = os.environ.get("AGENTPLAN_DIR", os.path.expanduser("~/.agentplan"))

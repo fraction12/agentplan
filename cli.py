@@ -9,6 +9,8 @@ import re
 import sys
 from datetime import datetime
 
+from models import HistoryEntry, Project, Subtask, Ticket
+
 from db import (
     check_auto_complete,
     ensure as _ensure,

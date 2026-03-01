@@ -6,6 +6,7 @@ Thin entry point that wires CLI and DB modules.
 
 from db import get_connection, init_db
 from cli import __version__, _claim_next_ticket, main
+from models import HistoryEntry, Project, Subtask, Ticket
 
 
 if __name__ == "__main__":
