@@ -3,9 +3,10 @@
 
 import json
 import os
+import time
 from collections import defaultdict
 
-from flask import Flask, abort, render_template_string, request, url_for
+from flask import Flask, Response, abort, render_template_string, request, stream_with_context, url_for
 
 from db import get_connection
 
@@ -26,33 +27,41 @@ INDEX_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>agentplan dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      .progress-bar { transition: width 450ms ease-in-out; }
+      .status-updated { animation: status-flash 650ms ease; }
+      @keyframes status-flash {
+        from { background-color: #fff3cd; }
+        to { background-color: transparent; }
+      }
+    </style>
   </head>
   <body class="bg-light">
     <main class="container py-4">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h3 m-0">agentplan dashboard</h1>
-        <span class="text-muted small">Read-only viewer</span>
+        <span id="live-indicator" class="text-muted small">Live updates: connecting…</span>
       </div>
 
       {% if projects %}
-      <div class="row g-3">
+      <div class="row g-3" id="projects-grid">
       {% for project in projects %}
-        <div class="col-12 col-md-6">
+        <div class="col-12 col-md-6" data-project-id="{{ project.id }}">
           <div class="card h-100 shadow-sm">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start mb-2">
                 <h2 class="h5 mb-0"><a class="text-decoration-none" href="{{ url_for('project_detail', project_id=project.id) }}">{{ project.title }}</a></h2>
                 <span class="badge text-bg-secondary">{{ project.slug }}</span>
               </div>
-              <p class="text-muted small mb-2">Status: {{ project.status }}</p>
-              <div class="mb-2 small">
+              <p class="text-muted small mb-2">Status: <span class="project-status">{{ project.status }}</span></p>
+              <div class="mb-2 small project-progress-text">
                 <strong>{{ project.done_count }}/{{ project.ticket_count }}</strong> done
                 {% if project.ticket_count %}({{ project.progress_pct }}%){% endif %}
               </div>
               <div class="progress mb-3" role="progressbar" aria-label="{{ project.title }} progress" aria-valuenow="{{ project.progress_pct }}" aria-valuemin="0" aria-valuemax="100">
                 <div class="progress-bar" style="width: {{ project.progress_pct }}%"></div>
               </div>
-              <div class="d-flex flex-wrap gap-1">
+              <div class="d-flex flex-wrap gap-1 project-breakdown">
                 {% for status, count in project.breakdown.items() %}
                 <span class="badge rounded-pill text-bg-light border">{{ status }}: {{ count }}</span>
                 {% endfor %}
@@ -66,6 +75,71 @@ INDEX_TEMPLATE = """
       <div class="alert alert-secondary">No projects found.</div>
       {% endif %}
     </main>
+
+    <script>
+      function breakdownMarkup(breakdown) {
+        const order = ["todo", "in-progress", "blocked", "done", "skipped"];
+        return order.map((key) => `<span class="badge rounded-pill text-bg-light border">${key}: ${breakdown[key] ?? 0}</span>`).join("");
+      }
+
+      function renderProjects(projects) {
+        const byId = new Map(projects.map((p) => [String(p.id), p]));
+        const cards = document.querySelectorAll("[data-project-id]");
+        cards.forEach((card) => {
+          const project = byId.get(card.dataset.projectId);
+          if (!project) return;
+
+          const statusNode = card.querySelector(".project-status");
+          const progressText = card.querySelector(".project-progress-text");
+          const progressWrap = card.querySelector(".progress");
+          const progressBar = card.querySelector(".progress-bar");
+          const breakdownNode = card.querySelector(".project-breakdown");
+
+          const oldStatus = statusNode.textContent;
+          const oldWidth = progressBar.style.width;
+
+          statusNode.textContent = project.status;
+          progressText.innerHTML = `<strong>${project.done_count}/${project.ticket_count}</strong> done${project.ticket_count ? ` (${project.progress_pct}%)` : ""}`;
+          progressBar.style.width = `${project.progress_pct}%`;
+          progressWrap.setAttribute("aria-valuenow", String(project.progress_pct));
+          breakdownNode.innerHTML = breakdownMarkup(project.breakdown || {});
+
+          if (oldStatus !== project.status || oldWidth !== `${project.progress_pct}%`) {
+            card.classList.remove("status-updated");
+            void card.offsetWidth;
+            card.classList.add("status-updated");
+          }
+        });
+      }
+
+      (function subscribe() {
+        if (!window.EventSource) {
+          document.getElementById("live-indicator").textContent = "Live updates: auto-refresh unsupported";
+          return;
+        }
+
+        const indicator = document.getElementById("live-indicator");
+        const source = new EventSource("{{ url_for('events') }}");
+
+        source.addEventListener("open", () => {
+          indicator.textContent = "Live updates: connected";
+        });
+
+        source.addEventListener("project_stats", (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            renderProjects(payload.projects || []);
+            indicator.textContent = `Live updates: ${new Date().toLocaleTimeString()}`;
+          } catch (err) {
+            indicator.textContent = "Live updates: parse error";
+          }
+        });
+
+        source.onerror = () => {
+          indicator.textContent = "Live updates: reconnecting…";
+        };
+      })();
+    </script>
   </body>
 </html>
 """
@@ -322,17 +396,35 @@ def _normalize_ticket(row):
     }
 
 
+def _project_stats_payload():
+    conn = get_connection(_db_path())
+    try:
+        projects = _fetch_projects_with_stats(conn)
+    finally:
+        conn.close()
+    return {"projects": projects}
+
+
 def create_app():
     app = Flask(__name__)
 
     @app.route("/")
     def index():
-        conn = get_connection(_db_path())
-        try:
-            projects = _fetch_projects_with_stats(conn)
-        finally:
-            conn.close()
+        projects = _project_stats_payload()["projects"]
         return render_template_string(INDEX_TEMPLATE, projects=projects)
+
+    @app.route("/events")
+    def events():
+        interval = max(1, min(int(request.args.get("interval", "2")), 30))
+
+        @stream_with_context
+        def event_stream():
+            while True:
+                payload = _project_stats_payload()
+                yield f"event: project_stats\\ndata: {json.dumps(payload)}\\n\\n"
+                time.sleep(interval)
+
+        return Response(event_stream(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache"})
 
     @app.route("/project/<int:project_id>")
     def project_detail(project_id):
@@ -380,7 +472,6 @@ def create_app():
             total_count=len(rows),
             filters={"status": status_filter, "priority": priority_filter, "tag": tag_filter},
         )
-
 
     @app.route("/project/<int:project_id>/ticket/<int:ticket_num>")
     def ticket_detail(project_id, ticket_num):
