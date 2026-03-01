@@ -31,7 +31,7 @@ from db import (
     unique_slug,
 )
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3}
 PRIORITY_CHOICES = ["high", "medium", "low", "none"]
 COMPLETION_SHELLS = ["bash", "zsh", "fish"]
@@ -1113,6 +1113,15 @@ def cmd_history(args):
 
 def cmd_version(_args):
     print(f"agentplan {__version__}")
+
+def cmd_dashboard(args):
+    try:
+        from dashboard import app
+    except ImportError:
+        print('Error: Flask not installed. Run: pip install agentplan[dashboard]', __import__("sys").stderr)
+        __import__("sys").exit(1)
+    app.run(host=args.host, port=args.port)
+
 
 
 def cmd_completion(args):
