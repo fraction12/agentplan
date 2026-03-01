@@ -6,9 +6,28 @@ import difflib
 import json
 import os
 import re
-import sqlite3
 import sys
 from datetime import datetime
+
+from db import (
+    check_auto_complete,
+    ensure as _ensure,
+    get_connection,
+    get_db_path,
+    get_subtask_progress_map as _get_subtask_progress_map,
+    has_cycle,
+    init_db,
+    list_project_slugs,
+    next_subtask_num as _next_subtask_num,
+    next_ticket_num as _next_ticket_num,
+    now as _now,
+    project_slug_suggestions,
+    record_ticket_history as _record_ticket_history,
+    resolve_project as db_resolve_project,
+    resolve_subtask as db_resolve_subtask,
+    resolve_ticket as db_resolve_ticket,
+    unique_slug,
+)
 
 __version__ = "0.2.0"
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3}
@@ -69,202 +88,6 @@ def fail(message, suggestions=None, exit_code=2):
 
 
 # ---------------------------------------------------------------------------
-# Database helpers
-# ---------------------------------------------------------------------------
-
-def get_db_path():
-    dir_path = os.environ.get("AGENTPLAN_DIR", os.path.expanduser("~/.agentplan"))
-    db_path = os.environ.get("AGENTPLAN_DB", os.path.join(dir_path, "agentplan.db"))
-    return dir_path, db_path
-
-
-def get_connection(db_path=None):
-    if db_path is None:
-        dir_path, db_path = get_db_path()
-        os.makedirs(dir_path, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db(conn):
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS projects (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            slug TEXT NOT NULL UNIQUE,
-            title TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'active',
-            notes TEXT,
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
-            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
-        );
-        CREATE TABLE IF NOT EXISTS tickets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            num INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            description TEXT,
-            status TEXT NOT NULL DEFAULT 'pending',
-            priority TEXT NOT NULL DEFAULT 'none',
-            tags TEXT NOT NULL DEFAULT '',
-            depends_on TEXT DEFAULT '[]',
-            notes TEXT,
-            started_by TEXT,
-            done_by TEXT,
-            due_date TEXT,
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
-            completed_at TEXT
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_project_num ON tickets(project_id, num);
-        CREATE TABLE IF NOT EXISTS ticket_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-            old_state TEXT,
-            new_state TEXT NOT NULL,
-            changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_ticket_history_ticket_id ON ticket_history(ticket_id, id);
-        CREATE TABLE IF NOT EXISTS attachments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
-            label TEXT NOT NULL,
-            path TEXT,
-            url TEXT,
-            notes TEXT,
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
-        );
-        CREATE TABLE IF NOT EXISTS log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
-            entry TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
-        );
-        CREATE TABLE IF NOT EXISTS subtasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-            num INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
-            completed_at TEXT
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_subtask_ticket_num ON subtasks(ticket_id, num);
-    """)
-    # Migration: add num column if missing (upgrade from 0.1.0)
-    try:
-        conn.execute("SELECT num FROM tickets LIMIT 0")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE tickets ADD COLUMN num INTEGER")
-        # Backfill: assign sequential nums per project
-        projects = conn.execute("SELECT DISTINCT project_id FROM tickets").fetchall()
-        for p in projects:
-            rows = conn.execute(
-                "SELECT id FROM tickets WHERE project_id=? ORDER BY id", (p[0],)
-            ).fetchall()
-            for i, r in enumerate(rows, 1):
-                conn.execute("UPDATE tickets SET num=? WHERE id=?", (i, r[0]))
-        conn.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_project_num ON tickets(project_id, num)
-        """)
-        conn.commit()
-    # Migration: add priority column if missing (upgrade from pre-priority schema)
-    try:
-        conn.execute("SELECT priority FROM tickets LIMIT 0")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE tickets ADD COLUMN priority TEXT NOT NULL DEFAULT 'none'")
-        conn.execute("UPDATE tickets SET priority='none' WHERE priority IS NULL OR priority=''")
-        conn.commit()
-    # Migration: add close_note column if missing
-    try:
-        conn.execute("SELECT close_note FROM tickets LIMIT 0")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE tickets ADD COLUMN close_note TEXT")
-        conn.commit()
-    # Migration: add tags column if missing
-    try:
-        conn.execute("SELECT tags FROM tickets LIMIT 0")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE tickets ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
-        conn.execute("UPDATE tickets SET tags='' WHERE tags IS NULL")
-        conn.commit()
-    # Migration: add started_by column if missing
-    try:
-        conn.execute("SELECT started_by FROM tickets LIMIT 0")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE tickets ADD COLUMN started_by TEXT")
-        conn.commit()
-    # Migration: add done_by column if missing
-    try:
-        conn.execute("SELECT done_by FROM tickets LIMIT 0")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE tickets ADD COLUMN done_by TEXT")
-        conn.commit()
-    # Migration: add description column if missing
-    try:
-        conn.execute("SELECT description FROM tickets LIMIT 0")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE tickets ADD COLUMN description TEXT")
-        conn.commit()
-    # Migration: add due_date column if missing
-    try:
-        conn.execute("SELECT due_date FROM tickets LIMIT 0")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE tickets ADD COLUMN due_date TEXT")
-        conn.commit()
-    # Migration: create subtasks table/index if missing
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS subtasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-            num INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
-            completed_at TEXT
-        )
-    """)
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_subtask_ticket_num ON subtasks(ticket_id, num)")
-    conn.commit()
-
-
-def _now():
-    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
-
-def _ensure(conn):
-    """Auto-init tables so every command works without explicit init."""
-    init_db(conn)
-    return conn
-
-
-def _next_ticket_num(conn, project_id):
-    """Get next ticket number for a project (1-based, sequential)."""
-    row = conn.execute(
-        "SELECT MAX(num) FROM tickets WHERE project_id=?", (project_id,)
-    ).fetchone()
-    return (row[0] or 0) + 1
-
-
-def _next_subtask_num(conn, ticket_id):
-    """Get next subtask number for a ticket (1-based, sequential)."""
-    row = conn.execute(
-        "SELECT MAX(num) FROM subtasks WHERE ticket_id=?", (ticket_id,)
-    ).fetchone()
-    return (row[0] or 0) + 1
-
-
-def _record_ticket_history(conn, ticket_id, old_state, new_state):
-    conn.execute(
-        "INSERT INTO ticket_history (ticket_id, old_state, new_state, changed_at) VALUES (?,?,?,?)",
-        (ticket_id, old_state, new_state, _now()),
-    )
-
-
-# ---------------------------------------------------------------------------
 # Slugify
 # ---------------------------------------------------------------------------
 
@@ -276,30 +99,16 @@ def slugify(title):
     return s[:60] or "project"
 
 
-def unique_slug(conn, base):
-    slug = base
-    i = 2
-    while conn.execute("SELECT 1 FROM projects WHERE slug=?", (slug,)).fetchone():
-        slug = f"{base[:57]}-{i}"
-        i += 1
-    return slug
-
 
 # ---------------------------------------------------------------------------
 # Resolve helpers
 # ---------------------------------------------------------------------------
 
 def resolve_project(conn, ident):
-    row = conn.execute("SELECT * FROM projects WHERE slug=?", (ident,)).fetchone()
+    row = db_resolve_project(conn, ident)
     if not row:
-        try:
-            row = conn.execute("SELECT * FROM projects WHERE id=?", (int(ident),)).fetchone()
-        except (ValueError, TypeError):
-            pass
-    if not row:
-        slugs = [r["slug"] for r in conn.execute("SELECT slug FROM projects ORDER BY slug").fetchall()]
         suggestions = []
-        close_matches = difflib.get_close_matches(str(ident), slugs, n=1, cutoff=0.6)
+        close_matches = project_slug_suggestions(conn, ident)
         if close_matches:
             suggestions.append(f"Did you mean '{close_matches[0]}'?")
         suggestions.append("Run `agentplan list --all` to see all projects.")
@@ -308,9 +117,8 @@ def resolve_project(conn, ident):
 
 
 def resolve_ticket(conn, project_id, num_str, slug=""):
-    """Resolve a ticket by its per-project number."""
     try:
-        num = int(num_str)
+        int(num_str)
     except (ValueError, TypeError):
         fail(
             f"Invalid ticket number '{num_str}'.",
@@ -319,21 +127,18 @@ def resolve_ticket(conn, project_id, num_str, slug=""):
                 f"Run `agentplan ticket list {slug or '<project>'}` to see ticket IDs.",
             ],
         )
-    row = conn.execute(
-        "SELECT * FROM tickets WHERE project_id=? AND num=?", (project_id, num)
-    ).fetchone()
+    row = db_resolve_ticket(conn, project_id, num_str)
     if not row:
         fail(
-            f"Ticket #{num} not found in project '{slug}'.",
+            f"Ticket #{int(num_str)} not found in project '{slug}'.",
             suggestions=[f"Run `agentplan ticket list {slug}` to see available ticket IDs."],
         )
     return row
 
 
 def resolve_subtask(conn, ticket_id, num_str, ticket_num, slug=""):
-    """Resolve a subtask by its per-ticket number."""
     try:
-        num = int(num_str)
+        int(num_str)
     except (ValueError, TypeError):
         fail(
             f"Invalid subtask number '{num_str}'.",
@@ -342,12 +147,10 @@ def resolve_subtask(conn, ticket_id, num_str, ticket_num, slug=""):
                 f"Run `agentplan subtask list {slug or '<project>'} {ticket_num}` to see subtask IDs.",
             ],
         )
-    row = conn.execute(
-        "SELECT * FROM subtasks WHERE ticket_id=? AND num=?", (ticket_id, num)
-    ).fetchone()
+    row = db_resolve_subtask(conn, ticket_id, num_str)
     if not row:
         fail(
-            f"Subtask #{num} not found for ticket #{ticket_num} in project '{slug}'.",
+            f"Subtask #{int(num_str)} not found for ticket #{ticket_num} in project '{slug}'.",
             suggestions=[f"Run `agentplan subtask list {slug} {ticket_num}` to see subtasks."],
         )
     return row
@@ -392,16 +195,6 @@ def get_unblocked(tickets):
             out.append(t)
     return out
 
-
-def check_auto_complete(conn, project_id):
-    rows = conn.execute("SELECT status FROM tickets WHERE project_id=?", (project_id,)).fetchall()
-    if rows and all(r["status"] in ("done", "skipped") for r in rows):
-        conn.execute(
-            "UPDATE projects SET status='completed', updated_at=? WHERE id=? AND status='active'",
-            (_now(), project_id),
-        )
-        return True
-    return False
 
 
 # ---------------------------------------------------------------------------
@@ -481,28 +274,6 @@ def _ticket_has_tag(ticket, tag):
     return f",{target}," in f",{tags},"
 
 
-def _get_subtask_progress_map(conn, ticket_ids):
-    if not ticket_ids:
-        return {}
-    placeholders = ",".join("?" for _ in ticket_ids)
-    rows = conn.execute(
-        f"""
-        SELECT
-            ticket_id,
-            COUNT(*) AS total,
-            SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done
-        FROM subtasks
-        WHERE ticket_id IN ({placeholders})
-        GROUP BY ticket_id
-        """,
-        ticket_ids,
-    ).fetchall()
-    return {
-        row["ticket_id"]: {"done": int(row["done"] or 0), "total": int(row["total"] or 0)}
-        for row in rows
-    }
-
-
 def _subtask_progress_label(progress):
     if not progress or progress["total"] == 0:
         return ""
@@ -550,11 +321,8 @@ complete -c agentplan -f -a "(__agentplan_completion)"
 
 def _completion_project_slugs():
     try:
-        conn = get_connection()
-        rows = conn.execute("SELECT slug FROM projects ORDER BY slug").fetchall()
-        conn.close()
-        return [row["slug"] for row in rows]
-    except sqlite3.Error:
+        return list_project_slugs()
+    except Exception:
         return []
 
 
