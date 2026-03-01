@@ -1116,11 +1116,11 @@ def cmd_version(_args):
 
 def cmd_dashboard(args):
     try:
-        from dashboard import app
+        from dashboard import run_dashboard
     except ImportError:
         print('Error: Flask not installed. Run: pip install agentplan[dashboard]', file=__import__('sys').stderr)
         __import__("sys").exit(1)
-    app.run(host=args.host, port=args.port)
+    run_dashboard(host=args.host, port=args.port, open_browser=getattr(args, "open_browser", False))
 
 
 
@@ -1209,6 +1209,7 @@ def build_parser():
     dash_p = sub.add_parser("dashboard", help="Launch web dashboard")
     dash_p.add_argument("--port", type=int, default=5001, help="Port to listen on (default: 5001)")
     dash_p.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    dash_p.add_argument("--open", action="store_true", dest="open_browser", help="Open dashboard in default browser")
 
     c = sub.add_parser("create", help="Create a project")
     c.add_argument("title")

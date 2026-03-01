@@ -3,7 +3,9 @@
 
 import json
 import os
+import threading
 import time
+import webbrowser
 from collections import defaultdict
 from datetime import datetime
 
@@ -165,7 +167,7 @@ INDEX_TEMPLATE = """
         border-radius: 14px;
         box-shadow: 0 12px 36px var(--color-shadow);
         padding: 16px;
-        transition: transform 140ms ease, border-color 140ms ease;
+        transition: transform 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease, opacity 0.3s ease;
       }
       .project-link:hover .project-card {
         transform: translateY(-1px);
@@ -692,8 +694,17 @@ PROJECT_TEMPLATE = """
         width: 10px;
         height: 10px;
         border-radius: 50%;
+        background: #64748b;
+      }
+      .status-dot.connected {
         background: #22c55e;
-        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+        animation: pulse-live 1.6s infinite;
+      }
+      .status-dot.disconnected {
+        background: #ef4444;
+        box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
+        animation: none;
       }
       .btn-back {
         color: var(--color-muted);
@@ -738,7 +749,7 @@ PROJECT_TEMPLATE = """
       }
       .kanban-column-body { padding: 10px; display: grid; gap: 10px; }
       .kanban-empty { color: var(--color-muted); font-size: 0.84rem; margin: 4px; }
-      .ticket-link { text-decoration: none; color: inherit; display: block; cursor: pointer; }
+      .ticket-link { text-decoration: none; color: inherit; display: block; cursor: pointer; transition: transform 0.42s ease, opacity 0.3s ease; }
       .ticket-card {
         position: relative;
         background: var(--color-panel);
@@ -746,7 +757,7 @@ PROJECT_TEMPLATE = """
         border-radius: 12px;
         box-shadow: 0 12px 36px var(--color-shadow);
         padding: 10px 10px 10px 14px;
-        transition: transform 140ms ease, border-color 140ms ease;
+        transition: transform 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease, opacity 0.3s ease;
       }
       .ticket-card::before {
         content: "";
@@ -763,6 +774,27 @@ PROJECT_TEMPLATE = """
       .ticket-card.priority-medium::before { background: var(--color-medium); }
       .ticket-card.priority-low::before, .ticket-card.priority-none::before { background: var(--color-low); }
       .ticket-link:hover .ticket-card, .ticket-link:focus-visible .ticket-card { transform: translateY(-1px); border-color: rgba(59,130,246,0.55); }
+      .ticket-link.is-entering { opacity: 0; transform: translateY(10px) scale(0.98); }
+      .ticket-link.is-leaving { opacity: 0; transform: translateY(-6px) scale(0.98); pointer-events: none; }
+      .ticket-card.has-active-agent::after {
+        content: "";
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #22c55e;
+        box-shadow: 0 0 0 0 rgba(34,197,94,0.65);
+        animation: pulse-live 1.6s infinite;
+      }
+
+      @keyframes pulse-live {
+        0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.55); }
+        70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+        100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+      }
+
       .ticket-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
       .ticket-id { font-family: var(--font-mono); color: var(--color-muted); font-size: 0.75rem; }
       .ticket-title { margin: 2px 0 0; font-size: 0.94rem; font-weight: 600; line-height: 1.32; }
@@ -939,7 +971,7 @@ PROJECT_TEMPLATE = """
           </div>
         </div>
         <div class="topbar-right">
-          <span class="sse-status"><span class="status-dot" aria-hidden="true"></span> live</span>
+          <span class="sse-status"><span id="project-sse-dot" class="status-dot disconnected" aria-hidden="true"></span><span id="project-sse-label">connecting…</span></span>
           <a href="{{ url_for('activity') }}" class="btn-back">Activity</a>
           <a href="{{ url_for('index') }}" class="btn-back">All projects</a>
         </div>
@@ -961,16 +993,16 @@ PROJECT_TEMPLATE = """
 
       <section class="kanban-grid" aria-label="kanban board">
         {% for status in status_order %}
-        <article class="kanban-column">
+        <article class="kanban-column" data-status="{{ status }}">
           <header class="kanban-column-header">
             <h2 class="kanban-column-title">{{ status_labels[status] }}</h2>
-            <span class="kanban-count">{{ grouped[status]|length }}</span>
+            <span class="kanban-count" data-count-for="{{ status }}">{{ grouped[status]|length }}</span>
           </header>
-          <div class="kanban-column-body">
+          <div class="kanban-column-body" data-column-body="{{ status }}">
             {% if grouped[status] %}
               {% for ticket in grouped[status] %}
-              <a class="ticket-link" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}" data-ticket-num="{{ ticket.num }}" role="button" aria-label="Open ticket #{{ ticket.num }} details panel">
-                <article class="ticket-card priority-{{ ticket.priority|lower }}">
+              <a class="ticket-link" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}" data-ticket-num="{{ ticket.num }}" data-ticket-status="{{ status }}" role="button" aria-label="Open ticket #{{ ticket.num }} details panel">
+                <article class="ticket-card priority-{{ ticket.priority|lower }} {{ "has-active-agent" if ticket.active_agent else "" }}">
                   <div class="ticket-head">
                     <div>
                       <div class="ticket-id">#{{ ticket.num }}</div>
@@ -1131,6 +1163,147 @@ PROJECT_TEMPLATE = """
         document.addEventListener("keydown", (event) => {
           if (event.key === "Escape" && panel.classList.contains("is-open")) closePanel();
         });
+
+        const statusOrder = ["pending", "in-progress", "blocked", "done"];
+        const filters = {{ filters|tojson }};
+
+        function setConnection(isConnected, label) {
+          const dot = document.getElementById("project-sse-dot");
+          const text = document.getElementById("project-sse-label");
+          dot.classList.remove("connected", "disconnected");
+          dot.classList.add(isConnected ? "connected" : "disconnected");
+          text.textContent = label;
+        }
+
+        function ticketCardMarkup(ticket) {
+          const tags = (ticket.tags || []).map((tag) => `<span class="tag-pill tag-${esc((ticket.tag_tones || {})[tag] || "blue")}">${esc(tag)}</span>`).join("");
+          const assignee = ticket.assignee ? `<div class="agent-row"><span class="agent-avatar">${esc(ticket.assignee_initials || "")}</span><span class="agent-name">${esc(ticket.assignee)}</span></div>` : "";
+          const due = ticket.due_date ? `<div class="ticket-due ${ticket.is_overdue ? "overdue" : ""}">${esc(ticket.due_date)}</div>` : "";
+          const subtask = ticket.subtask_total > 0 ? `<div class="progress-meta"><span>subtasks</span><span>${ticket.subtask_done}/${ticket.subtask_total}</span></div><div class="mini-progress" role="img" aria-label="subtask progress"><div class="mini-progress-value" style="--progress: ${ticket.subtask_pct}%;"></div></div>` : "";
+          return `<article class="ticket-card priority-${esc((ticket.priority || "none").toLowerCase())} ${ticket.active_agent ? "has-active-agent" : ""}">
+            <div class="ticket-head"><div><div class="ticket-id">#${ticket.num}</div><div class="ticket-title">${esc(ticket.title)}</div></div>${due}</div>
+            ${tags ? `<div class="tag-row">${tags}</div>` : ""}
+            ${assignee}
+            ${subtask}
+          </article>`;
+        }
+
+        function animateFlip(node, firstRect) {
+          const lastRect = node.getBoundingClientRect();
+          const dx = firstRect.left - lastRect.left;
+          const dy = firstRect.top - lastRect.top;
+          node.style.transform = `translate(${dx}px, ${dy}px)`;
+          requestAnimationFrame(() => {
+            node.style.transition = "transform 0.42s ease";
+            node.style.transform = "translate(0, 0)";
+            setTimeout(() => {
+              node.style.transition = "";
+              node.style.transform = "";
+            }, 440);
+          });
+        }
+
+        function attachTicketHandler(link) {
+          link.addEventListener("click", (event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            loadTicket(link.dataset.ticketNum);
+          });
+        }
+
+        function ensureEmptyState(status) {
+          const body = document.querySelector(`[data-column-body="${status}"]`);
+          if (!body) return;
+          const hasCards = body.querySelector(".ticket-link");
+          let empty = body.querySelector(".kanban-empty");
+          if (!hasCards && !empty) {
+            empty = document.createElement("p");
+            empty.className = "kanban-empty";
+            empty.textContent = "No tickets.";
+            body.appendChild(empty);
+          }
+          if (hasCards && empty) empty.remove();
+        }
+
+        function applyBoardUpdate(payload) {
+          if (!payload || !payload.grouped) return;
+          const allIncoming = new Map();
+          statusOrder.forEach((status) => {
+            (payload.grouped[status] || []).forEach((ticket) => allIncoming.set(String(ticket.num), { status, ticket }));
+          });
+
+          document.querySelectorAll(".ticket-link[data-ticket-num]").forEach((node) => {
+            if (allIncoming.has(node.dataset.ticketNum)) return;
+            node.classList.add("is-leaving");
+            setTimeout(() => {
+              node.remove();
+              statusOrder.forEach(ensureEmptyState);
+            }, 280);
+          });
+
+          statusOrder.forEach((status) => {
+            const body = document.querySelector(`[data-column-body="${status}"]`);
+            if (!body) return;
+            const desired = payload.grouped[status] || [];
+            desired.forEach((ticket) => {
+              const num = String(ticket.num);
+              let link = document.querySelector(`.ticket-link[data-ticket-num="${num}"]`);
+              if (!link) {
+                link = document.createElement("a");
+                link.className = "ticket-link is-entering";
+                link.href = `/project/${encodeURIComponent(projectSlug)}/ticket/${encodeURIComponent(num)}`;
+                link.dataset.ticketNum = num;
+                link.dataset.ticketStatus = status;
+                link.setAttribute("role", "button");
+                link.setAttribute("aria-label", `Open ticket #${num} details panel`);
+                link.innerHTML = ticketCardMarkup(ticket);
+                attachTicketHandler(link);
+                body.appendChild(link);
+                requestAnimationFrame(() => link.classList.remove("is-entering"));
+              } else {
+                const firstRect = link.getBoundingClientRect();
+                link.dataset.ticketStatus = status;
+                link.innerHTML = ticketCardMarkup(ticket);
+                if (link.parentElement !== body) {
+                  body.appendChild(link);
+                  animateFlip(link, firstRect);
+                }
+              }
+            });
+
+            desired.forEach((ticket) => {
+              const node = body.querySelector(`.ticket-link[data-ticket-num="${ticket.num}"]`);
+              if (node) body.appendChild(node);
+            });
+
+            const count = document.querySelector(`[data-count-for="${status}"]`);
+            if (count) count.textContent = String(desired.length);
+            ensureEmptyState(status);
+          });
+        }
+
+        if (!window.EventSource) {
+          setConnection(false, "SSE unsupported");
+          return;
+        }
+
+        const params = new URLSearchParams({ project: projectSlug });
+        if (filters.status) params.set("status", filters.status);
+        if (filters.priority) params.set("priority", filters.priority);
+        if (filters.tag) params.set("tag", filters.tag);
+
+        const source = new EventSource(`/events?${params.toString()}`);
+        source.addEventListener("open", () => setConnection(true, "connected"));
+        source.addEventListener("project_board", (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            applyBoardUpdate(payload);
+            setConnection(true, "connected");
+          } catch (_err) {
+            setConnection(false, "parse error");
+          }
+        });
+        source.onerror = () => setConnection(false, "reconnecting…");
       })();
     </script>
   </body>
@@ -1673,6 +1846,72 @@ def _ticket_detail_payload(conn, project_id, ticket_num):
     }
 
 
+
+
+def _project_board_payload(slug, status_filter="", priority_filter="", tag_filter=""):
+    status_filter = (status_filter or "").strip().lower()
+    priority_filter = (priority_filter or "").strip().lower()
+    tag_filter = (tag_filter or "").strip().lower()
+
+    conn = get_connection(_db_path())
+    try:
+        project = conn.execute("SELECT id, slug, title FROM projects WHERE slug=?", (slug,)).fetchone()
+        if not project:
+            return None
+
+        rows = conn.execute(
+            """
+            SELECT id, num, title, description, status, priority, tags, depends_on, started_by, done_by, due_date
+            FROM tickets
+            WHERE project_id=?
+            ORDER BY num
+            """,
+            (project["id"],),
+        ).fetchall()
+
+        ticket_ids = [row["id"] for row in rows]
+        subtask_progress = {}
+        if ticket_ids:
+            placeholders = ",".join("?" for _ in ticket_ids)
+            progress_rows = conn.execute(
+                f"""
+                SELECT ticket_id, COUNT(*) AS total, SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done
+                FROM subtasks
+                WHERE ticket_id IN ({placeholders})
+                GROUP BY ticket_id
+                """,
+                ticket_ids,
+            ).fetchall()
+            subtask_progress = {
+                r["ticket_id"]: {"done": int(r["done"] or 0), "total": int(r["total"] or 0)} for r in progress_rows
+            }
+    finally:
+        conn.close()
+
+    grouped = {s: [] for s in KANBAN_STATUS_ORDER}
+    for row in rows:
+        ticket = _normalize_ticket(row)
+        subtask = subtask_progress.get(ticket["id"], {"done": 0, "total": 0})
+        ticket["subtask_done"] = subtask["done"]
+        ticket["subtask_total"] = subtask["total"]
+        ticket["subtask_pct"] = int(round((subtask["done"] / subtask["total"]) * 100)) if subtask["total"] else 0
+        ticket["active_agent"] = bool(ticket["assignee"] and ticket["status"] == "in-progress")
+
+        is_blocked = bool(ticket["dependencies"]) and ticket["status"] == "pending"
+        group_key = "blocked" if is_blocked else ticket["status"]
+        if group_key == "skipped":
+            group_key = "done"
+        if group_key not in grouped:
+            continue
+        if _ticket_matches(ticket, status_filter, priority_filter, tag_filter):
+            grouped[group_key].append(ticket)
+
+    return {
+        "project": {"slug": project["slug"], "title": project["title"]},
+        "grouped": grouped,
+        "server_time": datetime.now().isoformat(timespec="seconds"),
+    }
+
 def create_app():
     app = Flask(__name__)
 
@@ -1689,6 +1928,10 @@ def create_app():
     @app.route("/stream")
     def events():
         interval = max(1, min(int(request.args.get("interval", "2")), 30))
+        project_slug = (request.args.get("project") or "").strip()
+        status_filter = request.args.get("status", "")
+        priority_filter = request.args.get("priority", "")
+        tag_filter = request.args.get("tag", "")
 
         @stream_with_context
         def event_stream():
@@ -1756,6 +1999,7 @@ def create_app():
             ticket["subtask_done"] = subtask["done"]
             ticket["subtask_total"] = subtask["total"]
             ticket["subtask_pct"] = int(round((subtask["done"] / subtask["total"]) * 100)) if subtask["total"] else 0
+            ticket["active_agent"] = bool(ticket["assignee"] and ticket["status"] == "in-progress")
 
             is_blocked = bool(ticket["dependencies"]) and ticket["status"] == "pending"
             group_key = "blocked" if is_blocked else ticket["status"]
@@ -1826,5 +2070,20 @@ def create_app():
 app = create_app()
 
 
+def run_dashboard(host="0.0.0.0", port=5001, open_browser=False):
+    if open_browser:
+        def _open():
+            webbrowser.open(f"http://localhost:{port}")
+        threading.Timer(0.6, _open).start()
+    app.run(host=host, port=port)
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run agentplan dashboard")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=5001)
+    parser.add_argument("--open", action="store_true", dest="open_browser", help="Open dashboard in default browser")
+    args = parser.parse_args()
+    run_dashboard(host=args.host, port=args.port, open_browser=args.open_browser)
