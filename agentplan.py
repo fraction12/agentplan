@@ -556,6 +556,64 @@ def cmd_ticket_start(args):
     conn.close()
 
 
+def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
+    """Atomically claim the next unblocked pending ticket for a project."""
+    tag_filter = (tag or "").strip().lower()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        tickets = conn.execute(
+            "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (project_id,)
+        ).fetchall()
+        done_nums = {t["num"] for t in tickets if t["status"] in ("done", "skipped")}
+        candidates = [
+            t for t in tickets
+            if t["status"] == "pending"
+            and not _is_blocked(t, done_nums)
+            and _ticket_has_tag(t, tag_filter)
+        ]
+        candidates = _sort_next_items(candidates)
+        if not candidates:
+            conn.rollback()
+            return None
+
+        chosen = candidates[0]
+        updated = conn.execute(
+            "UPDATE tickets SET status='in-progress', started_by=? WHERE id=? AND status='pending'",
+            (started_by, chosen["id"]),
+        ).rowcount
+        if updated != 1:
+            conn.rollback()
+            return None
+
+        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), project_id))
+        claimed = conn.execute("SELECT * FROM tickets WHERE id=?", (chosen["id"],)).fetchone()
+        conn.commit()
+        return claimed
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def cmd_claim(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    claimed = _claim_next_ticket(
+        conn,
+        proj["id"],
+        started_by=getattr(args, "agent", None),
+        tag=getattr(args, "tag", None),
+    )
+    if not claimed:
+        print("No unblocked tickets to claim.")
+        conn.close()
+        sys.exit(1)
+    msg = f"▶ Claimed ticket #{claimed['num']}: {claimed['title']} → in-progress"
+    if claimed["started_by"]:
+        msg += f" (by {claimed['started_by']})"
+    print(msg)
+    conn.close()
+
+
 def cmd_ticket_list(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
@@ -984,6 +1042,11 @@ def build_parser():
     n.add_argument("project", nargs="?")
     n.add_argument("--tag", help="Filter by a single tag")
 
+    clm = sub.add_parser("claim", help="Atomically claim the next unblocked ticket in a project")
+    clm.add_argument("project")
+    clm.add_argument("--agent", help="Agent name claiming ticket (e.g. dash)")
+    clm.add_argument("--tag", help="Filter by a single tag")
+
     ss = sub.add_parser("status", help="Project status")
     ss.add_argument("project", nargs="?")
     ss.add_argument("--format", choices=["compact", "full", "json"], default="full")
@@ -1023,7 +1086,7 @@ def build_parser():
 
 
 DISPATCH = {
-    "init": cmd_init, "create": cmd_create, "next": cmd_next, "status": cmd_status,
+    "init": cmd_init, "create": cmd_create, "next": cmd_next, "claim": cmd_claim, "status": cmd_status,
     "list": cmd_list, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
     "note": cmd_note, "depend": cmd_depend, "remove": cmd_remove, "version": cmd_version,
 }

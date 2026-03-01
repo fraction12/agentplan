@@ -6,6 +6,7 @@ The real database is never touched.
 """
 import os
 import sys
+import threading
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -136,6 +137,64 @@ def test_ticket_start_with_agent_stores_started_by_and_shows_in_status():
     status_out, status_err, status_code = cli("status", "start-agent-project")
     assert status_code == 0, status_err
     assert "[started_by: dash]" in status_out
+
+
+def test_claim_claims_next_unblocked_ticket_atomically():
+    cli("create", "Claim Project")
+    cli("ticket", "add", "claim-project", "Low priority", "--priority", "low")
+    cli("ticket", "add", "claim-project", "High priority", "--priority", "high")
+    out, err, code = cli("claim", "claim-project", "--agent", "dash")
+    assert code == 0, err
+    assert "claimed ticket #2" in out.lower()
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status, started_by FROM tickets WHERE project_id=1 AND num=2").fetchone()
+    conn.close()
+    assert row["status"] == "in-progress"
+    assert row["started_by"] == "dash"
+
+
+def test_claim_returns_exit_1_when_no_unblocked_ticket():
+    cli("create", "Claim Empty Project")
+    out, err, code = cli("claim", "claim-empty-project")
+    assert code == 1
+    assert "no unblocked tickets to claim" in out.lower()
+    assert err == ""
+
+
+def test_claim_concurrency_only_claims_each_ticket_once():
+    cli("create", "Claim Race Project")
+    cli("ticket", "add", "claim-race-project", "Ticket A")
+    cli("ticket", "add", "claim-race-project", "Ticket B")
+
+    barrier = threading.Barrier(2)
+    results = []
+
+    def worker(agent_name):
+        conn = agentplan.get_connection("/tmp/test_agentplan.db")
+        project = conn.execute(
+            "SELECT id FROM projects WHERE slug='claim-race-project'"
+        ).fetchone()
+        barrier.wait()
+        claimed = agentplan._claim_next_ticket(conn, project["id"], started_by=agent_name)
+        results.append(claimed["num"] if claimed else None)
+        conn.close()
+
+    t1 = threading.Thread(target=worker, args=("dash-a",))
+    t2 = threading.Thread(target=worker, args=("dash-b",))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    claimed_nums = sorted(n for n in results if n is not None)
+    assert claimed_nums == [1, 2]
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute(
+        "SELECT num, status, started_by FROM tickets WHERE project_id=1 ORDER BY num"
+    ).fetchall()
+    conn.close()
+    assert [r["status"] for r in rows] == ["in-progress", "in-progress"]
+    assert {r["started_by"] for r in rows} == {"dash-a", "dash-b"}
 
 
 def test_ticket_done_with_agent_stores_done_by_and_shows_in_status():
