@@ -4,6 +4,7 @@
 All tests use a temp DB via the `temp_db` fixture (AGENTPLAN_DB=/tmp/... path).
 The real database is never touched.
 """
+import json
 import os
 import sys
 import threading
@@ -410,6 +411,34 @@ def test_next_filters_by_tag():
     assert code == 0, err
     assert "Rotate service key" in out
     assert "Patch CSS reset" not in out
+
+
+def test_next_json_for_project_returns_machine_parseable_ticket_object():
+    cli("create", "AgentPlan V02")
+    cli("ticket", "add", "agentplan-v02", "Ship JSON output", "--priority", "high")
+    cli("ticket", "add", "agentplan-v02", "Write docs", "--priority", "low")
+    out, err, code = cli("next", "agentplan-v02", "--format", "json")
+    assert code == 0, err
+    data = json.loads(out)
+    assert data == {
+        "id": 1,
+        "title": "Ship JSON output",
+        "status": "pending",
+        "project": "agentplan-v02",
+    }
+
+
+def test_next_json_without_project_returns_array_of_ticket_objects():
+    cli("create", "API Work")
+    cli("create", "CLI Work")
+    cli("ticket", "add", "api-work", "Add endpoint", "--priority", "high")
+    cli("ticket", "add", "cli-work", "Fix parser", "--priority", "medium")
+    out, err, code = cli("next", "--format", "json")
+    assert code == 0, err
+    data = json.loads(out)
+    assert isinstance(data, list)
+    assert {item["project"] for item in data} == {"api-work", "cli-work"}
+    assert {item["title"] for item in data} == {"Add endpoint", "Fix parser"}
 
 
 def test_status_shows_priority():

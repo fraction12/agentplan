@@ -739,6 +739,7 @@ def cmd_ticket_list(args):
 
 def cmd_next(args):
     conn = _ensure(get_connection())
+    fmt = args.format or "compact"
     tag_filter = (args.tag or "").strip().lower()
     if args.project:
         projects = [resolve_project(conn, args.project)]
@@ -748,7 +749,8 @@ def cmd_next(args):
         print("No active projects.")
         conn.close()
         sys.exit(1)
-    found = False
+
+    results = []
     for p in projects:
         tickets = conn.execute(
             "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
@@ -758,16 +760,38 @@ def cmd_next(args):
             items = [t for t in items if _ticket_has_tag(t, tag_filter)]
         items = _sort_next_items(items)
         if items:
-            found = True
-            parts = []
-            for t in items:
-                m = "▶" if t["status"] == "in-progress" else "○"
-                parts.append(f"[{t['num']}] {t['title']} {m} (priority: {_priority_label(t['priority'])})")
-            print(f"📋 {p['title']}: {', '.join(parts)}")
-    if not found:
+            results.append((p, items))
+
+    if not results:
         print("No unblocked tickets.")
         conn.close()
         sys.exit(1)
+
+    if fmt == "json":
+        payload = []
+        for p, items in results:
+            t = items[0]
+            payload.append(
+                {
+                    "id": t["num"],
+                    "title": t["title"],
+                    "status": t["status"],
+                    "project": p["slug"],
+                }
+            )
+        if args.project:
+            print(json.dumps(payload[0], ensure_ascii=False))
+        else:
+            print(json.dumps(payload, ensure_ascii=False))
+        conn.close()
+        return
+
+    for p, items in results:
+        parts = []
+        for t in items:
+            m = "▶" if t["status"] == "in-progress" else "○"
+            parts.append(f"[{t['num']}] {t['title']} {m} (priority: {_priority_label(t['priority'])})")
+        print(f"📋 {p['title']}: {', '.join(parts)}")
     conn.close()
 
 
@@ -1122,6 +1146,7 @@ def build_parser():
 
     n = sub.add_parser("next", help="Show next unblocked tickets")
     n.add_argument("project", nargs="?")
+    n.add_argument("--format", choices=["compact", "json"], default="compact")
     n.add_argument("--tag", help="Filter by a single tag")
 
     clm = sub.add_parser("claim", help="Atomically claim the next unblocked ticket in a project")
