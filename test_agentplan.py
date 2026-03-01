@@ -904,7 +904,7 @@ def test_internal_completion_ticket_project_slugs_from_db():
 
 
 def test_dashboard_index_returns_projects():
-    from dashboard import app
+    from agentplan.dashboard import app
 
     cli("create", "Web Alpha")
     cli("create", "Web Beta")
@@ -918,7 +918,7 @@ def test_dashboard_index_returns_projects():
 
 
 def test_dashboard_project_detail_returns_ticket_titles():
-    from dashboard import app
+    from agentplan.dashboard import app
 
     cli("create", "Web Detail")
     cli("ticket", "add", "web-detail", "Dashboard ticket one")
@@ -934,7 +934,7 @@ def test_dashboard_project_detail_returns_ticket_titles():
 
 
 def test_dashboard_project_detail_links_to_ticket_detail_view():
-    from dashboard import app
+    from agentplan.dashboard import app
 
     cli("create", "Web Links")
     cli("ticket", "add", "web-links", "Clickable ticket")
@@ -947,7 +947,7 @@ def test_dashboard_project_detail_links_to_ticket_detail_view():
 
 
 def test_dashboard_ticket_detail_includes_dependencies_subtasks_history_and_close_note():
-    from dashboard import app
+    from agentplan.dashboard import app
 
     cli("create", "Web Ticket Detail")
     cli("ticket", "add", "web-ticket-detail", "First ticket")

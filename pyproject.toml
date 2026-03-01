@@ -55,4 +55,4 @@ dev = [
 dashboard = ["flask>=3.0"]
 
 [tool.setuptools]
-py-modules = ["agentplan", "db", "cli", "models", "dashboard"]
+packages = ["agentplan"]
