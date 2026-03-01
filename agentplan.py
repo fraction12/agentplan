@@ -2,6 +2,7 @@
 """agentplan — Project management CLI for AI agents."""
 
 import argparse
+import difflib
 import json
 import os
 import re
@@ -12,6 +13,20 @@ from datetime import datetime
 __version__ = "0.2.0"
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3}
 PRIORITY_CHOICES = ["high", "medium", "low", "none"]
+
+
+class CliError(Exception):
+    """Expected CLI error with optional suggestions and exit code."""
+
+    def __init__(self, message, suggestions=None, exit_code=2):
+        super().__init__(message)
+        self.message = message
+        self.suggestions = suggestions or []
+        self.exit_code = exit_code
+
+
+def fail(message, suggestions=None, exit_code=2):
+    raise CliError(message, suggestions=suggestions, exit_code=exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -243,8 +258,13 @@ def resolve_project(conn, ident):
         except (ValueError, TypeError):
             pass
     if not row:
-        print(f"Error: Project '{ident}' not found.", file=sys.stderr)
-        sys.exit(2)
+        slugs = [r["slug"] for r in conn.execute("SELECT slug FROM projects ORDER BY slug").fetchall()]
+        suggestions = []
+        close_matches = difflib.get_close_matches(str(ident), slugs, n=1, cutoff=0.6)
+        if close_matches:
+            suggestions.append(f"Did you mean '{close_matches[0]}'?")
+        suggestions.append("Run `agentplan list --all` to see all projects.")
+        fail(f"Project '{ident}' not found.", suggestions=suggestions)
     return row
 
 
@@ -253,14 +273,21 @@ def resolve_ticket(conn, project_id, num_str, slug=""):
     try:
         num = int(num_str)
     except (ValueError, TypeError):
-        print(f"Error: Invalid ticket number '{num_str}'.", file=sys.stderr)
-        sys.exit(2)
+        fail(
+            f"Invalid ticket number '{num_str}'.",
+            suggestions=[
+                "Ticket IDs must be numeric (for example: `1` or `2`).",
+                f"Run `agentplan ticket list {slug or '<project>'}` to see ticket IDs.",
+            ],
+        )
     row = conn.execute(
         "SELECT * FROM tickets WHERE project_id=? AND num=?", (project_id, num)
     ).fetchone()
     if not row:
-        print(f"Error: Ticket #{num} not found in project '{slug}'.", file=sys.stderr)
-        sys.exit(2)
+        fail(
+            f"Ticket #{num} not found in project '{slug}'.",
+            suggestions=[f"Run `agentplan ticket list {slug}` to see available ticket IDs."],
+        )
     return row
 
 
@@ -269,17 +296,21 @@ def resolve_subtask(conn, ticket_id, num_str, ticket_num, slug=""):
     try:
         num = int(num_str)
     except (ValueError, TypeError):
-        print(f"Error: Invalid subtask number '{num_str}'.", file=sys.stderr)
-        sys.exit(2)
+        fail(
+            f"Invalid subtask number '{num_str}'.",
+            suggestions=[
+                "Subtask IDs must be numeric (for example: `1`).",
+                f"Run `agentplan subtask list {slug or '<project>'} {ticket_num}` to see subtask IDs.",
+            ],
+        )
     row = conn.execute(
         "SELECT * FROM subtasks WHERE ticket_id=? AND num=?", (ticket_id, num)
     ).fetchone()
     if not row:
-        print(
-            f"Error: Subtask #{num} not found for ticket #{ticket_num} in project '{slug}'.",
-            file=sys.stderr,
+        fail(
+            f"Subtask #{num} not found for ticket #{ticket_num} in project '{slug}'.",
+            suggestions=[f"Run `agentplan subtask list {slug} {ticket_num}` to see subtasks."],
         )
-        sys.exit(2)
     return row
 
 
@@ -368,8 +399,10 @@ def _parse_due_date(raw):
     try:
         datetime.strptime(value, "%Y-%m-%d")
     except ValueError:
-        print("Error: Invalid due date. Use YYYY-MM-DD.", file=sys.stderr)
-        sys.exit(2)
+        fail(
+            "Invalid due date.",
+            suggestions=["Use YYYY-MM-DD format (for example: `2026-03-01`)."],
+        )
     return value
 
 
@@ -497,8 +530,10 @@ def cmd_ticket_add(args):
             conn.execute("DELETE FROM tickets WHERE project_id=? AND num=?", (proj["id"], num))
             conn.commit()
             conn.close()
-            print("Error: Circular dependency detected.", file=sys.stderr)
-            sys.exit(2)
+            fail(
+                "Circular dependency detected.",
+                suggestions=["Remove one of the dependency links to break the cycle."],
+            )
     # Reopen completed/abandoned projects when new tickets are added
     conn.execute(
         "UPDATE projects SET status='active', updated_at=? WHERE id=? AND status IN ('completed','abandoned','archived')",
@@ -532,8 +567,10 @@ def cmd_ticket_update(args):
         tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
         if has_cycle(tickets, t["num"], deps):
             conn.close()
-            print("Error: Circular dependency detected.", file=sys.stderr)
-            sys.exit(2)
+            fail(
+                "Circular dependency detected.",
+                suggestions=["Adjust `--depends` so tickets do not reference each other in a loop."],
+            )
         updates.append("depends_on=?")
         values.append(json.dumps(sorted(set(deps))))
     if args.priority is not None:
@@ -542,11 +579,10 @@ def cmd_ticket_update(args):
 
     if not updates:
         conn.close()
-        print(
-            "Error: No updates provided. Use at least one of --title, --notes, --depends, --priority.",
-            file=sys.stderr,
+        fail(
+            "No updates provided.",
+            suggestions=["Use at least one of: `--title`, `--notes`, `--depends`, `--priority`."],
         )
-        sys.exit(2)
 
     values.append(t["id"])
     conn.execute(f"UPDATE tickets SET {', '.join(updates)} WHERE id=?", values)
@@ -581,11 +617,10 @@ def cmd_ticket_edit(args):
 
     if not updates:
         conn.close()
-        print(
-            "Error: No updates provided. Use at least one of --title, --desc, --priority, --tag, --due.",
-            file=sys.stderr,
+        fail(
+            "No updates provided.",
+            suggestions=["Use at least one of: `--title`, `--desc`, `--priority`, `--tag`, `--due`."],
         )
-        sys.exit(2)
 
     values.append(t["id"])
     conn.execute(f"UPDATE tickets SET {', '.join(updates)} WHERE id=?", values)
@@ -981,11 +1016,10 @@ def cmd_archive(args):
     proj = resolve_project(conn, args.project)
     if proj["status"] not in ("completed", "abandoned"):
         conn.close()
-        print(
-            "Error: Only completed or abandoned projects can be archived.",
-            file=sys.stderr,
+        fail(
+            "Only completed or abandoned projects can be archived.",
+            suggestions=["Run `agentplan close <project>` first (or `--abandon`) before archiving."],
         )
-        sys.exit(2)
     conn.execute(
         "UPDATE projects SET status=?, updated_at=? WHERE id=?",
         ("archived", _now(), proj["id"]),
@@ -1000,8 +1034,7 @@ def cmd_search(args):
     query = (args.query or "").strip()
     if not query:
         conn.close()
-        print("Error: Query cannot be empty.", file=sys.stderr)
-        sys.exit(2)
+        fail("Search query cannot be empty.", suggestions=["Run `agentplan search <text>` with a keyword."])
 
     like = f"%{query.lower()}%"
     rows = conn.execute(
@@ -1104,9 +1137,11 @@ def cmd_depend(args):
     merged = list(set(existing + new_deps))
     tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
     if has_cycle(tickets, t["num"], merged):
-        print("Error: Circular dependency detected.", file=sys.stderr)
         conn.close()
-        sys.exit(2)
+        fail(
+            "Circular dependency detected.",
+            suggestions=["Remove one of the dependency links to break the cycle."],
+        )
     conn.execute("UPDATE tickets SET depends_on=? WHERE id=?", (json.dumps(sorted(merged)), t["id"]))
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     conn.commit()
@@ -1216,8 +1251,16 @@ def cmd_subtask_list(args):
 # CLI parser
 # ---------------------------------------------------------------------------
 
+class FriendlyArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        fail(
+            f"Invalid arguments: {message}",
+            suggestions=["Run `agentplan --help` to see available commands and options."],
+        )
+
+
 def build_parser():
-    p = argparse.ArgumentParser(prog="agentplan", description="Project management CLI for AI agents")
+    p = FriendlyArgumentParser(prog="agentplan", description="Project management CLI for AI agents")
     p.add_argument("--version", action="version", version=f"agentplan {__version__}")
     sub = p.add_subparsers(dest="command")
 
@@ -1338,11 +1381,14 @@ SUBTASK_DISPATCH = {
 
 def main():
     parser = build_parser()
-    args = parser.parse_args()
-    if not args.command:
-        parser.print_help()
-        sys.exit(2)
     try:
+        args = parser.parse_args()
+        if not args.command:
+            parser.print_help()
+            fail(
+                "No command provided.",
+                suggestions=["Run `agentplan --help` to see available commands."],
+            )
         if args.command == "ticket":
             if not getattr(args, "ticket_command", None):
                 parser.parse_args(["ticket", "--help"])
@@ -1353,10 +1399,16 @@ def main():
             SUBTASK_DISPATCH[args.subtask_command](args)
         else:
             DISPATCH[args.command](args)
+    except CliError as e:
+        print(f"Error: {e.message}", file=sys.stderr)
+        for suggestion in e.suggestions:
+            print(f"Suggestion: {suggestion}", file=sys.stderr)
+        sys.exit(e.exit_code)
     except SystemExit:
         raise
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print("Error: Unexpected failure while running agentplan.", file=sys.stderr)
+        print(f"Suggestion: Re-run with valid arguments or `agentplan --help`. ({e})", file=sys.stderr)
         sys.exit(2)
 
 

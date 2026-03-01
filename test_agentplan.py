@@ -75,6 +75,15 @@ def test_version():
     assert agentplan.__version__ in out
 
 
+def test_invalid_arguments_are_human_friendly():
+    out, err, code = cli("ticket", "add")
+    assert code == 2
+    assert out == ""
+    assert "Invalid arguments:" in err
+    assert "Run `agentplan --help` to see available commands and options." in err
+    assert "Traceback" not in err
+
+
 # ---------------------------------------------------------------------------
 # Project lifecycle
 # ---------------------------------------------------------------------------
@@ -97,6 +106,17 @@ def test_status_project():
     out, err, code = cli("status", "beta-project")
     assert code == 0, err
     assert "beta" in out.lower()
+
+
+def test_missing_project_error_is_human_friendly_with_suggestion():
+    cli("create", "Alpha Project")
+    out, err, code = cli("status", "alpha-projec")
+    assert code == 2
+    assert out == ""
+    assert "Project 'alpha-projec' not found." in err
+    assert "Did you mean 'alpha-project'?" in err
+    assert "Run `agentplan list --all` to see all projects." in err
+    assert "Traceback" not in err
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +143,18 @@ def test_mark_ticket_done():
     cli("ticket", "add", "proj-three", "Do something")
     out, err, code = cli("ticket", "done", "proj-three", "1")
     assert code == 0, err
+
+
+def test_invalid_ticket_number_error_is_human_friendly():
+    cli("create", "Ticket Parse Project")
+    cli("ticket", "add", "ticket-parse-project", "Task")
+    out, err, code = cli("ticket", "done", "ticket-parse-project", "abc")
+    assert code == 2
+    assert out == ""
+    assert "Invalid ticket number 'abc'." in err
+    assert "Ticket IDs must be numeric" in err
+    assert "Run `agentplan ticket list ticket-parse-project` to see ticket IDs." in err
+    assert "Traceback" not in err
 
 
 def test_mark_ticket_done_bulk_comma_separated_ids():
@@ -402,7 +434,8 @@ def test_ticket_edit_requires_edit_fields():
     out, err, code = cli("ticket", "edit", "edit-missing-fields", "1")
     assert code == 2
     assert out == ""
-    assert "use at least one of --title, --desc, --priority, --tag, --due" in err.lower()
+    assert "No updates provided." in err
+    assert "Use at least one of: `--title`, `--desc`, `--priority`, `--tag`, `--due`." in err
 
 
 def test_next_orders_by_priority():
