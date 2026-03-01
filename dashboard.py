@@ -530,10 +530,14 @@ ACTIVITY_TEMPLATE = """
         text.textContent = label;
       }
 
+      function esc(v) {
+        return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+      }
+
       function formatRelative(ts) {
         if (!ts) return "";
         const d = new Date(ts);
-        if (Number.isNaN(d.valueOf())) return ts;
+        if (Number.isNaN(d.valueOf())) return esc(ts);
         return d.toLocaleTimeString();
       }
 
@@ -549,7 +553,7 @@ ACTIVITY_TEMPLATE = """
         presence.forEach((agent) => {
           const li = document.createElement("li");
           li.className = "presence-item";
-          li.innerHTML = `<span class="presence-agent"><span class="pulse-dot"></span>${agent.name}</span><span class="presence-time">${formatRelative(agent.last_seen)}</span>`;
+          li.innerHTML = `<span class="presence-agent"><span class="pulse-dot"></span>${esc(agent.name)}</span><span class="presence-time">${formatRelative(agent.last_seen)}</span>`;
           list.appendChild(li);
         });
       }
@@ -583,11 +587,11 @@ ACTIVITY_TEMPLATE = """
           row.className = `feed-row action-${item.action_type || "other"}`;
           row.innerHTML = `
             <div class="feed-top">
-              <span class="feed-emoji">${item.emoji || "📝"}</span>
-              <span class="feed-agent">${item.agent || "system"}</span>
-              <span class="feed-action">${item.action || "updated"}</span>
-              <span class="feed-ticket">${item.ticket_label || "#-"}</span>
-              <span class="feed-project">${item.project_slug || "-"}</span>
+              <span class="feed-emoji">${esc(item.emoji || "📝")}</span>
+              <span class="feed-agent">${esc(item.agent || "system")}</span>
+              <span class="feed-action">${esc(item.action || "updated")}</span>
+              <span class="feed-ticket">${esc(item.ticket_label || "#-")}</span>
+              <span class="feed-project">${esc(item.project_slug || "-")}</span>
               <span class="feed-time">${formatRelative(item.timestamp)}</span>
             </div>
           `;
@@ -1927,7 +1931,10 @@ def create_app():
     @app.route("/events")
     @app.route("/stream")
     def events():
-        interval = max(1, min(int(request.args.get("interval", "2")), 30))
+        try:
+            interval = max(1, min(int(request.args.get("interval", "2")), 30))
+        except (ValueError, TypeError):
+            interval = 2
         project_slug = (request.args.get("project") or "").strip()
         status_filter = request.args.get("status", "")
         priority_filter = request.args.get("priority", "")

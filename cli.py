@@ -32,6 +32,28 @@ from db import (
 )
 
 __version__ = "0.3.7"
+
+# ---------------------------------------------------------------------------
+# Input validation limits
+# ---------------------------------------------------------------------------
+MAX_TITLE_LEN = 200
+MAX_DESC_LEN = 4000
+MAX_NOTES_LEN = 4000
+MAX_AGENT_LEN = 100
+MAX_LOG_ENTRY_LEN = 4000
+MAX_TAG_LEN = 500
+MAX_SLUG_LEN = 60  # already enforced via slugify
+
+
+def _validate_len(value, max_len, field_name):
+    """Raise CliError if value exceeds max_len."""
+    if value and len(value) > max_len:
+        fail(
+            f"{field_name} is too long ({len(value)} chars; max {max_len}).",
+            suggestions=[f"Keep {field_name.lower()} under {max_len} characters."],
+        )
+
+
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3}
 PRIORITY_CHOICES = ["high", "medium", "low", "none"]
 COMPLETION_SHELLS = ["bash", "zsh", "fish"]
@@ -378,6 +400,8 @@ def cmd_init(args):
 
 
 def cmd_create(args):
+    _validate_len(args.title, MAX_TITLE_LEN, "Project title")
+    _validate_len(args.notes, MAX_NOTES_LEN, "Notes")
     conn = _ensure(get_connection())
     slug = unique_slug(conn, slugify(args.title))
     conn.execute("INSERT INTO projects (slug, title, notes) VALUES (?,?,?)", (slug, args.title, args.notes))
@@ -401,6 +425,10 @@ def cmd_create(args):
 
 
 def cmd_ticket_add(args):
+    _validate_len(args.title, MAX_TITLE_LEN, "Ticket title")
+    _validate_len(args.desc, MAX_DESC_LEN, "Description")
+    _validate_len(args.notes, MAX_NOTES_LEN, "Notes")
+    _validate_len(getattr(args, "tag", None), MAX_TAG_LEN, "Tags")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     deps = []
@@ -486,6 +514,9 @@ def cmd_ticket_update(args):
 
 
 def cmd_ticket_edit(args):
+    _validate_len(args.title, MAX_TITLE_LEN, "Ticket title")
+    _validate_len(args.desc, MAX_DESC_LEN, "Description")
+    _validate_len(getattr(args, "tag", None), MAX_TAG_LEN, "Tags")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
@@ -533,10 +564,12 @@ def _expand_ticket_ids(ticket_ids):
 
 
 def cmd_ticket_done(args):
-    conn = _ensure(get_connection())
-    proj = resolve_project(conn, args.project)
     close_note = getattr(args, 'note', None)
     done_by = getattr(args, "agent", None)
+    _validate_len(close_note, MAX_NOTES_LEN, "Close note")
+    _validate_len(done_by, MAX_AGENT_LEN, "Agent name")
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
     for num_str in _expand_ticket_ids(args.ticket_ids):
         t = resolve_ticket(conn, proj["id"], num_str, proj["slug"])
         conn.execute(
@@ -573,10 +606,11 @@ def cmd_ticket_skip(args):
 
 
 def cmd_ticket_start(args):
+    started_by = getattr(args, "agent", None)
+    _validate_len(started_by, MAX_AGENT_LEN, "Agent name")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
-    started_by = getattr(args, "agent", None)
     conn.execute(
         "UPDATE tickets SET status='in-progress', started_by=? WHERE id=?",
         (started_by, t["id"]),
@@ -631,6 +665,7 @@ def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
 
 
 def cmd_claim(args):
+    _validate_len(getattr(args, "agent", None), MAX_AGENT_LEN, "Agent name")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     claimed = _claim_next_ticket(
@@ -975,6 +1010,7 @@ def cmd_attach(args):
 
 
 def cmd_log(args):
+    _validate_len(args.entry, MAX_LOG_ENTRY_LEN, "Log entry")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     ticket_id = None
@@ -1002,6 +1038,7 @@ def cmd_close(args):
 
 
 def cmd_note(args):
+    _validate_len(args.text, MAX_NOTES_LEN, "Note text")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     if args.ticket:
@@ -1165,6 +1202,7 @@ def cmd_internal_complete(args):
 
 
 def cmd_subtask_add(args):
+    _validate_len(args.title, MAX_TITLE_LEN, "Subtask title")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
