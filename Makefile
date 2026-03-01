@@ -20,19 +20,56 @@ publish: build
 install:
 	pip3 install --break-system-packages --no-cache-dir $$(ls dist/agentplan-*-py3-none-any.whl | tail -1) --force-reinstall
 
-# Full release pipeline: test → build → upload → install
+# Full release pipeline: test → build → upload → install → tag → push
 # Usage: make release V=0.4.1
 release:
 ifndef V
 	$(error Usage: make release V=0.4.1)
 endif
-	@echo "🚀 Releasing agentplan v$(V)..."
-	sed -i '' 's/version = ".*"/version = "$(V)"/' pyproject.toml
-	sed -i '' 's/__version__ = ".*"/__version__ = "$(V)"/' agentplan/cli.py
+	@# ── Preflight checks ──
+	@echo "🔍 Preflight checks..."
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "❌ Dirty working tree. Commit or stash changes first."; \
+		exit 1; \
+	fi
+	@if ! echo "$(V)" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		echo "❌ Invalid version '$(V)'. Use semver (e.g., 0.4.1)"; \
+		exit 1; \
+	fi
+	@if git tag | grep -q "^v$(V)$$"; then \
+		echo "❌ Tag v$(V) already exists."; \
+		exit 1; \
+	fi
+	@if ! grep -q "## v$(V)" CHANGELOG.md 2>/dev/null; then \
+		echo "❌ No '## v$(V)' entry in CHANGELOG.md. Update it first."; \
+		exit 1; \
+	fi
+	@echo "✅ All checks passed"
+	@# ── Bump version ──
+	@echo "📝 Bumping to v$(V)..."
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		sed -i '' 's/version = ".*"/version = "$(V)"/' pyproject.toml; \
+		sed -i '' 's/__version__ = ".*"/__version__ = "$(V)"/' agentplan/cli.py; \
+	else \
+		sed -i 's/version = ".*"/version = "$(V)"/' pyproject.toml; \
+		sed -i 's/__version__ = ".*"/__version__ = "$(V)"/' agentplan/cli.py; \
+	fi
+	@# ── Test ──
+	@echo "🧪 Running tests..."
 	$(MAKE) test
+	@# ── Build + Publish ──
+	@echo "📦 Building and publishing..."
 	$(MAKE) publish
+	@# ── Install ──
+	@echo "⬇️  Updating global install..."
 	$(MAKE) install
+	@# ── Git: commit, tag, push ──
+	@echo "🏷️  Committing and tagging..."
 	git add -A
 	git commit -m "release: v$(V)"
-	git push origin main
-	@echo "✅ v$(V) live on PyPI + GitHub"
+	git tag -a "v$(V)" -m "Release v$(V)"
+	git push origin main --tags
+	@echo ""
+	@echo "✅ v$(V) is live!"
+	@echo "   PyPI: https://pypi.org/project/agentplan/$(V)/"
+	@echo "   Tag:  https://github.com/fraction12/agentplan/releases/tag/v$(V)"
