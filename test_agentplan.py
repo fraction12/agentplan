@@ -635,3 +635,36 @@ def test_llms_full_txt_exists_and_contains_reference_material():
     assert "Data model and schema" in text
     assert "CREATE TABLE IF NOT EXISTS projects" not in text
     assert "projects" in text and "tickets" in text and "attachments" in text and "log" in text
+
+
+def test_ticket_history_records_created_started_done_transitions():
+    cli("create", "History Project")
+    cli("ticket", "add", "history-project", "Track transitions")
+    cli("ticket", "start", "history-project", "1", "--agent", "dash")
+    cli("ticket", "done", "history-project", "1", "--agent", "dash")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute(
+        "SELECT old_state, new_state FROM ticket_history WHERE ticket_id=(SELECT id FROM tickets WHERE project_id=1 AND num=1) ORDER BY id"
+    ).fetchall()
+    conn.close()
+
+    assert [(r["old_state"], r["new_state"]) for r in rows] == [
+        (None, "created"),
+        ("pending", "started"),
+        ("in-progress", "done"),
+    ]
+
+
+def test_history_command_shows_ticket_audit_trail():
+    cli("create", "History Command Project")
+    cli("ticket", "add", "history-command-project", "Track transitions")
+    cli("ticket", "start", "history-command-project", "1")
+    cli("ticket", "done", "history-command-project", "1")
+
+    out, err, code = cli("history", "history-command-project", "1")
+    assert code == 0, err
+    assert "History for history-command-project ticket #1" in out
+    assert "- -> created" in out
+    assert "pending -> started" in out
+    assert "in-progress -> done" in out

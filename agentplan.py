@@ -64,6 +64,14 @@ def init_db(conn):
             completed_at TEXT
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_project_num ON tickets(project_id, num);
+        CREATE TABLE IF NOT EXISTS ticket_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            old_state TEXT,
+            new_state TEXT NOT NULL,
+            changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ticket_history_ticket_id ON ticket_history(ticket_id, id);
         CREATE TABLE IF NOT EXISTS attachments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -193,6 +201,13 @@ def _next_subtask_num(conn, ticket_id):
         "SELECT MAX(num) FROM subtasks WHERE ticket_id=?", (ticket_id,)
     ).fetchone()
     return (row[0] or 0) + 1
+
+
+def _record_ticket_history(conn, ticket_id, old_state, new_state):
+    conn.execute(
+        "INSERT INTO ticket_history (ticket_id, old_state, new_state, changed_at) VALUES (?,?,?,?)",
+        (ticket_id, old_state, new_state, _now()),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -448,6 +463,8 @@ def cmd_create(args):
             "INSERT INTO tickets (project_id, num, title) VALUES (?,?,?)",
             (pid, num, t),
         )
+        ticket_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        _record_ticket_history(conn, ticket_id, None, "created")
         n += 1
     conn.commit()
     msg = f"Created project '{args.title}' ({slug})"
@@ -472,6 +489,8 @@ def cmd_ticket_add(args):
         "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes, due_date) VALUES (?,?,?,?,?,?,?,?,?)",
         (proj["id"], num, args.title, args.desc, args.priority or "none", tags, json.dumps(deps), args.notes, due_date),
     )
+    ticket_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    _record_ticket_history(conn, ticket_id, None, "created")
     if deps:
         tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
         if has_cycle(tickets, num, deps):
@@ -587,6 +606,7 @@ def cmd_ticket_done(args):
             "UPDATE tickets SET status='done', completed_at=?, close_note=?, done_by=? WHERE id=?",
             (_now(), close_note, done_by, t["id"])
         )
+        _record_ticket_history(conn, t["id"], t["status"], "done")
         msg = f"✓ Ticket #{t['num']}: {t['title']} → done"
         if close_note:
             msg += f" [{close_note}]"
@@ -607,6 +627,7 @@ def cmd_ticket_skip(args):
     for num_str in args.ticket_ids:
         t = resolve_ticket(conn, proj["id"], num_str, proj["slug"])
         conn.execute("UPDATE tickets SET status='skipped', completed_at=? WHERE id=?", (_now(), t["id"]))
+        _record_ticket_history(conn, t["id"], t["status"], "skipped")
         print(f"⊘ Ticket #{t['num']}: {t['title']} → skipped")
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     check_auto_complete(conn, proj["id"])
@@ -623,6 +644,7 @@ def cmd_ticket_start(args):
         "UPDATE tickets SET status='in-progress', started_by=? WHERE id=?",
         (started_by, t["id"]),
     )
+    _record_ticket_history(conn, t["id"], t["status"], "started")
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     conn.commit()
     msg = f"▶ Ticket #{t['num']}: {t['title']} → in-progress"
@@ -661,6 +683,7 @@ def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
             conn.rollback()
             return None
 
+        _record_ticket_history(conn, chosen["id"], chosen["status"], "started")
         conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), project_id))
         claimed = conn.execute("SELECT * FROM tickets WHERE id=?", (chosen["id"],)).fetchone()
         conn.commit()
@@ -1047,6 +1070,25 @@ def cmd_remove(args):
     conn.close()
 
 
+def cmd_history(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+    rows = conn.execute(
+        "SELECT old_state, new_state, changed_at FROM ticket_history WHERE ticket_id=? ORDER BY id",
+        (ticket["id"],),
+    ).fetchall()
+    if not rows:
+        print(f"No history found for ticket #{ticket['num']}.")
+        conn.close()
+        return
+    print(f"History for {proj['slug']} ticket #{ticket['num']}: {ticket['title']}")
+    for row in rows:
+        old_state = row["old_state"] if row["old_state"] is not None else "-"
+        print(f"  {row['changed_at']} | {old_state} -> {row['new_state']}")
+    conn.close()
+
+
 def cmd_version(_args):
     print(f"agentplan {__version__}")
 
@@ -1180,6 +1222,10 @@ def build_parser():
     rm = sub.add_parser("remove", help="Remove project or ticket")
     rm.add_argument("project"); rm.add_argument("--ticket")
 
+    hs = sub.add_parser("history", help="Show ticket state transition history")
+    hs.add_argument("project")
+    hs.add_argument("ticket_id")
+
     sp = sub.add_parser("subtask", help="Manage ticket subtasks")
     sps = sp.add_subparsers(dest="subtask_command")
     sa = sps.add_parser("add")
@@ -1195,7 +1241,7 @@ def build_parser():
 DISPATCH = {
     "init": cmd_init, "create": cmd_create, "next": cmd_next, "claim": cmd_claim, "status": cmd_status,
     "list": cmd_list, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
-    "note": cmd_note, "depend": cmd_depend, "remove": cmd_remove, "version": cmd_version,
+    "note": cmd_note, "depend": cmd_depend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version,
 }
 
 TICKET_DISPATCH = {
