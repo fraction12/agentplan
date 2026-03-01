@@ -19,6 +19,10 @@
   <a href="https://github.com/fraction12/agentplan/issues">Issues</a>
 </p>
 
+<p align="center">
+  <img src="docs/demo.svg" alt="agentplan demo" width="700">
+</p>
+
 ## Agent Loop Demo
 
 ```text
