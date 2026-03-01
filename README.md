@@ -14,12 +14,12 @@
   <a href="#quickstart">Quickstart</a> ·
   <a href="#the-agent-loop">The Agent Loop</a> ·
   <a href="#commands">Commands</a> ·
+  <a href="#dashboard">Dashboard</a> ·
   <a href="#why-agentplan">Why agentplan?</a> ·
   <a href="https://github.com/fraction12/agentplan/issues">Issues</a>
 </p>
 
-## Agent Loop Demo (Terminal Recording Preview)
-
+## Agent Loop Demo
 
 ```text
 $ agentplan create "Launch docs portal" \
@@ -27,52 +27,38 @@ $ agentplan create "Launch docs portal" \
     --ticket "Build docs site shell" \
     --ticket "Write auth middleware" \
     --ticket "Add onboarding guide"
-✓ Created project: launch-docs-portal
+Created project 'Launch docs portal' (launch-docs-portal) with 4 ticket(s)
 
-# agent-a (builder) claims the next highest-priority unblocked ticket
-$ agentplan next launch-docs-portal --format compact
-📋 launch-docs-portal: 0/4 done | Next: [1] Initialize repo + CI
+# agent-a checks what to work on
+$ agentplan next launch-docs-portal
+📋 Launch docs portal: [1] Initialize repo + CI ○ (priority: none), [2] Build docs site shell ○ (priority: none), [3] Write auth middleware ○ (priority: none), [4] Add onboarding guide ○ (priority: none)
 
-$ agentplan ticket start launch-docs-portal 1 --agent agent-a
-▶ Ticket #1 started (by agent-a)
-
-$ codex exec --full-auto "Initialize repo + CI"
-... creates repo scaffolding, CI workflow, pyproject ...
-
+# agent-a does the work, then marks it done
 $ agentplan ticket done launch-docs-portal 1 --agent agent-a
-✓ Ticket #1 marked done (by agent-a)
+✓ Ticket #1: Initialize repo + CI → done (by agent-a)
 
-# agent-b (reviewer) checks status and discovers follow-up work
+# agent-b reviews status
 $ agentplan status launch-docs-portal
 1/4 done, 0 blocked, next: [2] Build docs site shell
-  ✓ 1. Initialize repo + CI
-  ☐ 2. Build docs site shell
-  ☐ 3. Write auth middleware
-  ☐ 4. Add onboarding guide
+Launch docs portal [active] — 1/4 done
+  ✓ 1. Initialize repo + CI [priority: none] [done_by: agent-a]
+  ○ 2. Build docs site shell [priority: none]
+  ○ 3. Write auth middleware [priority: none]
+  ○ 4. Add onboarding guide [priority: none]
 
-$ agentplan ticket add launch-docs-portal \
-    "Harden CI cache keys to avoid stale lockfile reuse"
-✓ Added ticket #5
+# agent-b discovers follow-up work
+$ agentplan ticket add launch-docs-portal "Harden CI cache keys"
+Added ticket #5: Harden CI cache keys [priority: none]
 
+# ticket 5 depends on ticket 1 (already done — so it's immediately unblocked)
 $ agentplan depend launch-docs-portal 5 --on 1
-✓ Added dependency: #5 depends on #1
+Ticket #5 now depends on: [1]
 
-# agent-c (security) takes the newly discovered work
-$ agentplan next launch-docs-portal --tag security --format compact
-📋 launch-docs-portal: 1/5 done | Next: [5] Harden CI cache keys to avoid stale lockfile reuse
-
-$ agentplan ticket start launch-docs-portal 5 --agent agent-c
-▶ Ticket #5 started (by agent-c)
-
-$ codex exec --full-auto "Harden CI cache keys to avoid stale lockfile reuse"
-... updates workflow cache key + lockfile checks ...
-
-$ agentplan ticket done launch-docs-portal 5 --agent agent-c
-✓ Ticket #5 marked done (by agent-c)
+# agent-c checks the queue — ticket 5 is unblocked and ready
+$ agentplan next launch-docs-portal
+📋 Launch docs portal: [2] Build docs site shell ○ (priority: none), [3] Write auth middleware ○ (priority: none), [4] Add onboarding guide ○ (priority: none), [5] Harden CI cache keys ○ (priority: none)
 
 # loop continues until queue drains
-$ agentplan next launch-docs-portal --format compact
-📋 launch-docs-portal: 2/5 done | Next: [2] Build docs site shell
 ```
 
 ---
@@ -104,14 +90,17 @@ agentplan create "Build my app" \
   --ticket "Build API endpoints" \
   --ticket "Write tests" \
   --ticket "Deploy to production"
+# Created project 'Build my app' (build-my-app) with 4 ticket(s)
 
 # Add dependencies — tests need API, deploy needs everything
 agentplan depend build-my-app 3 --on 2
+# Ticket #3 now depends on: [2]
 agentplan depend build-my-app 4 --on 1,2,3
+# Ticket #4 now depends on: [1, 2, 3]
 
-# Ask what's next
+# Ask what's next (only unblocked tickets are returned)
 agentplan next build-my-app
-# → [1] Set up database schema
+# 📋 Build my app: [1] Set up database schema ○ (priority: none), [2] Build API endpoints ○ (priority: none)
 ```
 
 ## The Agent Loop
@@ -167,6 +156,32 @@ agentplan ticket add my-redesign "Fix: button hover state missing"
 
 Two agents, zero coordination code, self-healing work queue.
 
+## Dashboard
+
+agentplan ships with a built-in web dashboard for real-time visibility across all your projects.
+
+```bash
+# Launch the dashboard (opens in your default browser)
+agentplan dashboard --open
+
+# Stop it
+agentplan dashboard --stop
+```
+
+The dashboard includes:
+
+- **Mission Control home** — project cards with progress rings showing ticket completion
+- **Kanban board** — tickets organized by status (pending / in-progress / done / blocked)
+- **Ticket detail panel** — slide-over with full ticket info, subtasks, history, and notes
+- **Live activity feed** — real-time stream of state transitions as agents work
+- **Server-Sent Events (SSE)** — no polling; the UI updates the instant anything changes
+
+The Flask dependency is optional — install it separately:
+
+```bash
+pip install agentplan[dashboard]
+```
+
 ## Why agentplan?
 
 | | agentplan | CrewAI | AutoGen | LangGraph |
@@ -175,7 +190,7 @@ Two agents, zero coordination code, self-healing work queue.
 | **Infrastructure** | None. Single SQLite file. | Python runtime + config | Python runtime + async | Python runtime + graph def |
 | **Works with** | Any agent with a terminal | CrewAI agents only | AutoGen agents only | LangGraph nodes only |
 | **Integration** | 3 shell commands | Python SDK | Python SDK | Python SDK |
-| **Dependencies** | Zero (stdlib only) | 30+ packages | 20+ packages | 15+ packages |
+| **Dependencies** | Single package, 0 deps | 30+ packages | 20+ packages | 15+ packages |
 | **What it is** | Shared task queue | Agent framework | Agent framework | Orchestration framework |
 
 **agentplan is not a framework.** It doesn't run your agents, define their roles, or manage their conversations. It gives agents that *already exist* a way to coordinate through work.
@@ -184,54 +199,113 @@ You already have agents. agentplan gives them a shared to-do list.
 
 ## Features
 
-- **Dependency resolution** — `next` returns only unblocked tickets. No manual sequencing.
-- **Circular dependency detection** — prevents invalid dependency graphs before they happen.
-- **Auto-completion** — projects close automatically when all tickets are done or skipped.
-- **Multiple output formats** — `full`, `compact` (~50 tokens, ideal for agent prompts), and `json`.
-- **Progress logging** — timestamped entries for cross-session continuity.
-- **Attachments** — link files, URLs, or references to any project or ticket.
-- **Zero dependencies** — Python stdlib only. Single file. No virtual environment needed.
-- **SQLite storage** — fast, reliable, single-file persistence at `~/.agentplan/agentplan.db`.
+- **Dependency graph** — `next` returns only unblocked tickets; dependencies auto-unblock when blockers complete
+- **Circular dependency detection** — prevents invalid dependency graphs before they're created
+- **Priority levels** — `high`, `medium`, `low` with smart ordering so urgent work surfaces first
+- **Tags** — label tickets with comma-separated tags; filter `next` and `status` by tag
+- **Subtasks** — break tickets into smaller steps tracked within the ticket
+- **Due dates** — set `--due YYYY-MM-DD`; overdue tickets are prioritized automatically
+- **Agent attribution** — pass `--agent <name>` on `start` / `done` for full audit trails
+- **Parallel-safe claims** — `claim` uses SQLite `BEGIN IMMEDIATE` to prevent double-assignment across concurrent agents
+- **Audit log** — every state transition (pending → in-progress → done) is recorded with timestamp and agent
+- **Search** — full-text search across ticket titles and descriptions in all projects
+- **Archive / unarchive** — archive completed or abandoned projects without deleting them
+- **Ticket editing** — update title, description, priority, tags, or due date at any time
+- **Built-in web dashboard** — Kanban board with live SSE updates (Flask optional)
+- **Shell completions** — bash, zsh, and fish completions via `agentplan completion <shell>`
+- **Multiple output formats** — `full`, `compact` (~50 tokens, ideal for agent prompts), and `json`
+- **Auto-completion** — projects close automatically when all tickets are done or skipped
+- **Zero runtime dependencies** — Python stdlib only; Flask is an optional extra for the dashboard
 
 ## Commands
 
+### Project management
+
 ```
-agentplan create <title> [--ticket "..."]   # Create project with tickets
-agentplan ticket add <project> <title>      # Add a ticket
-agentplan ticket done <project> <id...>     # Mark ticket(s) done (supports 1 2 3 or 1,2,3)
-agentplan ticket skip <project> <id...>     # Skip ticket(s)
-agentplan ticket start <project> <id>       # Mark in-progress
-agentplan ticket list <project>             # List all tickets
-agentplan next [project]                    # Next unblocked ticket
-agentplan status [project]                  # Project status
-agentplan depend <project> <id> --on <ids>  # Add dependencies
-agentplan log <project> <entry>             # Log progress
-agentplan attach <project> <label> <loc>    # Attach file/URL
-agentplan close <project> [--abandon]       # Close project
-agentplan list [--status ...]               # List all projects
-agentplan remove <project> [--ticket <id>]  # Remove project/ticket
-agentplan version                           # Show version
+agentplan create <title> [--ticket "..."] [--notes "..."]              Create a project with optional inline tickets
+agentplan status [project] [--format full|compact|json] [--tag <tag>]  Project status and ticket list
+agentplan list [--status active|completed|archived|all] [--all]        List all projects
+agentplan close <project> [--abandon]                                  Close (complete or abandon) a project
+agentplan archive <project>                                            Archive a project
+agentplan remove <project> [--ticket <id>]                             Delete a project or specific ticket
+```
+
+### Tickets
+
+```
+agentplan ticket add <project> <title> [--desc "..."] [--priority high|medium|low] [--tag tag1,tag2] [--due YYYY-MM-DD] [--depends <ids>]
+agentplan ticket done <project> <id...> [--agent <name>] [--note "..."]    Mark done (space or comma-separated IDs)
+agentplan ticket skip <project> <id...>                                    Skip ticket(s)
+agentplan ticket start <project> <id> [--agent <name>]                     Mark in-progress
+agentplan ticket edit <project> <id> [--title "..."] [--desc "..."] [--priority ...] [--tag ...] [--due ...]
+agentplan ticket list <project>                                             List all tickets
+```
+
+### Agent workflow
+
+```
+agentplan next [project] [--format compact|json] [--tag <tag>]   Next unblocked ticket(s)
+agentplan claim <project> [--agent <name>] [--tag <tag>]         Atomically claim next unblocked ticket
+```
+
+### Dependencies
+
+```
+agentplan depend <project> <ticket_id> --on <ids>      Add dependency (comma-separated IDs)
+agentplan undepend <project> <ticket_id> --on <ids>    Remove a dependency
+```
+
+### Subtasks
+
+```
+agentplan subtask add <project> <ticket_id> <title>    Add a subtask to a ticket
+agentplan subtask done <project> <ticket_id> <id>      Mark subtask done
+agentplan subtask list <project> <ticket_id>           List subtasks
+```
+
+### Notes, logs, attachments
+
+```
+agentplan note <project> [ticket_id] <text>            Set a note on a project or ticket
+agentplan log <project> <entry>                        Add a timestamped log entry
+agentplan attach <project> <label> <location>          Attach a file or URL reference
+```
+
+### History & search
+
+```
+agentplan history <project> <ticket_id>    Show full state-transition history for a ticket
+agentplan search <query>                   Search ticket titles/descriptions across all projects
+```
+
+### Utilities
+
+```
+agentplan completion {bash|zsh|fish}                              Print shell completion script
+agentplan version                                                 Show installed version
+agentplan dashboard [--port N] [--host H] [--open] [--stop]      Web dashboard
 ```
 
 ## Output Formats
 
-**Full** (default):
+**Full** (default for `status`):
 ```
-My Project [active] — 2/4 done
-  ✓ 1. Setup
-  ✓ 2. Build
-  ▶ 3. Test (in-progress)
-  ⏳ 4. Deploy (blocked — waiting on 3)
+0/4 done, 2 blocked, next: [1] Set up database schema
+Build my app [active] — 0/4 done
+  ○ 1. Set up database schema [priority: none]
+  ○ 2. Build API endpoints [priority: none]
+  ⏳ 3. Write tests [priority: none] (blocked — waiting on 2)
+  ⏳ 4. Deploy to production [priority: none] (blocked — waiting on 1, 2, 3)
 ```
 
 **Compact** (~50 tokens, optimized for agent context windows):
 ```
-📋 My Project: 2/4 done | Next: [3] Test ▶
+📋 Build my app: [1] Set up database schema ○ (priority: none), [2] Build API endpoints ○ (priority: none)
 ```
 
 **JSON** (for programmatic use):
 ```json
-{"id": 1, "slug": "my-project", "title": "My Project", "status": "active", "done": 2, "total": 4}
+{"id": 1, "title": "Set up database schema", "status": "pending", "project": "build-my-app"}
 ```
 
 ## Configuration
@@ -248,7 +322,6 @@ agentplan works with any agent or tool that can execute shell commands:
 - **[OpenClaw](https://openclaw.ai)** — Multi-agent orchestration via cron jobs
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — Anthropic's CLI agent
 - **[OpenAI Codex](https://openai.com/index/openai-codex/)** — OpenAI's coding agent
-- **[Cursor](https://cursor.sh)** / **[Windsurf](https://codeium.com/windsurf)** — AI-powered editors
 - **Cron jobs** — Scheduled autonomous work loops
 - **CI/CD pipelines** — GitHub Actions, Jenkins, etc.
 - **Any terminal** — If it can run `agentplan next`, it can coordinate
