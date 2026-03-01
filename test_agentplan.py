@@ -207,6 +207,48 @@ def test_db_isolation_b():
     assert "isolation-a" not in out.lower()
 
 
+
+
+# ---------------------------------------------------------------------------
+# Close note support
+# ---------------------------------------------------------------------------
+
+def test_ticket_done_with_note():
+    cli("create", "Note Project")
+    cli("ticket", "add", "note-project", "Fix the bug")
+    out, err, code = cli("ticket", "done", "note-project", "1", "--note", "resolved in PR #42")
+    assert code == 0, err
+    assert "resolved in pr #42" in out.lower() or "resolved in PR #42" in out
+
+
+def test_ticket_done_note_stored_in_db():
+    cli("create", "Note DB Project")
+    cli("ticket", "add", "note-db-project", "Do a thing")
+    cli("ticket", "done", "note-db-project", "1", "--note", "no longer needed")
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT close_note FROM tickets WHERE num=1").fetchone()
+    conn.close()
+    assert row["close_note"] == "no longer needed"
+
+
+def test_ticket_done_without_note():
+    cli("create", "No Note Project")
+    cli("ticket", "add", "no-note-project", "Plain ticket")
+    out, err, code = cli("ticket", "done", "no-note-project", "1")
+    assert code == 0, err
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT close_note FROM tickets WHERE num=1").fetchone()
+    conn.close()
+    assert row["close_note"] is None
+
+
+def test_status_shows_close_note():
+    cli("create", "Status Note Project")
+    cli("ticket", "add", "status-note-project", "Finish it")
+    cli("ticket", "done", "status-note-project", "1", "--note", "shipped in v2")
+    out, err, code = cli("status", "status-note-project")
+    assert code == 0, err
+    assert "shipped in v2" in out
 # ---------------------------------------------------------------------------
 # LLM discoverability docs
 # ---------------------------------------------------------------------------

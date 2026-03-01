@@ -101,6 +101,12 @@ def init_db(conn):
         conn.execute("ALTER TABLE tickets ADD COLUMN priority TEXT NOT NULL DEFAULT 'none'")
         conn.execute("UPDATE tickets SET priority='none' WHERE priority IS NULL OR priority=''")
         conn.commit()
+    # Migration: add close_note column if missing
+    try:
+        conn.execute("SELECT close_note FROM tickets LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE tickets ADD COLUMN close_note TEXT")
+        conn.commit()
 
 
 def _now():
@@ -380,10 +386,17 @@ def cmd_ticket_update(args):
 def cmd_ticket_done(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
+    close_note = getattr(args, 'note', None)
     for num_str in args.ticket_ids:
         t = resolve_ticket(conn, proj["id"], num_str, proj["slug"])
-        conn.execute("UPDATE tickets SET status='done', completed_at=? WHERE id=?", (_now(), t["id"]))
-        print(f"✓ Ticket #{t['num']}: {t['title']} → done")
+        conn.execute(
+            "UPDATE tickets SET status='done', completed_at=?, close_note=? WHERE id=?",
+            (_now(), close_note, t["id"])
+        )
+        msg = f"✓ Ticket #{t['num']}: {t['title']} → done"
+        if close_note:
+            msg += f" [{close_note}]"
+        print(msg)
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     was_active = proj["status"] == "active"
     if check_auto_complete(conn, proj["id"]) and was_active:
@@ -540,6 +553,8 @@ def cmd_status(args):
                 waiting = [str(d) for d in deps if d not in done_nums]
                 line += f" (blocked — waiting on {', '.join(waiting)})"
             print(line)
+            if t["status"] == "done" and t["close_note"]:
+                print(f"       Note: {t['close_note']}")
 
         atts = conn.execute(
             "SELECT * FROM attachments WHERE project_id=? ORDER BY id", (p["id"],)
@@ -736,6 +751,7 @@ def build_parser():
     e.add_argument("--priority", choices=PRIORITY_CHOICES)
     d = ts.add_parser("done")
     d.add_argument("project"); d.add_argument("ticket_ids", nargs="+")
+    d.add_argument("--note", help="Optional closing note/reason")
     s = ts.add_parser("skip")
     s.add_argument("project"); s.add_argument("ticket_ids", nargs="+")
     st = ts.add_parser("start")
