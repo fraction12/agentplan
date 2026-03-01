@@ -5,6 +5,7 @@ import json
 import os
 import time
 from collections import defaultdict
+from datetime import datetime
 
 from flask import Flask, Response, abort, render_template_string, request, stream_with_context, url_for
 
@@ -25,11 +26,10 @@ INDEX_TEMPLATE = """
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>agentplan dashboard</title>
+    <title>agentplan mission control</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
       :root {
         --font-heading: 'Playfair Display', Georgia, serif;
@@ -45,70 +45,144 @@ INDEX_TEMPLATE = """
         --color-border: rgba(255, 255, 255, 0.08);
         --color-shadow: rgba(0, 0, 0, 0.42);
 
-        --color-high: #ef4444;
-        --color-medium: #f97316;
-        --color-low: #8892a8;
-
         --color-done: #22c55e;
         --color-in-progress: #3b82f6;
         --color-blocked: #f59e0b;
         --color-todo: #94a3b8;
+        --color-skipped: #64748b;
       }
 
       * { box-sizing: border-box; }
       body {
+        margin: 0;
         font-family: var(--font-body);
-        background: var(--color-bg) !important;
+        background: var(--color-bg);
         color: var(--color-text);
       }
-      h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); letter-spacing: -0.01em; }
-      a { color: #93c5fd; }
-      a:hover { color: #bfdbfe; }
-      .text-muted { color: var(--color-muted) !important; }
 
-      .card {
+      .page {
+        width: min(1180px, 92vw);
+        margin: 0 auto;
+        padding: 24px 0 32px;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+      }
+      .brand {
+        font-weight: 700;
+        font-size: 1rem;
+        letter-spacing: -0.01em;
+      }
+      .topbar-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--color-muted);
+        font-size: 0.9rem;
+      }
+      .clock {
+        font-family: var(--font-mono);
+        color: var(--color-text);
+      }
+      .sse-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #64748b;
+      }
+      .status-dot.connected { background: var(--color-done); box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15); }
+      .status-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15); }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+      .stat-card {
         background: var(--color-panel);
         border: 1px solid var(--color-border);
         border-radius: 14px;
         box-shadow: 0 12px 36px var(--color-shadow);
-        color: var(--color-text);
+        padding: 16px;
       }
-      .card.priority-high { border-left: 4px solid var(--color-high); }
-      .card.priority-medium { border-left: 4px solid var(--color-medium); }
-      .card.priority-low,
-      .card.priority-none { border-left: 4px solid var(--color-low); }
+      .stat-label {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--color-muted);
+      }
+      .stat-value {
+        margin-top: 8px;
+        font-size: clamp(1.7rem, 4vw, 2.3rem);
+        font-weight: 700;
+        line-height: 1;
+      }
 
-      .badge { font-family: var(--font-body); border: 1px solid transparent; }
-      .badge.status-badge { color: #061018; font-weight: 700; }
-      .badge.status-done { background: var(--color-done); }
-      .badge.status-in-progress { background: var(--color-in-progress); color: #eaf2ff; }
-      .badge.status-blocked { background: var(--color-blocked); }
-      .badge.status-todo,
-      .badge.status-pending,
-      .badge.status-skipped { background: var(--color-todo); }
-
-      .mono,
-      .project-code,
-      .ticket-id { font-family: var(--font-mono); }
-
-      .progress {
-        background: rgba(255, 255, 255, 0.07);
+      .projects-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .project-link {
+        display: block;
+        color: inherit;
+        text-decoration: none;
+      }
+      .project-card {
+        background: var(--color-panel);
         border: 1px solid var(--color-border);
-        height: 0.7rem;
+        border-radius: 14px;
+        box-shadow: 0 12px 36px var(--color-shadow);
+        padding: 16px;
+        transition: transform 140ms ease, border-color 140ms ease;
       }
-      .progress-bar {
-        background: linear-gradient(90deg, var(--color-in-progress), #60a5fa);
-        transition: width 450ms ease-in-out;
+      .project-link:hover .project-card {
+        transform: translateY(-1px);
+        border-color: rgba(255,255,255,0.16);
+      }
+      .project-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .project-title {
+        margin: 0;
+        font-family: var(--font-heading);
+        font-size: 1.24rem;
+        line-height: 1.2;
+      }
+      .project-code {
+        margin-top: 4px;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        color: var(--color-muted);
       }
 
       .progress-ring {
-        --ring-size: 42px;
-        --ring-stroke: 4;
+        --ring-size: 56px;
+        --ring-stroke: 3.6;
         --ring-progress: 0;
         --ring-track: rgba(255, 255, 255, 0.14);
         --ring-color: var(--color-in-progress);
         width: var(--ring-size);
         height: var(--ring-size);
+        position: relative;
+        flex-shrink: 0;
       }
       .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
       .progress-ring-track,
@@ -119,170 +193,190 @@ INDEX_TEMPLATE = """
         stroke-linecap: round;
         stroke-dasharray: 100;
         stroke-dashoffset: calc(100 - var(--ring-progress));
-        transition: stroke-dashoffset 450ms ease;
+        transition: stroke-dashoffset 420ms ease;
+      }
+      .progress-ring-label {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 0.75rem;
+        font-family: var(--font-mono);
       }
 
-      .agent-avatar {
-        --avatar-size: 2rem;
-        width: var(--avatar-size);
-        height: var(--avatar-size);
-        border-radius: 999px;
+      .project-meta {
+        margin-top: 10px;
+        display: grid;
+        gap: 7px;
+      }
+      .project-progress-text,
+      .project-last-activity {
+        font-size: 0.86rem;
+        color: var(--color-muted);
+      }
+
+      .dot-breakdown {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 10px;
+      }
+      .dot-item {
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        font-family: var(--font-mono);
-        font-size: 0.75rem;
-        font-weight: 600;
-        background: var(--color-bg-alt);
-        border: 1px solid var(--color-border);
-        color: var(--color-text);
+        gap: 5px;
+        font-size: 0.8rem;
+        color: var(--color-muted);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+      .dot.todo { background: var(--color-todo); }
+      .dot.in-progress { background: var(--color-in-progress); }
+      .dot.blocked { background: var(--color-blocked); }
+      .dot.done { background: var(--color-done); }
+      .dot.skipped { background: var(--color-skipped); }
+
+      .empty {
+        border: 1px dashed var(--color-border);
+        border-radius: 14px;
+        padding: 24px;
+        color: var(--color-muted);
       }
 
-      .list-group-item,
-      .form-control {
-        background: var(--color-panel-soft);
-        border-color: var(--color-border);
-        color: var(--color-text);
-      }
-      .form-control::placeholder { color: var(--color-muted); }
-      .form-control:focus {
-        background: var(--color-panel-soft);
-        color: var(--color-text);
-        border-color: var(--color-in-progress);
-        box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.2);
-      }
-
-      .btn-outline-secondary { color: var(--color-muted); border-color: var(--color-border); }
-      .btn-outline-secondary:hover { color: var(--color-text); background: rgba(255,255,255,0.06); }
-
-      .status-updated { animation: status-flash 650ms ease; }
-      @keyframes status-flash {
-        from { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35), 0 12px 36px var(--color-shadow); }
-        to { box-shadow: 0 12px 36px var(--color-shadow); }
+      @media (max-width: 980px) {
+        .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .projects-grid { grid-template-columns: 1fr; }
       }
     </style>
   </head>
   <body>
-    <main class="container py-4">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="h3 m-0">agentplan dashboard</h1>
-        <span id="live-indicator" class="text-muted small">Live updates: connecting…</span>
-      </div>
+    <main class="page">
+      <header class="topbar">
+        <div class="brand">⚡ agentplan</div>
+        <div class="topbar-right">
+          <span id="live-clock" class="clock">--:--:--</span>
+          <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
+        </div>
+      </header>
+
+      <section class="stats-grid" id="stats-grid">
+        <article class="stat-card"><div class="stat-label">Active Projects</div><div id="stat-active-projects" class="stat-value">{{ summary.active_projects }}</div></article>
+        <article class="stat-card"><div class="stat-label">Tickets In Flight</div><div id="stat-tickets-in-flight" class="stat-value">{{ summary.tickets_in_flight }}</div></article>
+        <article class="stat-card"><div class="stat-label">Completed Today</div><div id="stat-completed-today" class="stat-value">{{ summary.completed_today }}</div></article>
+        <article class="stat-card"><div class="stat-label">Active Agents</div><div id="stat-active-agents" class="stat-value">{{ summary.active_agents }}</div></article>
+      </section>
 
       {% if projects %}
-      <div class="row g-3" id="projects-grid">
-      {% for project in projects %}
-        <div class="col-12 col-md-6" data-project-id="{{ project.id }}">
-          <div class="card h-100 shadow-sm {% if project.breakdown.blocked %}priority-high{% elif project.breakdown.todo %}priority-medium{% elif project.ticket_count %}priority-low{% else %}priority-none{% endif %}">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-start mb-2">
-                <div>
-                  <h2 class="h5 mb-1"><a class="text-decoration-none" href="{{ url_for('project_detail', slug=project.slug) }}">{{ project.title }}</a></h2>
-                  <div class="d-flex align-items-center gap-2">
-                    <span class="agent-avatar">AG</span>
-                    <span class="badge project-code" style="background: var(--color-bg-alt); border-color: var(--color-border); color: var(--color-muted);">{{ project.slug }}</span>
-                  </div>
-                </div>
-                <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
-                  <svg viewBox="0 0 36 36">
-                    <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
-                    <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
-                  </svg>
-                </div>
+      <section class="projects-grid" id="projects-grid">
+        {% for project in projects %}
+        <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}">
+          <article class="project-card">
+            <div class="project-top">
+              <div>
+                <h2 class="project-title">{{ project.title }}</h2>
+                <div class="project-code">{{ project.slug }}</div>
               </div>
-              <p class="text-muted small mb-2">Status: <span class="badge status-badge status-{{ project.status }} project-status">{{ project.status }}</span></p>
-              <div class="mb-2 small project-progress-text">
-                <strong>{{ project.done_count }}/{{ project.ticket_count }}</strong> done
-                {% if project.ticket_count %}({{ project.progress_pct }}%){% endif %}
-              </div>
-              <div class="progress mb-3" role="progressbar" aria-label="{{ project.title }} progress" aria-valuenow="{{ project.progress_pct }}" aria-valuemin="0" aria-valuemax="100">
-                <div class="progress-bar" style="width: {{ project.progress_pct }}%"></div>
-              </div>
-              <div class="d-flex flex-wrap gap-1 project-breakdown">
-                {% for status, count in project.breakdown.items() %}
-                <span class="badge rounded-pill" style="background: var(--color-bg-alt); border-color: var(--color-border); color: var(--color-muted);">{{ status }}: {{ count }}</span>
-                {% endfor %}
+              <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
+                <svg viewBox="0 0 36 36">
+                  <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
+                  <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
+                </svg>
+                <span class="progress-ring-label project-progress-percent">{{ project.progress_pct }}%</span>
               </div>
             </div>
-          </div>
-        </div>
-      {% endfor %}
-      </div>
+            <div class="project-meta">
+              <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
+              <div class="dot-breakdown project-breakdown">
+                {% for status in ["todo", "in-progress", "blocked", "done", "skipped"] %}
+                <span class="dot-item"><span class="dot {{ status }}"></span><span class="dot-value" data-status="{{ status }}">{{ project.breakdown.get(status, 0) }}</span></span>
+                {% endfor %}
+              </div>
+              <div class="project-last-activity">Last activity: <span class="project-updated-at">{{ project.updated_at or "n/a" }}</span></div>
+            </div>
+          </article>
+        </a>
+        {% endfor %}
+      </section>
       {% else %}
-      <div class="alert alert-secondary">No projects found.</div>
+      <div class="empty">No projects found.</div>
       {% endif %}
     </main>
 
     <script>
-      function breakdownMarkup(breakdown) {
-        const order = ["todo", "in-progress", "blocked", "done", "skipped"];
-        return order.map((key) => `<span class="badge rounded-pill" style="background: var(--color-bg-alt); border-color: var(--color-border); color: var(--color-muted);">${key}: ${breakdown[key] ?? 0}</span>`).join("");
+      const statusOrder = ["todo", "in-progress", "blocked", "done", "skipped"];
+
+      function setClock(ts) {
+        const d = ts ? new Date(ts) : new Date();
+        document.getElementById("live-clock").textContent = d.toLocaleTimeString();
+      }
+
+      function setConnection(isConnected, label) {
+        const dot = document.getElementById("sse-dot");
+        const text = document.getElementById("sse-label");
+        dot.classList.remove("connected", "disconnected");
+        dot.classList.add(isConnected ? "connected" : "disconnected");
+        text.textContent = label;
+      }
+
+      function renderSummary(summary) {
+        document.getElementById("stat-active-projects").textContent = summary.active_projects ?? 0;
+        document.getElementById("stat-tickets-in-flight").textContent = summary.tickets_in_flight ?? 0;
+        document.getElementById("stat-completed-today").textContent = summary.completed_today ?? 0;
+        document.getElementById("stat-active-agents").textContent = summary.active_agents ?? 0;
       }
 
       function renderProjects(projects) {
-        const byId = new Map(projects.map((p) => [String(p.id), p]));
-        const cards = document.querySelectorAll("[data-project-id]");
-        cards.forEach((card) => {
+        const byId = new Map((projects || []).map((p) => [String(p.id), p]));
+        document.querySelectorAll("[data-project-id]").forEach((card) => {
           const project = byId.get(card.dataset.projectId);
           if (!project) return;
 
-          const statusNode = card.querySelector(".project-status");
-          const progressText = card.querySelector(".project-progress-text");
-          const progressWrap = card.querySelector(".progress");
-          const progressBar = card.querySelector(".progress-bar");
-          const breakdownNode = card.querySelector(".project-breakdown");
+          const ring = card.querySelector(".progress-ring");
+          ring.style.setProperty("--ring-progress", String(project.progress_pct || 0));
+          card.querySelector(".project-progress-percent").textContent = `${project.progress_pct || 0}%`;
+          card.querySelector(".project-progress-done").textContent = String(project.done_count || 0);
+          card.querySelector(".project-progress-total").textContent = String(project.ticket_count || 0);
+          card.querySelector(".project-updated-at").textContent = project.updated_at || "n/a";
 
-          const oldStatus = statusNode.textContent;
-          const oldWidth = progressBar.style.width;
-
-          statusNode.textContent = project.status;
-          statusNode.className = `badge status-badge status-${project.status}`;
-          progressText.innerHTML = `<strong>${project.done_count}/${project.ticket_count}</strong> done${project.ticket_count ? ` (${project.progress_pct}%)` : ""}`;
-          progressBar.style.width = `${project.progress_pct}%`;
-          progressWrap.setAttribute("aria-valuenow", String(project.progress_pct));
-          breakdownNode.innerHTML = breakdownMarkup(project.breakdown || {});
-
-          card.querySelector(".card").classList.remove("priority-high","priority-medium","priority-low","priority-none");
-          const todo = (project.breakdown || {}).todo || 0;
-          const blocked = (project.breakdown || {}).blocked || 0;
-          const done = (project.breakdown || {}).done || 0;
-          const total = project.ticket_count || 0;
-          const priorityClass = blocked > 0 ? "priority-high" : (todo > 0 ? "priority-medium" : (done === total && total > 0 ? "priority-low" : "priority-none"));
-          card.querySelector(".card").classList.add(priorityClass);
-
-          if (oldStatus !== project.status || oldWidth !== `${project.progress_pct}%`) {
-            card.classList.remove("status-updated");
-            void card.offsetWidth;
-            card.classList.add("status-updated");
-          }
+          const breakdown = project.breakdown || {};
+          card.querySelectorAll(".dot-value").forEach((node) => {
+            const key = node.dataset.status;
+            node.textContent = String(breakdown[key] || 0);
+          });
         });
       }
 
       (function subscribe() {
+        setClock();
+        setInterval(() => setClock(), 1000);
+
         if (!window.EventSource) {
-          document.getElementById("live-indicator").textContent = "Live updates: auto-refresh unsupported";
+          setConnection(false, "SSE unsupported");
           return;
         }
 
-        const indicator = document.getElementById("live-indicator");
         const source = new EventSource("{{ url_for('events') }}");
 
         source.addEventListener("open", () => {
-          indicator.textContent = "Live updates: connected";
+          setConnection(true, "connected");
         });
 
         source.addEventListener("project_stats", (event) => {
           try {
             const payload = JSON.parse(event.data);
+            renderSummary(payload.summary || {});
             renderProjects(payload.projects || []);
-            indicator.textContent = `Live updates: ${new Date().toLocaleTimeString()}`;
-          } catch (err) {
-            indicator.textContent = "Live updates: parse error";
+            setClock(payload.server_time || null);
+            setConnection(true, "connected");
+          } catch (_err) {
+            setConnection(false, "parse error");
           }
         });
 
         source.onerror = () => {
-          indicator.textContent = "Live updates: reconnecting…";
+          setConnection(false, "reconnecting…");
         };
       })();
     </script>
@@ -573,7 +667,9 @@ def _db_path():
 
 
 def _fetch_projects_with_stats(conn):
-    projects = conn.execute("SELECT id, slug, title, status FROM projects ORDER BY updated_at DESC, id DESC").fetchall()
+    projects = conn.execute(
+        "SELECT id, slug, title, status, updated_at FROM projects ORDER BY updated_at DESC, id DESC"
+    ).fetchall()
     rows = conn.execute("SELECT project_id, status, COUNT(*) AS c FROM tickets GROUP BY project_id, status").fetchall()
 
     counts = defaultdict(lambda: defaultdict(int))
@@ -592,6 +688,7 @@ def _fetch_projects_with_stats(conn):
         }
         total = sum(breakdown.values())
         done = breakdown["done"] + breakdown["skipped"]
+        in_flight = breakdown["todo"] + breakdown["in-progress"] + breakdown["blocked"]
         progress = int(round((done / total) * 100)) if total else 0
         out.append(
             {
@@ -599,9 +696,11 @@ def _fetch_projects_with_stats(conn):
                 "slug": p["slug"],
                 "title": p["title"],
                 "status": p["status"],
+                "updated_at": p["updated_at"],
                 "breakdown": breakdown,
                 "ticket_count": total,
                 "done_count": done,
+                "in_flight_count": in_flight,
                 "progress_pct": progress,
             }
         )
@@ -644,9 +743,43 @@ def _project_stats_payload():
     conn = get_connection(_db_path())
     try:
         projects = _fetch_projects_with_stats(conn)
+
+        completed_today = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM tickets
+            WHERE status IN ('done', 'skipped')
+              AND completed_at IS NOT NULL
+              AND date(completed_at) = date('now', 'localtime')
+            """
+        ).fetchone()["c"]
+
+        active_agents = conn.execute(
+            """
+            SELECT COUNT(DISTINCT agent) AS c
+            FROM (
+                SELECT TRIM(started_by) AS agent FROM tickets WHERE started_by IS NOT NULL AND TRIM(started_by) != ''
+                UNION
+                SELECT TRIM(done_by) AS agent FROM tickets WHERE done_by IS NOT NULL AND TRIM(done_by) != ''
+            )
+            """
+        ).fetchone()["c"]
     finally:
         conn.close()
-    return {"projects": projects}
+
+    summary = {
+        "active_projects": sum(1 for p in projects if p["status"] != "completed"),
+        "tickets_in_flight": sum(p["in_flight_count"] for p in projects),
+        "completed_today": int(completed_today or 0),
+        "active_agents": int(active_agents or 0),
+    }
+
+    return {
+        "projects": projects,
+        "summary": summary,
+        "server_time": datetime.now().isoformat(timespec="seconds"),
+    }
+
 
 
 def create_app():
@@ -654,8 +787,12 @@ def create_app():
 
     @app.route("/")
     def index():
-        projects = _project_stats_payload()["projects"]
-        return render_template_string(INDEX_TEMPLATE, projects=projects)
+        payload = _project_stats_payload()
+        return render_template_string(INDEX_TEMPLATE, projects=payload["projects"], summary=payload["summary"])
+
+    @app.route("/api/stats")
+    def api_stats():
+        return _project_stats_payload()
 
     @app.route("/events")
     def events():
