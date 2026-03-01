@@ -185,6 +185,112 @@
     .yes { color: var(--success); font-weight: 600; }
     .no { color: #fda4af; font-weight: 600; }
 
+    .demo-wrap {
+      display: grid;
+      gap: 18px;
+    }
+
+    .demo-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(3, 9, 24, .95), rgba(2, 7, 19, .92));
+      box-shadow: var(--shadow);
+    }
+
+    .terminal-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.02);
+    }
+
+    .terminal-dots {
+      display: inline-flex;
+      gap: 7px;
+    }
+
+    .terminal-dots span {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .terminal-dots span:nth-child(1) { background: #fb7185; }
+    .terminal-dots span:nth-child(2) { background: #fbbf24; }
+    .terminal-dots span:nth-child(3) { background: #34d399; }
+
+    .terminal-label {
+      color: #b9c6ef;
+      font-size: .82rem;
+    }
+
+    .terminal-screen {
+      min-height: 320px;
+      max-height: 460px;
+      overflow: auto;
+      padding: 16px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: .9rem;
+      line-height: 1.6;
+      background: #040a17;
+      color: #f8fafc;
+    }
+
+    .term-line { white-space: pre-wrap; word-break: break-word; }
+    .term-command { color: #a7f3d0; }
+    .term-output { color: #e2e8f0; }
+    .term-muted { color: #94a3b8; }
+
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 1.1em;
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      background: #86efac;
+      animation: blink 1s step-end infinite;
+    }
+
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    .demo-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .demo-controls button {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: .88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: .2s ease;
+    }
+
+    .demo-controls button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.08);
+    }
+
+    .demo-controls button[disabled] {
+      opacity: .55;
+      cursor: not-allowed;
+      transform: none;
+      filter: none;
+    }
+
     footer {
       border-top: 1px solid var(--border);
       margin-top: 42px;
@@ -271,6 +377,26 @@ agentplan done T7</code></pre>
       </div>
     </section>
 
+    <section id="demo">
+      <div class="container">
+        <h2 class="section-title">See it in action</h2>
+        <div class="demo-wrap">
+          <div class="demo-card">
+            <div class="terminal-topbar">
+              <div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+              <span class="terminal-label">agentplan live demo</span>
+            </div>
+            <div id="demo-terminal" class="terminal-screen" role="log" aria-live="polite" aria-label="Animated terminal demo"></div>
+          </div>
+          <div class="demo-controls" aria-label="Terminal demo controls">
+            <button id="demo-play" type="button">Play</button>
+            <button id="demo-pause" type="button" disabled>Pause</button>
+            <button id="demo-replay" type="button">Replay</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section>
       <div class="container">
         <h2 class="section-title">Comparison</h2>
@@ -321,5 +447,228 @@ agentplan done T7</code></pre>
       Built for practical AI execution. <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">github.com/fraction12/agentplan</a>
     </div>
   </footer>
+  <script>
+    (() => {
+      const terminal = document.getElementById('demo-terminal');
+      const playBtn = document.getElementById('demo-play');
+      const pauseBtn = document.getElementById('demo-pause');
+      const replayBtn = document.getElementById('demo-replay');
+      if (!terminal || !playBtn || !pauseBtn || !replayBtn) return;
+
+      const demoSteps = [
+        {
+          command: 'agentplan new "my-project" --desc "Build an AI product"',
+          output: [
+            '✔ Created project: my-project',
+            '  Description: Build an AI product',
+            '  Status: ready'
+          ]
+        },
+        {
+          command: 'agentplan ticket add my-project "Setup repo" --priority high',
+          output: [
+            '✔ Ticket #1 added to my-project',
+            '  Title: Setup repo',
+            '  Priority: high'
+          ]
+        },
+        {
+          command: 'agentplan ticket add my-project "Build API" --tag backend',
+          output: [
+            '✔ Ticket #2 added to my-project',
+            '  Title: Build API',
+            '  Tags: backend'
+          ]
+        },
+        {
+          command: 'agentplan next my-project',
+          output: [
+            '→ Next ticket: #1 Setup repo',
+            '  Priority: high',
+            '  Status: open'
+          ]
+        },
+        {
+          command: 'agentplan ticket done my-project 1 --agent dash',
+          output: [
+            '✔ Ticket #1 marked done',
+            '  Agent: dash',
+            '  Remaining open tickets: 1'
+          ]
+        },
+        {
+          command: 'agentplan status my-project',
+          output: [
+            'Project: my-project',
+            'Progress: 1/2 tickets complete (50%)',
+            'Open: #2 Build API [backend]'
+          ]
+        }
+      ];
+
+      const state = {
+        running: false,
+        paused: false,
+        started: false,
+        timer: null,
+        observerFired: false
+      };
+
+      function clearTimer() {
+        if (state.timer) {
+          clearTimeout(state.timer);
+          state.timer = null;
+        }
+      }
+
+      function updateControls() {
+        playBtn.disabled = state.running && !state.paused;
+        pauseBtn.disabled = !state.running || state.paused;
+      }
+
+      function scrollTerminal() {
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+
+      function addLine(text, className) {
+        const line = document.createElement('div');
+        line.className = `term-line ${className}`;
+        line.textContent = text;
+        terminal.appendChild(line);
+        scrollTerminal();
+      }
+
+      function setPrompt(text = '') {
+        let prompt = terminal.querySelector('.term-prompt');
+        if (!prompt) {
+          prompt = document.createElement('div');
+          prompt.className = 'term-line term-command term-prompt';
+          terminal.appendChild(prompt);
+        }
+        prompt.textContent = text;
+        let cursor = prompt.querySelector('.cursor');
+        if (!cursor) {
+          cursor = document.createElement('span');
+          cursor.className = 'cursor';
+          prompt.appendChild(cursor);
+        }
+        scrollTerminal();
+      }
+
+      function removePrompt() {
+        const prompt = terminal.querySelector('.term-prompt');
+        if (prompt) prompt.remove();
+      }
+
+      function wait(ms) {
+        return new Promise((resolve) => {
+          state.timer = setTimeout(() => {
+            state.timer = null;
+            resolve();
+          }, ms);
+        });
+      }
+
+      async function waitWhilePaused() {
+        while (state.paused && state.running) {
+          await wait(120);
+        }
+      }
+
+      async function typeCommand(command) {
+        setPrompt('$ ');
+        for (const char of command) {
+          await waitWhilePaused();
+          if (!state.running) return false;
+          const current = terminal.querySelector('.term-prompt');
+          if (!current) return false;
+          const cursor = current.querySelector('.cursor');
+          current.firstChild.textContent += char;
+          if (cursor) current.appendChild(cursor);
+          await wait(22 + Math.random() * 30);
+        }
+        await wait(220);
+        return true;
+      }
+
+      async function runDemo() {
+        if (state.running) return;
+        state.running = true;
+        state.paused = false;
+        state.started = true;
+        updateControls();
+
+        addLine('Demo: creating and managing tickets with agentplan', 'term-muted');
+
+        for (const step of demoSteps) {
+          await waitWhilePaused();
+          if (!state.running) return;
+
+          const ok = await typeCommand(step.command);
+          if (!ok) return;
+
+          removePrompt();
+          addLine(`$ ${step.command}`, 'term-command');
+
+          for (const outLine of step.output) {
+            await waitWhilePaused();
+            if (!state.running) return;
+            await wait(180);
+            addLine(outLine, 'term-output');
+          }
+          await wait(420);
+        }
+
+        setPrompt('$ ');
+        state.running = false;
+        state.paused = false;
+        updateControls();
+      }
+
+      function pauseDemo() {
+        if (!state.running) return;
+        state.paused = true;
+        updateControls();
+      }
+
+      function resumeDemo() {
+        if (!state.running || !state.paused) return;
+        state.paused = false;
+        updateControls();
+      }
+
+      function replayDemo() {
+        clearTimer();
+        state.running = false;
+        state.paused = false;
+        terminal.innerHTML = '';
+        updateControls();
+        runDemo();
+      }
+
+      playBtn.addEventListener('click', () => {
+        if (state.running && state.paused) {
+          resumeDemo();
+          return;
+        }
+        if (!state.running) runDemo();
+      });
+
+      pauseBtn.addEventListener('click', pauseDemo);
+      replayBtn.addEventListener('click', replayDemo);
+
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !state.observerFired && !state.started) {
+            state.observerFired = true;
+            runDemo();
+          }
+        });
+      }, { threshold: 0.4 });
+
+      observer.observe(terminal);
+      updateControls();
+    })();
+  </script>
 </body>
 </html>
