@@ -100,6 +100,15 @@ INDEX_TEMPLATE = """
         font-family: var(--font-mono);
         color: var(--color-text);
       }
+      .top-link {
+        color: var(--color-muted);
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        padding: 6px 10px;
+        text-decoration: none;
+        font-size: 0.82rem;
+      }
+      .top-link:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .sse-status {
         display: inline-flex;
         align-items: center;
@@ -264,6 +273,7 @@ INDEX_TEMPLATE = """
       <header class="topbar">
         <div class="brand">⚡ agentplan</div>
         <div class="topbar-right">
+          <a class="top-link" href="{{ url_for('activity') }}">Live activity</a>
           <span id="live-clock" class="clock">--:--:--</span>
           <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
         </div>
@@ -386,6 +396,244 @@ INDEX_TEMPLATE = """
         source.onerror = () => {
           setConnection(false, "reconnecting…");
         };
+      })();
+    </script>
+  </body>
+</html>
+"""
+
+ACTIVITY_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Live activity · agentplan dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --font-heading: 'Playfair Display', Georgia, serif;
+        --font-body: 'Inter', ui-sans-serif, sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --color-bg: #0a0e1a;
+        --color-bg-alt: #0f1420;
+        --color-panel: #151b2b;
+        --color-panel-soft: #1b2236;
+        --color-text: #e2e8f0;
+        --color-muted: #8892a8;
+        --color-border: rgba(255,255,255,0.08);
+        --color-shadow: rgba(0,0,0,0.42);
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
+      .page { width: min(1180px, 94vw); margin: 0 auto; padding: 24px 0 32px; }
+      .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; padding: 14px 16px; background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); border-radius: 14px; }
+      .brand { margin: 0; font-family: var(--font-heading); font-size: 1.3rem; }
+      .topbar-right { display: flex; align-items: center; gap: 10px; }
+      .btn-nav { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-size: 0.85rem; }
+      .btn-nav:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .clock { font-family: var(--font-mono); }
+      .status-dot { width: 10px; height: 10px; border-radius: 999px; background: #64748b; display: inline-block; }
+      .status-dot.connected { background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,0.15); }
+      .status-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,0.15); }
+      .sse-status { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: 0.84rem; }
+
+      .layout { display: grid; grid-template-columns: 280px 1fr; gap: 14px; }
+      .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 12px 36px var(--color-shadow); }
+      .card h2 { margin: 0 0 10px; padding: 14px 14px 0; font-size: 0.86rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-muted); font-family: var(--font-body); }
+
+      .presence-list { list-style: none; margin: 0; padding: 0 14px 14px; display: grid; gap: 8px; }
+      .presence-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.86rem; }
+      .presence-agent { display: inline-flex; align-items: center; gap: 8px; }
+      .pulse-dot { width: 9px; height: 9px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); animation: pulse 1.6s infinite; }
+      .presence-time { color: var(--color-muted); font-family: var(--font-mono); font-size: 0.74rem; }
+      .presence-empty { color: var(--color-muted); padding: 0 14px 14px; margin: 0; font-size: 0.84rem; }
+
+      .filters { padding: 0 14px 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+      .filter-pill { border: 1px solid var(--color-border); background: var(--color-panel-soft); color: var(--color-muted); border-radius: 999px; padding: 5px 11px; font-size: 0.78rem; cursor: pointer; }
+      .filter-pill.active { color: var(--color-text); border-color: rgba(59,130,246,0.6); background: rgba(59,130,246,0.16); }
+
+      .feed-wrap { overflow: hidden; }
+      .feed { max-height: 68vh; overflow: auto; padding: 8px 10px 12px; display: grid; gap: 8px; }
+      .feed-row { border: 1px solid var(--color-border); border-left-width: 4px; border-radius: 10px; background: var(--color-panel-soft); padding: 10px; display: grid; gap: 4px; }
+      .feed-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.86rem; }
+      .feed-emoji { font-size: 1rem; }
+      .feed-agent { font-weight: 700; }
+      .feed-action { color: var(--color-text); }
+      .feed-ticket, .feed-project, .feed-time { font-family: var(--font-mono); font-size: 0.74rem; color: var(--color-muted); }
+      .feed-row.action-done { border-left-color: #22c55e; }
+      .feed-row.action-started { border-left-color: #3b82f6; }
+      .feed-row.action-blocked { border-left-color: #f59e0b; }
+      .feed-row.action-log { border-left-color: #94a3b8; }
+      .feed-row.action-other { border-left-color: #a78bfa; }
+
+      .pause-note { padding: 0 14px 10px; font-size: 0.76rem; color: var(--color-muted); }
+
+      @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
+        70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+        100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+      }
+
+      @media (max-width: 940px) {
+        .layout { grid-template-columns: 1fr; }
+        .feed { max-height: 60vh; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="topbar">
+        <h1 class="brand">Live activity feed</h1>
+        <div class="topbar-right">
+          <a href="{{ url_for('index') }}" class="btn-nav">Projects</a>
+          <span id="live-clock" class="clock">--:--:--</span>
+          <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
+        </div>
+      </header>
+
+      <div class="layout">
+        <aside class="card">
+          <h2>Project filter</h2>
+          <div id="project-filters" class="filters"></div>
+          <h2>Active agents</h2>
+          <ul id="presence-list" class="presence-list"></ul>
+          <p id="presence-empty" class="presence-empty" hidden>No active agents in the last 15 minutes.</p>
+        </aside>
+
+        <section class="card feed-wrap">
+          <h2>Event stream</h2>
+          <p class="pause-note">Hover feed to pause auto-scroll.</p>
+          <div id="feed" class="feed"></div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const FEED_LIMIT = 300;
+      const feedState = { events: [], activeProject: "all", paused: false };
+
+      function setClock(ts) {
+        const d = ts ? new Date(ts) : new Date();
+        document.getElementById("live-clock").textContent = d.toLocaleTimeString();
+      }
+
+      function setConnection(isConnected, label) {
+        const dot = document.getElementById("sse-dot");
+        const text = document.getElementById("sse-label");
+        dot.classList.remove("connected", "disconnected");
+        dot.classList.add(isConnected ? "connected" : "disconnected");
+        text.textContent = label;
+      }
+
+      function formatRelative(ts) {
+        if (!ts) return "";
+        const d = new Date(ts);
+        if (Number.isNaN(d.valueOf())) return ts;
+        return d.toLocaleTimeString();
+      }
+
+      function renderPresence(presence) {
+        const list = document.getElementById("presence-list");
+        const empty = document.getElementById("presence-empty");
+        list.innerHTML = "";
+        if (!presence || presence.length === 0) {
+          empty.hidden = false;
+          return;
+        }
+        empty.hidden = true;
+        presence.forEach((agent) => {
+          const li = document.createElement("li");
+          li.className = "presence-item";
+          li.innerHTML = `<span class="presence-agent"><span class="pulse-dot"></span>${agent.name}</span><span class="presence-time">${formatRelative(agent.last_seen)}</span>`;
+          list.appendChild(li);
+        });
+      }
+
+      function renderFilters(projects) {
+        const wrap = document.getElementById("project-filters");
+        const options = ["all", ...(projects || [])];
+        wrap.innerHTML = "";
+        options.forEach((slug) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `filter-pill${feedState.activeProject === slug ? " active" : ""}`;
+          btn.textContent = slug === "all" ? "All projects" : slug;
+          btn.addEventListener("click", () => {
+            feedState.activeProject = slug;
+            renderFilters(projects);
+            renderFeed();
+          });
+          wrap.appendChild(btn);
+        });
+      }
+
+      function renderFeed() {
+        const container = document.getElementById("feed");
+        const beforePinnedBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 28;
+        container.innerHTML = "";
+
+        const rows = feedState.events.filter((item) => feedState.activeProject === "all" || item.project_slug === feedState.activeProject);
+        rows.forEach((item) => {
+          const row = document.createElement("article");
+          row.className = `feed-row action-${item.action_type || "other"}`;
+          row.innerHTML = `
+            <div class="feed-top">
+              <span class="feed-emoji">${item.emoji || "📝"}</span>
+              <span class="feed-agent">${item.agent || "system"}</span>
+              <span class="feed-action">${item.action || "updated"}</span>
+              <span class="feed-ticket">${item.ticket_label || "#-"}</span>
+              <span class="feed-project">${item.project_slug || "-"}</span>
+              <span class="feed-time">${formatRelative(item.timestamp)}</span>
+            </div>
+          `;
+          container.appendChild(row);
+        });
+
+        if (!feedState.paused && (beforePinnedBottom || feedState.events.length <= 4)) {
+          container.scrollTop = container.scrollHeight;
+        }
+      }
+
+      function applyActivity(payload) {
+        const incoming = payload.events || [];
+        feedState.events = incoming.slice(-FEED_LIMIT);
+        renderFilters(payload.projects || []);
+        renderPresence(payload.active_agents || []);
+        renderFeed();
+      }
+
+      (function boot() {
+        setClock();
+        setInterval(() => setClock(), 1000);
+
+        const feed = document.getElementById("feed");
+        feed.addEventListener("mouseenter", () => { feedState.paused = true; });
+        feed.addEventListener("mouseleave", () => {
+          feedState.paused = false;
+          feed.scrollTop = feed.scrollHeight;
+        });
+
+        if (!window.EventSource) {
+          setConnection(false, "SSE unsupported");
+          return;
+        }
+
+        const source = new EventSource("{{ url_for('events') }}");
+        source.addEventListener("open", () => setConnection(true, "connected"));
+        source.addEventListener("activity_feed", (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            applyActivity(payload);
+            setClock(payload.server_time || null);
+            setConnection(true, "connected");
+          } catch (_err) {
+            setConnection(false, "parse error");
+          }
+        });
+        source.onerror = () => setConnection(false, "reconnecting…");
       })();
     </script>
   </body>
@@ -692,6 +940,7 @@ PROJECT_TEMPLATE = """
         </div>
         <div class="topbar-right">
           <span class="sse-status"><span class="status-dot" aria-hidden="true"></span> live</span>
+          <a href="{{ url_for('activity') }}" class="btn-back">Activity</a>
           <a href="{{ url_for('index') }}" class="btn-back">All projects</a>
         </div>
       </header>
@@ -1209,6 +1458,130 @@ def _extract_agent(entry):
     return "system"
 
 
+
+def _status_action_meta(new_state):
+    mapping = {
+        "done": ("done", "✅", "marked done"),
+        "skipped": ("done", "⏭️", "skipped"),
+        "in-progress": ("started", "🚀", "started"),
+        "blocked": ("blocked", "⛔", "blocked"),
+        "pending": ("other", "🔄", "moved to todo"),
+    }
+    return mapping.get((new_state or "").strip().lower(), ("other", "📝", f"changed to {(new_state or 'updated').strip()}"))
+
+
+def _log_action_meta(entry):
+    raw = (entry or "").strip()
+    lowered = raw.lower()
+    if "block" in lowered:
+        return "blocked", "⛔", "blocked"
+    if "done" in lowered or "completed" in lowered or "closed" in lowered:
+        return "done", "✅", "completed"
+    if "start" in lowered or "claimed" in lowered:
+        return "started", "🚀", "started"
+    return "log", "📝", raw or "logged update"
+
+
+def _activity_feed_payload(limit=300):
+    conn = get_connection(_db_path())
+    try:
+        log_rows = conn.execute(
+            """
+            SELECT l.id AS event_id, l.created_at AS timestamp, l.entry, p.slug AS project_slug, p.title AS project_title, t.num AS ticket_num
+            FROM log l
+            JOIN projects p ON p.id = l.project_id
+            LEFT JOIN tickets t ON t.id = l.ticket_id
+            ORDER BY l.created_at DESC, l.id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+        history_rows = conn.execute(
+            """
+            SELECT h.id AS event_id, h.changed_at AS timestamp, h.old_state, h.new_state,
+                   t.num AS ticket_num, t.started_by, t.done_by,
+                   p.slug AS project_slug, p.title AS project_title
+            FROM ticket_history h
+            JOIN tickets t ON t.id = h.ticket_id
+            JOIN projects p ON p.id = t.project_id
+            ORDER BY h.changed_at DESC, h.id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    events = []
+    for row in log_rows:
+        action_type, emoji, action = _log_action_meta(row["entry"])
+        events.append(
+            {
+                "id": f"log:{row['event_id']}",
+                "timestamp": row["timestamp"],
+                "agent": _extract_agent(row["entry"]),
+                "action": action,
+                "action_type": action_type,
+                "emoji": emoji,
+                "ticket_label": f"#{row['ticket_num']}" if row["ticket_num"] else "#-",
+                "project_slug": row["project_slug"],
+                "project_title": row["project_title"],
+            }
+        )
+
+    for row in history_rows:
+        action_type, emoji, action = _status_action_meta(row["new_state"])
+        agent = "system"
+        if row["new_state"] in ("done", "skipped") and (row["done_by"] or "").strip():
+            agent = row["done_by"].strip()
+        elif row["new_state"] == "in-progress" and (row["started_by"] or "").strip():
+            agent = row["started_by"].strip()
+        events.append(
+            {
+                "id": f"history:{row['event_id']}",
+                "timestamp": row["timestamp"],
+                "agent": agent,
+                "action": action,
+                "action_type": action_type,
+                "emoji": emoji,
+                "ticket_label": f"#{row['ticket_num']}" if row["ticket_num"] else "#-",
+                "project_slug": row["project_slug"],
+                "project_title": row["project_title"],
+            }
+        )
+
+    events.sort(key=lambda item: (item.get("timestamp") or "", item["id"]))
+    if len(events) > limit:
+        events = events[-limit:]
+
+    projects = sorted({item["project_slug"] for item in events if item.get("project_slug")})
+
+    now_dt = datetime.now()
+    latest_by_agent = {}
+    for item in reversed(events):
+        agent = (item.get("agent") or "").strip()
+        if not agent or agent == "system" or agent in latest_by_agent:
+            continue
+        try:
+            ts = datetime.fromisoformat(item["timestamp"])
+        except (TypeError, ValueError):
+            continue
+        if (now_dt - ts).total_seconds() <= 900:
+            latest_by_agent[agent] = item["timestamp"]
+
+    active_agents = [
+        {"name": name, "last_seen": ts}
+        for name, ts in sorted(latest_by_agent.items(), key=lambda pair: pair[1], reverse=True)
+    ]
+
+    return {
+        "events": events,
+        "projects": projects,
+        "active_agents": active_agents,
+        "server_time": datetime.now().isoformat(timespec="seconds"),
+    }
+
 def _ticket_detail_payload(conn, project_id, ticket_num):
     row = conn.execute(
         """
@@ -1313,17 +1686,24 @@ def create_app():
         return _project_stats_payload()
 
     @app.route("/events")
+    @app.route("/stream")
     def events():
         interval = max(1, min(int(request.args.get("interval", "2")), 30))
 
         @stream_with_context
         def event_stream():
             while True:
-                payload = _project_stats_payload()
-                yield f"event: project_stats\\ndata: {json.dumps(payload)}\\n\\n"
+                stats_payload = _project_stats_payload()
+                activity_payload = _activity_feed_payload()
+                yield f"event: project_stats\\ndata: {json.dumps(stats_payload)}\\n\\n"
+                yield f"event: activity_feed\\ndata: {json.dumps(activity_payload)}\\n\\n"
                 time.sleep(interval)
 
         return Response(event_stream(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+    @app.route("/activity")
+    def activity():
+        return render_template_string(ACTIVITY_TEMPLATE)
 
     @app.route("/project/<slug>")
     def project_detail(slug):
