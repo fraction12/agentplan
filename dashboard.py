@@ -19,6 +19,14 @@ STATUS_LABELS = {
     "done": "done",
     "skipped": "skipped",
 }
+KANBAN_STATUS_ORDER = ["pending", "in-progress", "blocked", "done"]
+KANBAN_STATUS_LABELS = {
+    "pending": "Todo",
+    "in-progress": "In Progress",
+    "blocked": "Blocked",
+    "done": "Done",
+}
+TAG_TONES = ("blue", "purple", "teal", "amber", "rose")
 
 INDEX_TEMPLATE = """
 <!doctype html>
@@ -394,7 +402,6 @@ PROJECT_TEMPLATE = """
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
       :root {
         --font-heading: 'Playfair Display', Georgia, serif;
@@ -411,88 +418,267 @@ PROJECT_TEMPLATE = """
         --color-high: #ef4444;
         --color-medium: #f97316;
         --color-low: #8892a8;
-        --color-done: #22c55e;
-        --color-in-progress: #3b82f6;
-        --color-blocked: #f59e0b;
-        --color-todo: #94a3b8;
+        --color-due-overdue: #f87171;
       }
-      body { font-family: var(--font-body); background: var(--color-bg) !important; color: var(--color-text); }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
       h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); letter-spacing: -0.01em; }
-      .text-muted { color: var(--color-muted) !important; }
-      .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 12px 36px var(--color-shadow); color: var(--color-text); }
-      .card.priority-high { border-left: 4px solid var(--color-high); }
-      .card.priority-medium { border-left: 4px solid var(--color-medium); }
-      .card.priority-low, .card.priority-none { border-left: 4px solid var(--color-low); }
-      .badge.status-badge { color: #061018; font-weight: 700; }
-      .badge.status-done { background: var(--color-done); }
-      .badge.status-in-progress { background: var(--color-in-progress); color: #eaf2ff; }
-      .badge.status-blocked { background: var(--color-blocked); }
-      .badge.status-todo, .badge.status-pending, .badge.status-skipped { background: var(--color-todo); }
-      .ticket-id, .project-code { font-family: var(--font-mono); }
-      .progress-ring { --ring-size: 42px; --ring-stroke: 4; --ring-progress: 0; --ring-track: rgba(255,255,255,0.14); --ring-color: var(--color-in-progress); width: var(--ring-size); height: var(--ring-size); }
-      .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-      .progress-ring-track, .progress-ring-value { fill: none; stroke-width: var(--ring-stroke); }
-      .progress-ring-track { stroke: var(--ring-track); }
-      .progress-ring-value { stroke: var(--ring-color); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--ring-progress)); transition: stroke-dashoffset 450ms ease; }
-      .agent-avatar { --avatar-size: 2rem; width: var(--avatar-size); height: var(--avatar-size); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; background: var(--color-bg-alt); border: 1px solid var(--color-border); color: var(--color-text); }
-      .list-group-item, .form-control { background: var(--color-panel-soft); border-color: var(--color-border); color: var(--color-text); }
-      .form-control::placeholder { color: var(--color-muted); }
-      .form-control:focus { background: var(--color-panel-soft); color: var(--color-text); border-color: var(--color-in-progress); box-shadow: 0 0 0 0.2rem rgba(59,130,246,0.2); }
-      .btn-outline-secondary { color: var(--color-muted); border-color: var(--color-border); }
-      .btn-outline-secondary:hover { color: var(--color-text); background: rgba(255,255,255,0.06); }
+      .page { width: min(1320px, 94vw); margin: 0 auto; padding: 24px 0 32px; }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 16px;
+        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+      }
+      .topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+      .project-title { margin: 0; font-size: clamp(1.2rem, 2.2vw, 1.6rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .project-code { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+      .topbar-right { display: flex; align-items: center; gap: 12px; }
+      .sse-status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--color-muted); }
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #22c55e;
+        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+      }
+      .btn-back {
+        color: var(--color-muted);
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        padding: 7px 10px;
+        text-decoration: none;
+        font-size: 0.86rem;
+      }
+      .btn-back:hover { color: var(--color-text); background: rgba(255, 255, 255, 0.05); }
+
+      .project-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--color-muted); font-size: 0.9rem; }
+      .kanban-grid { display: grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap: 14px; align-items: start; }
+      .kanban-column {
+        background: rgba(255, 255, 255, 0.015);
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        min-height: 220px;
+        display: flex;
+        flex-direction: column;
+      }
+      .kanban-column-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 12px 10px;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .kanban-column-title { margin: 0; font-size: 0.96rem; font-family: var(--font-body); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); }
+      .kanban-count {
+        min-width: 1.65rem;
+        height: 1.65rem;
+        padding: 0 7px;
+        border-radius: 999px;
+        border: 1px solid var(--color-border);
+        background: var(--color-bg-alt);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--font-mono);
+        font-size: 0.76rem;
+      }
+      .kanban-column-body { padding: 10px; display: grid; gap: 10px; }
+      .kanban-empty { color: var(--color-muted); font-size: 0.84rem; margin: 4px; }
+      .ticket-link { text-decoration: none; color: inherit; display: block; }
+      .ticket-card {
+        position: relative;
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        box-shadow: 0 12px 36px var(--color-shadow);
+        padding: 10px 10px 10px 14px;
+        transition: transform 140ms ease, border-color 140ms ease;
+      }
+      .ticket-card::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        border-top-left-radius: 12px;
+        border-bottom-left-radius: 12px;
+        background: var(--color-low);
+      }
+      .ticket-card.priority-high::before { background: var(--color-high); }
+      .ticket-card.priority-medium::before { background: var(--color-medium); }
+      .ticket-card.priority-low::before, .ticket-card.priority-none::before { background: var(--color-low); }
+      .ticket-link:hover .ticket-card { transform: translateY(-1px); border-color: rgba(59,130,246,0.55); }
+      .ticket-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
+      .ticket-id { font-family: var(--font-mono); color: var(--color-muted); font-size: 0.75rem; }
+      .ticket-title { margin: 2px 0 0; font-size: 0.94rem; font-weight: 600; line-height: 1.32; }
+      .ticket-due { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-muted); white-space: nowrap; }
+      .ticket-due.overdue { color: var(--color-due-overdue); font-weight: 600; }
+      .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+      .tag-pill {
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 0.7rem;
+        border: 1px solid transparent;
+      }
+      .tag-blue { background: rgba(59,130,246,0.18); color: #bfdbfe; border-color: rgba(59,130,246,0.35); }
+      .tag-purple { background: rgba(168,85,247,0.17); color: #e9d5ff; border-color: rgba(168,85,247,0.35); }
+      .tag-teal { background: rgba(20,184,166,0.17); color: #99f6e4; border-color: rgba(20,184,166,0.35); }
+      .tag-amber { background: rgba(245,158,11,0.18); color: #fde68a; border-color: rgba(245,158,11,0.35); }
+      .tag-rose { background: rgba(244,63,94,0.18); color: #fecdd3; border-color: rgba(244,63,94,0.35); }
+      .agent-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .agent-avatar {
+        --avatar-size: 1.5rem;
+        width: var(--avatar-size);
+        height: var(--avatar-size);
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--font-mono);
+        font-size: 0.66rem;
+        font-weight: 600;
+        background: var(--color-bg-alt);
+        border: 1px solid var(--color-border);
+        color: var(--color-text);
+      }
+      .agent-name { font-size: 0.78rem; color: var(--color-muted); }
+      .progress-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: var(--color-muted); font-size: 0.72rem; }
+      .mini-progress {
+        height: 5px;
+        border-radius: 999px;
+        background: var(--color-bg-alt);
+        overflow: hidden;
+        border: 1px solid var(--color-border);
+      }
+      .mini-progress-value {
+        height: 100%;
+        background: linear-gradient(90deg, #3b82f6, #22c55e);
+        width: var(--progress, 0%);
+      }
+      .filters {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      .filters input {
+        width: 100%;
+        background: var(--color-panel-soft);
+        border: 1px solid var(--color-border);
+        color: var(--color-text);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 0.88rem;
+      }
+      .filters input::placeholder { color: var(--color-muted); }
+      .filter-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+      .btn { border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-size: 0.82rem; color: var(--color-muted); background: transparent; cursor: pointer; }
+      .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .btn-primary { background: rgba(59,130,246,0.18); color: #dbeafe; border-color: rgba(59,130,246,0.35); }
+
+      @media (max-width: 1180px) {
+        .kanban-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+      @media (max-width: 760px) {
+        .page { width: min(620px, 94vw); }
+        .topbar { flex-direction: column; align-items: flex-start; }
+        .filters { grid-template-columns: 1fr; }
+        .kanban-grid { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
-    <main class="container py-4">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="h3 m-0">{{ project.title }}</h1>
-        <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-secondary">All projects</a>
+    <main class="page">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div>
+            <h1 class="project-title">{{ project.title }}</h1>
+            <div class="project-code">{{ project.slug }}</div>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <span class="sse-status"><span class="status-dot" aria-hidden="true"></span> live</span>
+          <a href="{{ url_for('index') }}" class="btn-back">All projects</a>
+        </div>
+      </header>
+
+      <div class="project-meta">
+        <span>{{ done_count }}/{{ total_count }} done</span>
       </div>
 
-      <p class="text-muted">{{ project.slug }} · {{ done_count }}/{{ total_count }} done</p>
-
-      <form method="get" class="row g-2 mb-4">
-        <div class="col-12 col-sm-4">
-          <input type="text" class="form-control" name="status" placeholder="status (e.g. done)" value="{{ filters.status }}">
-        </div>
-        <div class="col-12 col-sm-4">
-          <input type="text" class="form-control" name="priority" placeholder="priority (e.g. high)" value="{{ filters.priority }}">
-        </div>
-        <div class="col-12 col-sm-4">
-          <input type="text" class="form-control" name="tag" placeholder="tag (e.g. refactor)" value="{{ filters.tag }}">
-        </div>
-        <div class="col-12 d-flex gap-2">
-          <button class="btn btn-primary btn-sm" type="submit">Apply filters</button>
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_detail', slug=project.slug) }}">Reset</a>
+      <form method="get" class="filters" aria-label="filters">
+        <input type="text" name="status" placeholder="status (e.g. done)" value="{{ filters.status }}">
+        <input type="text" name="priority" placeholder="priority (e.g. high)" value="{{ filters.priority }}">
+        <input type="text" name="tag" placeholder="tag (e.g. api)" value="{{ filters.tag }}">
+        <div class="filter-actions">
+          <button class="btn btn-primary" type="submit">Apply filters</button>
+          <a class="btn" href="{{ url_for('project_detail', slug=project.slug) }}">Reset</a>
         </div>
       </form>
 
-      {% for status in status_order %}
-      <section class="mb-4">
-        <h2 class="h5 mb-2">{{ status_labels[status] }} <span class="text-muted">({{ grouped[status]|length }})</span></h2>
-        {% if grouped[status] %}
-        <div class="list-group">
-          {% for ticket in grouped[status] %}
-          <article class="list-group-item card priority-{{ ticket.priority|lower }}">
-            <div class="d-flex justify-content-between align-items-start gap-3">
-              <div>
-                <div><strong><a class="text-decoration-none" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}">#{{ ticket.num }} {{ ticket.title }}</a></strong></div>
-                {% if ticket.description %}<div class="small mt-1">{{ ticket.description }}</div>{% endif %}
-                {% if ticket.tags %}<div class="small text-muted mt-1">tags: {{ ticket.tags|join(', ') }}</div>{% endif %}
-                {% if ticket.dependencies %}<div class="small text-muted">depends on: {{ ticket.dependencies|join(', ') }}</div>{% endif %}
-              </div>
-              <div class="text-end">
-                <span class="badge ticket-id" style="background: var(--color-bg-alt); color: var(--color-text); border-color: var(--color-border);">{{ ticket.priority }}</span>
-              </div>
-            </div>
-          </article>
-          {% endfor %}
-        </div>
-        {% else %}
-          <p class="text-muted small mb-0">No tickets.</p>
-        {% endif %}
+      <section class="kanban-grid" aria-label="kanban board">
+        {% for status in status_order %}
+        <article class="kanban-column">
+          <header class="kanban-column-header">
+            <h2 class="kanban-column-title">{{ status_labels[status] }}</h2>
+            <span class="kanban-count">{{ grouped[status]|length }}</span>
+          </header>
+          <div class="kanban-column-body">
+            {% if grouped[status] %}
+              {% for ticket in grouped[status] %}
+              <a class="ticket-link" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}">
+                <article class="ticket-card priority-{{ ticket.priority|lower }}">
+                  <div class="ticket-head">
+                    <div>
+                      <div class="ticket-id">#{{ ticket.num }}</div>
+                      <div class="ticket-title">{{ ticket.title }}</div>
+                    </div>
+                    {% if ticket.due_date %}
+                    <div class="ticket-due {{ 'overdue' if ticket.is_overdue else '' }}">{{ ticket.due_date }}</div>
+                    {% endif %}
+                  </div>
+
+                  {% if ticket.tags %}
+                  <div class="tag-row">
+                    {% for tag in ticket.tags %}
+                    <span class="tag-pill tag-{{ ticket.tag_tones.get(tag, 'blue') }}">{{ tag }}</span>
+                    {% endfor %}
+                  </div>
+                  {% endif %}
+
+                  {% if ticket.assignee %}
+                  <div class="agent-row">
+                    <span class="agent-avatar">{{ ticket.assignee_initials }}</span>
+                    <span class="agent-name">{{ ticket.assignee }}</span>
+                  </div>
+                  {% endif %}
+
+                  {% if ticket.subtask_total > 0 %}
+                  <div class="progress-meta">
+                    <span>subtasks</span>
+                    <span>{{ ticket.subtask_done }}/{{ ticket.subtask_total }}</span>
+                  </div>
+                  <div class="mini-progress" role="img" aria-label="subtask progress">
+                    <div class="mini-progress-value" style="--progress: {{ ticket.subtask_pct }}%;"></div>
+                  </div>
+                  {% endif %}
+                </article>
+              </a>
+              {% endfor %}
+            {% else %}
+              <p class="kanban-empty">No tickets.</p>
+            {% endif %}
+          </div>
+        </article>
+        {% endfor %}
       </section>
-      {% endfor %}
     </main>
   </body>
 </html>
@@ -727,6 +913,23 @@ def _normalize_ticket(row):
         dependencies = json.loads(row["depends_on"] or "[]")
     except (TypeError, ValueError, json.JSONDecodeError):
         dependencies = []
+
+    assignee = (row["started_by"] or row["done_by"] or "").strip()
+    initials = "".join(part[0] for part in assignee.split()[:2]).upper() if assignee else ""
+    if assignee and not initials:
+        initials = assignee[:2].upper()
+
+    due_date = (row["due_date"] or "").strip()
+    is_overdue = False
+    if due_date:
+        try:
+            due_dt = datetime.strptime(due_date, "%Y-%m-%d").date()
+            is_overdue = due_dt < datetime.now().date() and row["status"] not in ("done", "skipped")
+        except ValueError:
+            is_overdue = False
+
+    tag_tones = {tag: TAG_TONES[sum(ord(ch) for ch in tag) % len(TAG_TONES)] for tag in tags}
+
     return {
         "id": row["id"],
         "num": row["num"],
@@ -735,7 +938,12 @@ def _normalize_ticket(row):
         "status": row["status"],
         "priority": row["priority"] or "none",
         "tags": tags,
+        "tag_tones": tag_tones,
         "dependencies": dependencies,
+        "assignee": assignee,
+        "assignee_initials": initials,
+        "due_date": due_date,
+        "is_overdue": is_overdue,
     }
 
 
@@ -820,26 +1028,51 @@ def create_app():
                 abort(404)
             rows = conn.execute(
                 """
-                SELECT id, num, title, description, status, priority, tags, depends_on
+                SELECT id, num, title, description, status, priority, tags, depends_on, started_by, done_by, due_date
                 FROM tickets
                 WHERE project_id=?
                 ORDER BY num
                 """,
                 (project["id"],),
             ).fetchall()
+
+            ticket_ids = [row["id"] for row in rows]
+            subtask_progress = {}
+            if ticket_ids:
+                placeholders = ",".join("?" for _ in ticket_ids)
+                progress_rows = conn.execute(
+                    f"""
+                    SELECT ticket_id, COUNT(*) AS total, SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done
+                    FROM subtasks
+                    WHERE ticket_id IN ({placeholders})
+                    GROUP BY ticket_id
+                    """,
+                    ticket_ids,
+                ).fetchall()
+                subtask_progress = {
+                    r["ticket_id"]: {"done": int(r["done"] or 0), "total": int(r["total"] or 0)} for r in progress_rows
+                }
         finally:
             conn.close()
 
-        grouped = {s: [] for s in STATUS_ORDER}
+        grouped = {s: [] for s in KANBAN_STATUS_ORDER}
         done_count = 0
         for row in rows:
             ticket = _normalize_ticket(row)
             if ticket["status"] in ("done", "skipped"):
                 done_count += 1
+
+            subtask = subtask_progress.get(ticket["id"], {"done": 0, "total": 0})
+            ticket["subtask_done"] = subtask["done"]
+            ticket["subtask_total"] = subtask["total"]
+            ticket["subtask_pct"] = int(round((subtask["done"] / subtask["total"]) * 100)) if subtask["total"] else 0
+
             is_blocked = bool(ticket["dependencies"]) and ticket["status"] == "pending"
             group_key = "blocked" if is_blocked else ticket["status"]
+            if group_key == "skipped":
+                group_key = "done"
             if group_key not in grouped:
-                grouped[group_key] = []
+                continue
             if _ticket_matches(ticket, status_filter, priority_filter, tag_filter):
                 grouped[group_key].append(ticket)
 
@@ -847,8 +1080,8 @@ def create_app():
             PROJECT_TEMPLATE,
             project=project,
             grouped=grouped,
-            status_order=STATUS_ORDER,
-            status_labels=STATUS_LABELS,
+            status_order=KANBAN_STATUS_ORDER,
+            status_labels=KANBAN_STATUS_LABELS,
             done_count=done_count,
             total_count=len(rows),
             filters={"status": status_filter, "priority": priority_filter, "tag": tag_filter},
@@ -864,7 +1097,7 @@ def create_app():
 
             row = conn.execute(
                 """
-                SELECT id, num, title, description, status, priority, tags, depends_on, close_note
+                SELECT id, num, title, description, status, priority, tags, depends_on, close_note, started_by, done_by, due_date
                 FROM tickets
                 WHERE project_id=? AND num=?
                 """,
