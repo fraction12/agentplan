@@ -927,7 +927,7 @@ def test_dashboard_project_detail_returns_ticket_titles():
     cli("ticket", "add", "web-detail", "Dashboard ticket two")
 
     client = app.test_client()
-    resp = client.get("/project/1")
+    resp = client.get("/project/web-detail")
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "Dashboard ticket one" in body
@@ -942,10 +942,10 @@ def test_dashboard_project_detail_links_to_ticket_detail_view():
     cli("ticket", "add", "web-links", "Clickable ticket")
 
     client = app.test_client()
-    resp = client.get("/project/1")
+    resp = client.get("/project/web-links")
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert '/project/1/ticket/1' in body
+    assert '/project/web-links/ticket/1' in body
 
 
 def test_dashboard_ticket_detail_includes_dependencies_subtasks_history_and_close_note():
@@ -961,7 +961,7 @@ def test_dashboard_ticket_detail_includes_dependencies_subtasks_history_and_clos
     cli("ticket", "done", "web-ticket-detail", "2", "--note", "Shipped")
 
     client = app.test_client()
-    resp = client.get("/project/1/ticket/2")
+    resp = client.get("/project/web-ticket-detail/ticket/2")
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "Second ticket" in body
