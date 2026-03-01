@@ -969,3 +969,70 @@ def test_dashboard_ticket_detail_includes_dependencies_subtasks_history_and_clos
     assert "Close notes" in body
     assert "Shipped" in body
     assert "Back to project" in body
+
+
+# ---------------------------------------------------------------------------
+# Security
+# ---------------------------------------------------------------------------
+
+def test_dashboard_escapes_user_supplied_html_in_ticket_fields_and_logs():
+    from agentplan.dashboard import app
+
+    xss = '<script>alert(1)</script>'
+    escaped = "&lt;script&gt;alert(1)&lt;/script&gt;"
+
+    cli("create", "Web XSS")
+    cli("ticket", "add", "web-xss", xss, "--desc", xss)
+    cli("log", "web-xss", xss, "--ticket", "1")
+
+    client = app.test_client()
+    resp = client.get("/project/web-xss/ticket/1")
+    assert resp.status_code == 200
+
+    body = resp.get_data(as_text=True)
+    assert xss not in body
+    assert body.count(escaped) >= 3  # title, description, and history/log entry
+
+
+def test_ticket_add_rejects_overly_long_title_and_description_without_traceback():
+    cli("create", "Length Limits")
+    very_long = "x" * 10000
+
+    out, err, code = cli("ticket", "add", "length-limits", very_long, "--desc", very_long)
+    assert code == 2
+    assert out == ""
+    assert "too long" in err.lower()
+    assert "Traceback" not in err
+
+
+def test_log_rejects_overly_long_entry_without_traceback():
+    cli("create", "Long Log")
+    very_long = "y" * 10000
+
+    out, err, code = cli("log", "long-log", very_long)
+    assert code == 2
+    assert out == ""
+    assert "Log entry is too long" in err
+    assert "Traceback" not in err
+
+
+def test_database_file_is_not_world_writable():
+    import stat
+
+    db_path = "/tmp/test_agentplan.db"
+    mode = os.stat(db_path).st_mode
+    assert (mode & stat.S_IWOTH) == 0
+
+
+def test_read_only_database_failure_is_handled_gracefully():
+    db_path = "/tmp/test_agentplan.db"
+    os.chmod(db_path, 0o444)
+    try:
+        out, err, code = cli("create", "Read Only DB")
+    finally:
+        os.chmod(db_path, 0o644)
+
+    assert code == 2
+    assert out == ""
+    assert "Error: Unexpected failure while running agentplan." in err
+    assert "Traceback" not in err
