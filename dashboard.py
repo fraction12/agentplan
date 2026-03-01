@@ -325,7 +325,7 @@ TICKET_TEMPLATE = """
 
 
 def _db_path():
-    return os.environ.get("AGENTPLAN_DB", os.path.expanduser("~/.openclaw/workspace/agentplan.db"))
+    return os.environ.get("AGENTPLAN_DB", os.path.expanduser("~/.agentplan/agentplan.db"))
 
 
 def _fetch_projects_with_stats(conn):
