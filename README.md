@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.svg" alt="agentplan demo" width="700">
+  <img src="docs/demo.gif" alt="agentplan demo" width="700">
 </p>
 
 ## Agent Loop Demo
