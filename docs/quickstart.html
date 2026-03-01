@@ -308,6 +308,7 @@
       <a href="#tickets">3) Add and work with tickets</a>
       <a href="#integrations">4) Integration examples</a>
       <a href="#cli-reference">5) CLI reference</a>
+      <a href="#dashboard">6) Dashboard</a>
     </aside>
 
     <div>
@@ -330,7 +331,7 @@ agentplan --help</code></pre>
 agentplan init
 
 # create a project
-agentplan new "marketing-site" --desc "Ship docs and launch pages"
+agentplan create "marketing-site"
 
 # view all projects and status
 agentplan list
@@ -352,7 +353,7 @@ agentplan ticket add marketing-site "Publish to GitHub Pages" --priority high --
 agentplan next marketing-site
 
 # claim/assign and complete a ticket
-agentplan ticket assign marketing-site 1 --agent dash
+agentplan ticket start marketing-site 1 --agent dash
 agentplan ticket done marketing-site 1 --agent dash
 
 # review progress
@@ -368,7 +369,7 @@ agentplan status marketing-site</code></pre>
         <div class="code-wrap">
           <button class="copy-btn" type="button">Copy</button>
           <pre><code class="language-bash"># get next ticket from agentplan, then hand to Claude Code
-NEXT_TICKET=$(agentplan next marketing-site --plain)
+NEXT_TICKET=$(agentplan next marketing-site --format compact)
 claude "Work on this ticket from agentplan:\n\n$NEXT_TICKET\n\nWhen complete, summarize what changed and any follow-ups."</code></pre>
         </div>
 
@@ -376,7 +377,7 @@ claude "Work on this ticket from agentplan:\n\n$NEXT_TICKET\n\nWhen complete, su
         <div class="code-wrap">
           <button class="copy-btn" type="button">Copy</button>
           <pre><code class="language-bash"># fetch next task and execute with Codex in your project directory
-TASK=$(agentplan next marketing-site --plain)
+TASK=$(agentplan next marketing-site --format compact)
 codex exec --full-auto "Implement this agentplan ticket:\n\n$TASK\n\nRun tests and report results."</code></pre>
         </div>
 
@@ -384,10 +385,10 @@ codex exec --full-auto "Implement this agentplan ticket:\n\n$TASK\n\nRun tests a
         <div class="code-wrap">
           <button class="copy-btn" type="button">Copy</button>
           <pre><code class="language-bash"># example: assign a ticket to a named OpenClaw agent before execution
-agentplan ticket assign marketing-site 2 --agent dash
+agentplan ticket start marketing-site 2 --agent dash
 
 # your OpenClaw agent prompt can include:
-# "Run: agentplan next marketing-site --agent dash
+# "Run: agentplan next marketing-site --format compact
 # Then implement that ticket and mark it done with:
 # agentplan ticket done marketing-site &lt;id&gt; --agent dash"</code></pre>
         </div>
@@ -401,7 +402,7 @@ def run(cmd: list[str]) -> str:
     return subprocess.check_output(cmd, text=True).strip()
 
 project = "marketing-site"
-next_ticket = run(["agentplan", "next", project, "--plain"])
+next_ticket = run(["agentplan", "next", project, "--format", "compact"])
 
 prompt = f"""Implement this ticket:\n\n{next_ticket}\n\nReturn changed files and test results."""
 
@@ -423,7 +424,7 @@ print(prompt)
             <p>Initialize agentplan metadata in the current repository.</p>
           </article>
           <article class="command-item">
-            <code>agentplan new &lt;project-name&gt; --desc "..."</code>
+            <code>agentplan create &lt;project-name&gt;</code>
             <p>Create a new tracked project.</p>
           </article>
           <article class="command-item">
@@ -435,7 +436,7 @@ print(prompt)
             <p>Show the next actionable ticket based on priority/dependencies.</p>
           </article>
           <article class="command-item">
-            <code>agentplan ticket assign &lt;project&gt; &lt;ticket-id&gt; --agent &lt;name&gt;</code>
+            <code>agentplan ticket start &lt;project&gt; &lt;ticket-id&gt; --agent &lt;name&gt;</code>
             <p>Assign ownership to an agent or person.</p>
           </article>
           <article class="command-item">
@@ -449,6 +450,43 @@ print(prompt)
           <article class="command-item">
             <code>agentplan list</code>
             <p>List all tracked projects.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="dashboard">
+        <h2 class="section-title">6) Dashboard</h2>
+        <p class="section-note">Launch the built-in web dashboard for real-time mission control. Requires Flask.</p>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button">Copy</button>
+          <pre><code class="language-bash"># install with dashboard extras
+pip install "agentplan[dashboard]"
+
+# launch and open in browser
+agentplan dashboard --open
+
+# custom port
+agentplan dashboard --port 8080 --open
+
+# stop the dashboard
+agentplan dashboard --stop</code></pre>
+        </div>
+        <div class="command-list" style="margin-top:16px;">
+          <article class="command-item">
+            <code>Mission Control</code>
+            <p>Project cards with SVG progress rings showing completion at a glance.</p>
+          </article>
+          <article class="command-item">
+            <code>Kanban Board</code>
+            <p>Tickets organized by status with priority stripes and tag pills.</p>
+          </article>
+          <article class="command-item">
+            <code>Ticket Detail</code>
+            <p>Slide-over panel with subtasks, dependencies, and audit timeline.</p>
+          </article>
+          <article class="command-item">
+            <code>Live Activity Feed</code>
+            <p>Real-time stream of agent actions via Server-Sent Events (SSE).</p>
           </article>
         </div>
       </section>

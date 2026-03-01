@@ -169,7 +169,7 @@
 
   <section class="hero">
     <div class="container">
-      <div class="eyebrow">pip install agentplan &nbsp;·&nbsp; v0.3.3 &nbsp;·&nbsp; Python 3.9+</div>
+      <div class="eyebrow">pip install agentplan &nbsp;·&nbsp; Python 3.9+</div>
       <h1>The task queue your AI agents are missing</h1>
       <p class="lead">A dependency-aware ticket system that any agent can read from and write to. No framework lock-in. No runtime. Just a shared to-do list.</p>
       <div class="pip-install-wrap" style="margin: 0 auto 28px; display:inline-flex; align-items:center; background:#151b2b; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:12px 20px; gap:14px; font-family:'JetBrains Mono',monospace; font-size:1rem; color:#a7f3d0; max-width:340px; width:100%;">
@@ -293,6 +293,46 @@
     </div>
   </section>
 
+
+  <section id="dashboard" class="section">
+    <div class="container">
+      <h2 class="section-heading">Built-in Dashboard</h2>
+      <p style="font-family:'Inter',ui-sans-serif,sans-serif;color:var(--muted);font-size:1.05rem;margin-bottom:32px;max-width:680px;line-height:1.7;">Real-time mission control for your agent fleet. Launch with one command.</p>
+      <div class="cli-block" style="max-width:560px;margin-bottom:40px;">
+        <div class="cli-topbar">
+          <div class="cli-dot"></div><div class="cli-dot"></div><div class="cli-dot"></div>
+          <span class="cli-label">zsh</span>
+        </div>
+        <div class="cli-body" style="padding:20px 28px;">
+          <span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan dashboard --open</span></span>
+        </div>
+      </div>
+      <div class="features" style="margin-bottom:32px;">
+        <div class="feature-card">
+          <span class="feature-icon">🗂️</span>
+          <h3>Mission Control</h3>
+          <p>Project cards with SVG progress rings showing real-time completion at a glance.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">📋</span>
+          <h3>Kanban Board</h3>
+          <p>Tickets organized by status with priority stripes and tag pills for fast scanning.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🔍</span>
+          <h3>Ticket Detail</h3>
+          <p>Slide-over panel with subtasks, dependencies, and full audit timeline.</p>
+        </div>
+        <div class="feature-card" style="grid-column:1/-1;max-width:340px;">
+          <span class="feature-icon">⚡</span>
+          <h3>Live Activity Feed</h3>
+          <p>Real-time stream of agent actions delivered via SSE — no polling, no refresh.</p>
+        </div>
+      </div>
+      <p style="font-family:'Inter',ui-sans-serif,sans-serif;color:var(--muted);font-size:0.9rem;">Requires Flask: <code style="font-family:'JetBrains Mono',monospace;color:#a7f3d0;background:var(--panel);padding:2px 8px;border-radius:6px;border:1px solid var(--border);">pip install agentplan[dashboard]</code></p>
+    </div>
+  </section>
+
   <section class="section section-alt">
     <div class="container">
       <h2 class="section-heading">How it compares</h2>
@@ -357,7 +397,7 @@
           <h4>Product</h4>
           <a href="index.html">Home</a>
           <a href="quickstart.html">Quickstart</a>
-          <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">Dashboard</a>
+          <a href="#dashboard">Dashboard</a>
         </div>
         <div class="footer-col">
           <h4>Resources</h4>
