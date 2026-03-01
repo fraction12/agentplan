@@ -3,747 +3,476 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>agentplan — Structured project tracking for AI agents</title>
-  <meta name="description" content="agentplan is a lightweight, CLI-first project and ticket tracker for AI agents. Track work across projects, assign tickets, and ship faster." />
+  <title>agentplan — The task queue your AI agents are missing</title>
+  <meta name="description" content="A dependency-aware ticket system that any agent can read from and write to. No framework lock-in. No runtime. Just a shared to-do list." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0b1020;
-      --panel: #121a33;
-      --panel-2: #162144;
-      --text: #e8edff;
-      --muted: #a8b3d9;
-      --accent: #5eead4;
-      --accent-2: #60a5fa;
-      --border: #2a3766;
-      --success: #34d399;
-      --shadow: 0 10px 30px rgba(0,0,0,.25);
+      --bg: #0a0e1a;
+      --bg-alt: #0f1420;
+      --panel: #151b2b;
+      --text: #e2e8f0;
+      --muted: #8892a8;
+      --accent: #22c55e;
+      --accent-2: #3b82f6;
+      --border: rgba(255,255,255,0.06);
+      --shadow: 0 8px 32px rgba(0,0,0,0.4);
     }
-
-    * { box-sizing: border-box; }
-
-    html { scroll-padding-top: 64px; }
-
-    section[id] { scroll-margin-top: 64px; }
-
-    body {
-      margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      background: radial-gradient(900px 600px at 10% -10%, #1a2b5a 0%, transparent 55%),
-                  radial-gradient(1000px 600px at 100% 0%, #1f3f66 0%, transparent 50%),
-                  var(--bg);
-      color: var(--text);
-      line-height: 1.55;
-    }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-padding-top: 64px; scroll-behavior: smooth; }
+    body { font-family: 'Inter', ui-sans-serif, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
     a { color: inherit; text-decoration: none; }
+    .container { width: min(1100px, 92vw); margin: 0 auto; }
 
-    .container {
-      width: min(1100px, 92vw);
-      margin: 0 auto;
-    }
+    /* NAV */
+    .top-nav { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px); background: rgba(10,14,26,0.85); border-bottom: 1px solid var(--border); }
+    .top-nav .container { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; }
+    .brand { font-weight: 700; font-size: 1rem; letter-spacing: -0.01em; color: var(--text); }
+    .nav-links { display: flex; align-items: center; gap: 4px; }
+    .nav-link { color: var(--muted); font-size: 0.88rem; font-weight: 500; padding: 6px 12px; border-radius: 8px; transition: color 0.2s, background 0.2s; }
+    .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.04); }
 
-    .top-nav {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      backdrop-filter: blur(10px);
-      background: rgba(11, 16, 32, .7);
-      border-bottom: 1px solid rgba(42,55,102,.7);
-    }
+    /* HERO */
+    .hero { background: var(--bg); padding: 100px 0 80px; text-align: center; }
+    .eyebrow { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--muted); background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 999px; padding: 6px 16px; margin-bottom: 28px; }
+    .hero h1 { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(2.4rem, 5.5vw, 3.8rem); font-weight: 900; line-height: 1.1; letter-spacing: -0.02em; max-width: 800px; margin: 0 auto 20px; }
+    .hero .lead { font-size: clamp(1rem, 2vw, 1.15rem); color: var(--muted); max-width: 620px; margin: 0 auto 36px; line-height: 1.7; }
+    .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 36px; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 10px; font-weight: 600; font-size: 0.95rem; border: 1px solid transparent; transition: transform 0.15s, filter 0.15s, background 0.15s; cursor: pointer; }
+    .btn-primary { background: var(--accent); color: #071a0f; }
+    .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.08); }
+    .btn-ghost { border-color: var(--border); color: var(--muted); background: rgba(255,255,255,0.03); }
+    .btn-ghost:hover { color: var(--text); border-color: rgba(255,255,255,0.15); }
+    .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .badges img { height: 20px; }
 
-    .top-nav .container {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 0;
-      gap: 16px;
-    }
+    /* TRUST BAR */
+    .trust-bar { background: var(--bg-alt); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 20px 0; text-align: center; }
+    .trust-bar p { color: var(--muted); font-size: 0.88rem; }
 
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 700;
-      letter-spacing: .01em;
-    }
+    /* SECTIONS */
+    .section { padding: 100px 0; }
+    .section-alt { background: var(--bg-alt); }
+    .section-heading { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(2rem, 4vw, 2.8rem); font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; margin-bottom: 60px; }
 
-    .brand-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      box-shadow: 0 0 14px rgba(94,234,212,.8);
-    }
+    /* HOW IT WORKS */
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+    .step { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 32px 28px; }
+    .step-number { font-family: 'Playfair Display', Georgia, serif; font-size: 3rem; font-weight: 900; color: var(--accent); line-height: 1; margin-bottom: 20px; }
+    .step-code { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; color: #a7f3d0; margin-bottom: 16px; overflow-x: auto; word-break: break-all; }
+    .step h3 { font-size: 1rem; font-weight: 600; margin-bottom: 8px; }
+    .step p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; }
 
-    .nav-links {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
+    /* FEATURES */
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .feature-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 28px 24px; transition: border-color 0.2s; }
+    .feature-card:hover { border-color: rgba(255,255,255,0.12); }
+    .feature-icon { font-size: 1.8rem; margin-bottom: 14px; display: block; }
+    .feature-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 8px; }
+    .feature-card p { font-size: 0.88rem; color: var(--muted); line-height: 1.6; }
 
-    .nav-link {
-      color: var(--muted);
-      border: 1px solid transparent;
-      border-radius: 10px;
-      padding: 7px 11px;
-      font-size: .92rem;
-      transition: .2s ease;
-    }
+    /* CLI BLOCK */
+    .cli-block { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); }
+    .cli-topbar { display: flex; align-items: center; gap: 7px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); }
+    .cli-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .cli-dot:nth-child(1) { background: #fb7185; }
+    .cli-dot:nth-child(2) { background: #fbbf24; }
+    .cli-dot:nth-child(3) { background: #34d399; }
+    .cli-label { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--muted); margin-left: 4px; }
+    .cli-body { padding: 28px 32px; font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; line-height: 1.9; overflow-x: auto; }
+    .cli-line { display: block; }
+    .cli-prompt { color: var(--accent); }
+    .cli-cmd { color: var(--text); }
+    .cli-out { color: var(--muted); }
+    .cli-success { color: var(--accent); }
 
-    .nav-link:hover {
-      color: var(--text);
-      border-color: var(--border);
-      background: rgba(255,255,255,.03);
-    }
-
-    .hero {
-      padding: 88px 0 56px;
-    }
-
-    .pill {
-      display: inline-flex;
-      gap: .5rem;
-      align-items: center;
-      padding: 6px 12px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      color: var(--muted);
-      font-size: .86rem;
-      background: rgba(255,255,255,.02);
-    }
-
-    h1 {
-      font-size: clamp(2rem, 4.8vw, 3.4rem);
-      line-height: 1.12;
-      margin: 18px 0 14px;
-      letter-spacing: -0.02em;
-      max-width: 850px;
-    }
-
-    .lead {
-      margin: 0;
-      max-width: 730px;
-      color: var(--muted);
-      font-size: clamp(1rem, 2.2vw, 1.2rem);
-    }
-
-    .actions {
-      margin-top: 30px;
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 11px 18px;
-      border-radius: 12px;
-      border: 1px solid transparent;
-      font-weight: 600;
-      transition: .2s ease;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      color: #031023;
-      box-shadow: var(--shadow);
-    }
-
-    .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.05); }
-
-    .btn-secondary {
-      border-color: var(--border);
-      color: var(--muted);
-      background: rgba(255,255,255,.02);
-    }
-
-    section {
-      padding: 28px 0;
-    }
-
-    .section-title {
-      font-size: 1.55rem;
-      margin: 0 0 14px;
-      letter-spacing: -0.01em;
-    }
-
-    .features {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 8px;
-    }
-
-    .card {
-      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 18px;
-    }
-
-    .card h3 {
-      margin: 0 0 8px;
-      font-size: 1.03rem;
-    }
-
-    .card p {
-      margin: 0;
-      color: var(--muted);
-      font-size: .96rem;
-    }
-
-    pre {
-      margin: 0;
-      overflow-x: auto;
-      padding: 16px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: #070c1b;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.01);
-    }
-
-    code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: .92rem;
-      color: #ccf6ee;
-    }
-
-    .table-wrap {
-      overflow-x: auto;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: rgba(255,255,255,.015);
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 680px;
-    }
-
-    th, td {
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--border);
-      text-align: left;
-      font-size: .94rem;
-    }
-
-    th {
-      color: #d5defc;
-      background: rgba(255,255,255,.025);
-      font-weight: 600;
-    }
-
-    td { color: var(--muted); }
-
+    /* TABLE */
+    .table-wrap { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 700px; font-size: 0.92rem; }
+    thead th { background: var(--panel); padding: 16px 18px; text-align: left; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); }
+    thead th:first-child { color: var(--muted); font-weight: 500; }
+    tbody td { padding: 14px 18px; border-bottom: 1px solid var(--border); color: var(--muted); }
     tbody tr:last-child td { border-bottom: none; }
+    tbody td:nth-child(2) { color: var(--text); font-weight: 500; }
+    .check { color: var(--accent); font-weight: 700; }
+    .cross { color: #f87171; font-weight: 600; }
+    .partial { color: #fbbf24; font-weight: 600; }
 
-    .yes { color: var(--success); font-weight: 600; }
-    .no { color: #fda4af; font-weight: 600; }
+    /* CTA */
+    .cta-section { background: var(--bg-alt); text-align: center; padding: 100px 0; }
+    .cta-section h2 { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(2rem, 4vw, 2.8rem); font-weight: 700; margin-bottom: 28px; }
+    .cta-pip { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 28px; color: var(--accent); margin-bottom: 32px; }
 
-    .demo-wrap {
-      display: grid;
-      gap: 18px;
-    }
+    /* FOOTER */
+    footer { background: var(--bg); border-top: 1px solid var(--border); padding: 60px 0 40px; }
+    .footer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; margin-bottom: 48px; }
+    .footer-col h4 { font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+    .footer-col a { display: block; font-size: 0.9rem; color: var(--muted); margin-bottom: 8px; transition: color 0.2s; }
+    .footer-col a:hover { color: var(--text); }
+    .footer-bottom { border-top: 1px solid var(--border); padding-top: 28px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+    .footer-bottom p { font-size: 0.85rem; color: var(--muted); }
+    .footer-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+    .footer-badges img { height: 18px; }
 
-    .demo-card {
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      overflow: hidden;
-      background: linear-gradient(180deg, rgba(3, 9, 24, .95), rgba(2, 7, 19, .92));
-      box-shadow: var(--shadow);
-    }
-
-    .terminal-topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 10px 14px;
-      border-bottom: 1px solid rgba(255,255,255,.08);
-      background: rgba(255,255,255,.02);
-    }
-
-    .terminal-dots {
-      display: inline-flex;
-      gap: 7px;
-    }
-
-    .terminal-dots span {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      display: inline-block;
-    }
-
+    /* TERMINAL */
+    .terminal-demo-card { border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--panel); box-shadow: var(--shadow); }
+    .terminal-topbar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); }
+    .terminal-dots span { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
     .terminal-dots span:nth-child(1) { background: #fb7185; }
     .terminal-dots span:nth-child(2) { background: #fbbf24; }
     .terminal-dots span:nth-child(3) { background: #34d399; }
-
-    .terminal-label {
-      color: #b9c6ef;
-      font-size: .82rem;
-    }
-
-    .terminal-screen {
-      min-height: 320px;
-      max-height: 460px;
-      overflow: auto;
-      padding: 16px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: .9rem;
-      line-height: 1.6;
-      background: #040a17;
-      color: #f8fafc;
-    }
-
+    .terminal-label { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--muted); margin-left: 4px; }
+    .terminal-screen { min-height: 280px; max-height: 400px; overflow: auto; padding: 20px 24px; font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; line-height: 1.8; background: #070c1b; color: var(--text); }
     .term-line { white-space: pre-wrap; word-break: break-word; }
     .term-command { color: #a7f3d0; }
-    .term-output { color: #e2e8f0; }
-    .term-muted { color: #94a3b8; }
+    .term-output { color: var(--text); }
+    .term-muted { color: var(--muted); }
+    .cursor { display: inline-block; width: 8px; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; background: var(--accent); animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .demo-controls { display: flex; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--border); background: rgba(255,255,255,0.02); }
+    .demo-controls button { border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: var(--text); border-radius: 8px; padding: 7px 14px; font-family: 'Inter', sans-serif; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .demo-controls button:hover { background: rgba(255,255,255,0.07); }
+    .demo-controls button[disabled] { opacity: 0.45; cursor: not-allowed; }
 
-    .cursor {
-      display: inline-block;
-      width: 8px;
-      height: 1.1em;
-      margin-left: 2px;
-      vertical-align: text-bottom;
-      background: #86efac;
-      animation: blink 1s step-end infinite;
-    }
-
-    @keyframes blink {
-      50% { opacity: 0; }
-    }
-
-    .demo-controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 6px;
-    }
-
-    .demo-controls button {
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,.03);
-      color: var(--text);
-      border-radius: 10px;
-      padding: 8px 12px;
-      font-size: .88rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: .2s ease;
-    }
-
-    .demo-controls button:hover {
-      transform: translateY(-1px);
-      filter: brightness(1.08);
-    }
-
-    .demo-controls button[disabled] {
-      opacity: .55;
-      cursor: not-allowed;
-      transform: none;
-      filter: none;
-    }
-
-    footer {
-      border-top: 1px solid var(--border);
-      margin-top: 42px;
-      padding: 20px 0 32px;
-      color: var(--muted);
-      font-size: .93rem;
-    }
-
+    /* RESPONSIVE */
     @media (max-width: 900px) {
-      .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .steps { grid-template-columns: 1fr; }
+      .features { grid-template-columns: repeat(2, 1fr); }
+      .footer-grid { grid-template-columns: 1fr 1fr; }
     }
-
     @media (max-width: 640px) {
-      .top-nav .container { flex-direction: column; align-items: flex-start; }
-      .nav-links { justify-content: flex-start; }
-      .hero { padding-top: 72px; }
+      .top-nav .container { flex-direction: column; align-items: flex-start; gap: 10px; }
       .features { grid-template-columns: 1fr; }
-      .btn { width: 100%; }
-      .actions { width: 100%; }
+      .footer-grid { grid-template-columns: 1fr; }
+      .btn { width: 100%; justify-content: center; }
+      .actions { flex-direction: column; align-items: center; }
+      .cli-body { padding: 16px; font-size: 0.78rem; }
     }
   </style>
 </head>
 <body>
+
   <nav class="top-nav" aria-label="Primary">
     <div class="container">
-      <a class="brand" href="index.html">
-        <span class="brand-dot" aria-hidden="true"></span>
-        <span>agentplan docs</span>
-      </a>
+      <a class="brand" href="index.html">⚡ agentplan</a>
       <div class="nav-links">
-        <a class="nav-link" href="index.html" aria-current="page">Home</a>
+        <a class="nav-link" href="index.html">Home</a>
         <a class="nav-link" href="quickstart.html">Quickstart</a>
-        <a class="nav-link" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a class="nav-link" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">GitHub</a>
+        <a class="nav-link" href="https://pypi.org/project/agentplan/" target="_blank" rel="noopener">PyPI</a>
       </div>
     </div>
   </nav>
 
-  <header class="hero">
+  <section class="hero">
     <div class="container">
-      <span class="pill">⚡ agentplan · lightweight AI project tracker</span>
-      <h1>Structured project tracking for AI agents</h1>
-      <p class="lead">
-        Plan and ship work with a simple, dependency-aware ticket workflow.
-        agentplan keeps multi-project tasks organized, agent-assignable, and fully CLI-native.
-      </p>
+      <div class="eyebrow">pip install agentplan &nbsp;·&nbsp; v0.3.3 &nbsp;·&nbsp; Python 3.9+</div>
+      <h1>The task queue your AI agents are missing</h1>
+      <p class="lead">A dependency-aware ticket system that any agent can read from and write to. No framework lock-in. No runtime. Just a shared to-do list.</p>
       <div class="actions">
-        <a class="btn btn-primary" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">View on GitHub</a>
-        <a class="btn btn-secondary" href="quickstart.html">Read quickstart guide</a>
-        <a class="btn btn-secondary" href="#quickstart">See CLI examples</a>
+        <a class="btn btn-primary" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">View on GitHub</a>
+        <a class="btn btn-ghost" href="quickstart.html">Read the docs</a>
+      </div>
+      <div class="badges">
+        <img src="https://img.shields.io/pypi/v/agentplan?style=flat-square&color=22c55e&labelColor=151b2b" alt="PyPI version" />
+        <img src="https://img.shields.io/pypi/pyversions/agentplan?style=flat-square&color=3b82f6&labelColor=151b2b" alt="Python versions" />
+        <img src="https://img.shields.io/github/stars/fraction12/agentplan?style=flat-square&color=8892a8&labelColor=151b2b" alt="GitHub stars" />
+        <img src="https://img.shields.io/pypi/l/agentplan?style=flat-square&color=8892a8&labelColor=151b2b" alt="License MIT" />
       </div>
     </div>
-  </header>
+  </section>
 
-  <main>
-    <section>
-      <div class="container">
-        <h2 class="section-title">Why teams use agentplan</h2>
-        <div class="features">
-          <article class="card">
-            <h3>Multi-project workflows</h3>
-            <p>Track active work across multiple repos and initiatives without context loss.</p>
-          </article>
-          <article class="card">
-            <h3>Ticket-level tracking</h3>
-            <p>Create, prioritize, and close granular tickets so agents always have clear next steps.</p>
-          </article>
-          <article class="card">
-            <h3>Agent assignment</h3>
-            <p>Assign tickets to specific agents and keep ownership explicit from start to done.</p>
-          </article>
-          <article class="card">
-            <h3>Progress logs</h3>
-            <p>Attach concise status updates to each ticket for transparent execution history.</p>
-          </article>
-          <article class="card">
-            <h3>Dependency resolution</h3>
-            <p>Define dependencies so blockers are visible and sequencing stays deterministic.</p>
-          </article>
-          <article class="card">
-            <h3>CLI-first by design</h3>
-            <p>No heavy setup, no platform lock-in — just fast commands that fit existing toolchains.</p>
-          </article>
+  <div class="trust-bar">
+    <div class="container">
+      <p>Installed via PyPI &nbsp;·&nbsp; Works with Claude Code, Codex, OpenClaw, Cursor, and any CLI agent</p>
+    </div>
+  </div>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-heading">How it works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">01</div>
+          <div class="step-code">agentplan create my-project</div>
+          <h3>Create</h3>
+          <p>Define a project with tickets, priorities, and dependencies in seconds.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">02</div>
+          <div class="step-code">agentplan next my-project</div>
+          <h3>Claim</h3>
+          <p>Agents grab the next unblocked ticket automatically — no coordination overhead.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">03</div>
+          <div class="step-code">agentplan ticket done my-project 1 --agent dash</div>
+          <h3>Ship</h3>
+          <p>Mark complete with attribution. Dependencies auto-unblock downstream tickets.</p>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <section id="quickstart">
-      <div class="container">
-        <h2 class="section-title">CLI example</h2>
-        <pre><code># initialize agentplan in your project
-agentplan init
-
-# add a ticket
-agentplan add ticket "Build landing page" --project "agentplan-v03" --assignee "dash"
-
-# fetch the next actionable ticket
-agentplan next
-
-# mark ticket complete
-agentplan done T7</code></pre>
-      </div>
-    </section>
-
-    <section id="demo">
-      <div class="container">
-        <h2 class="section-title">See it in action</h2>
-        <div class="demo-wrap">
-          <div class="demo-card">
-            <div class="terminal-topbar">
-              <div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-              <span class="terminal-label">agentplan live demo</span>
-            </div>
-            <div id="demo-terminal" class="terminal-screen" role="log" aria-live="polite" aria-label="Animated terminal demo"></div>
-          </div>
-          <div class="demo-controls" aria-label="Terminal demo controls">
-            <button id="demo-play" type="button">Play</button>
-            <button id="demo-pause" type="button" disabled>Pause</button>
-            <button id="demo-replay" type="button">Replay</button>
-          </div>
+  <section class="section section-alt">
+    <div class="container">
+      <h2 class="section-heading">Why agentplan</h2>
+      <div class="features">
+        <div class="feature-card">
+          <span class="feature-icon">⚡</span>
+          <h3>Zero dependencies</h3>
+          <p>Pure Python stdlib. pip install and go. No heavy runtimes, no package soup.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🔗</span>
+          <h3>Dependency graph</h3>
+          <p>Tickets auto-unblock when their blockers close. The queue self-manages.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🤖</span>
+          <h3>Agent-agnostic</h3>
+          <p>Works with any agent, any framework, any model. No vendor lock-in.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">📊</span>
+          <h3>Built-in dashboard</h3>
+          <p>Real-time web UI with SSE live updates. See project state at a glance.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🔒</span>
+          <h3>Parallel-safe</h3>
+          <p>SQLite with BEGIN IMMEDIATE. No double-claims. Safe across concurrent agents.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🏷️</span>
+          <h3>Rich metadata</h3>
+          <p>Priority, tags, subtasks, due dates, audit logs. Everything you need to track.</p>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <section>
-      <div class="container">
-        <h2 class="section-title">Comparison</h2>
-        <div class="table-wrap">
-          <table aria-label="agentplan comparison table">
-            <thead>
-              <tr>
-                <th>Capability</th>
-                <th>agentplan</th>
-                <th>CrewAI</th>
-                <th>AutoGen</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Lightweight footprint</td>
-                <td class="yes">Yes</td>
-                <td class="no">No</td>
-                <td class="no">No</td>
-              </tr>
-              <tr>
-                <td>No runtime dependencies</td>
-                <td class="yes">Yes</td>
-                <td class="no">No</td>
-                <td class="no">No</td>
-              </tr>
-              <tr>
-                <td>CLI-native workflow</td>
-                <td class="yes">Yes</td>
-                <td>Partial</td>
-                <td>Partial</td>
-              </tr>
-              <tr>
-                <td>Agent-agnostic ticket tracking</td>
-                <td class="yes">Yes</td>
-                <td>Framework-specific</td>
-                <td>Framework-specific</td>
-              </tr>
-            </tbody>
-          </table>
+  <section class="section">
+    <div class="container">
+      <h2 class="section-heading">See the CLI</h2>
+      <div class="cli-block">
+        <div class="cli-topbar">
+          <div class="cli-dot"></div><div class="cli-dot"></div><div class="cli-dot"></div>
+          <span class="cli-label">zsh — agentplan demo</span>
+        </div>
+        <div class="cli-body">
+<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan create sprint-1</span></span>
+<span class="cli-line cli-out">Created project 'sprint-1' (sprint-1)</span>
+<span class="cli-line">&nbsp;</span>
+<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan ticket add sprint-1 "Build API" --priority high --tag backend</span></span>
+<span class="cli-line cli-out">Added ticket #1: Build API [priority: high]</span>
+<span class="cli-line">&nbsp;</span>
+<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan ticket add sprint-1 "Write tests" --priority medium --tag testing</span></span>
+<span class="cli-line cli-out">Added ticket #2: Write tests [priority: medium]</span>
+<span class="cli-line">&nbsp;</span>
+<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan depend sprint-1 2 --on 1</span></span>
+<span class="cli-line cli-out">Ticket #2 now depends on: [1]</span>
+<span class="cli-line">&nbsp;</span>
+<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan next sprint-1</span></span>
+<span class="cli-line cli-out">📋 sprint-1: [1] Build API ○ (priority: high)</span>
+<span class="cli-line">&nbsp;</span>
+<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan ticket done sprint-1 1 --agent dash --note "API shipped"</span></span>
+<span class="cli-line cli-success">✓ Ticket #1: Build API → done [API shipped] (by dash)</span>
+<span class="cli-line">&nbsp;</span>
+<span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan status sprint-1</span></span>
+<span class="cli-line cli-out">1/2 done, 0 blocked, next: [2] Write tests</span>
         </div>
       </div>
-    </section>
-  </main>
+    </div>
+  </section>
+
+  <section class="section section-alt">
+    <div class="container">
+      <h2 class="section-heading">How it compares</h2>
+      <div class="table-wrap">
+        <table aria-label="agentplan comparison">
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>agentplan</th>
+              <th>CrewAI</th>
+              <th>AutoGen</th>
+              <th>LangGraph</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Install size</td><td class="check">1 file, 0 deps</td><td class="cross">50+ packages</td><td class="cross">30+ packages</td><td class="cross">20+ packages</td></tr>
+            <tr><td>Setup time</td><td class="check">pip install, done</td><td class="cross">YAML + roles</td><td class="cross">Config + agents</td><td class="cross">Graph definition</td></tr>
+            <tr><td>Agent lock-in</td><td class="check">None</td><td class="cross">CrewAI only</td><td class="cross">AutoGen only</td><td class="cross">LangChain only</td></tr>
+            <tr><td>Ticket tracking</td><td class="check">Built-in</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Dependency resolution</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="partial">Partial</td></tr>
+            <tr><td>Web dashboard</td><td class="check">Yes</td><td class="cross">Cloud only</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Parallel safety</td><td class="check">SQLite locks</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-heading">See it in action</h2>
+      <div class="terminal-demo-card">
+        <div class="terminal-topbar">
+          <div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+          <span class="terminal-label">agentplan live demo</span>
+        </div>
+        <div id="demo-terminal" class="terminal-screen" role="log" aria-live="polite" aria-label="Animated terminal demo"></div>
+        <div class="demo-controls" aria-label="Terminal demo controls">
+          <button id="demo-play" type="button">&#9654; Play</button>
+          <button id="demo-pause" type="button" disabled>&#9646;&#9646; Pause</button>
+          <button id="demo-replay" type="button">&#8635; Replay</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <div class="container">
+      <h2>Get started in 30 seconds</h2>
+      <div class="cta-pip">pip install agentplan</div>
+      <div class="actions" style="margin-top:0">
+        <a class="btn btn-ghost" href="quickstart.html">Read quickstart &rarr;</a>
+        <a class="btn btn-primary" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">View on GitHub &rarr;</a>
+      </div>
+    </div>
+  </section>
 
   <footer>
     <div class="container">
-      Built for practical AI execution. <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">github.com/fraction12/agentplan</a>
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="index.html">Home</a>
+          <a href="quickstart.html">Quickstart</a>
+          <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">Dashboard</a>
+        </div>
+        <div class="footer-col">
+          <h4>Resources</h4>
+          <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://pypi.org/project/agentplan/" target="_blank" rel="noopener">PyPI</a>
+          <a href="https://github.com/fraction12/agentplan/issues" target="_blank" rel="noopener">Issues</a>
+        </div>
+        <div class="footer-col">
+          <h4>Meta</h4>
+          <a href="https://github.com/fraction12/agentplan/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+          <a href="https://python.org" target="_blank" rel="noopener">Built with Python</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>Built for practical AI execution</p>
+        <div class="footer-badges">
+          <img src="https://img.shields.io/pypi/v/agentplan?style=flat-square&color=22c55e&labelColor=151b2b" alt="PyPI" />
+          <img src="https://img.shields.io/pypi/l/agentplan?style=flat-square&color=8892a8&labelColor=151b2b" alt="MIT" />
+        </div>
+      </div>
     </div>
   </footer>
+
   <script>
     (() => {
       const terminal = document.getElementById('demo-terminal');
-      const playBtn = document.getElementById('demo-play');
+      const playBtn  = document.getElementById('demo-play');
       const pauseBtn = document.getElementById('demo-pause');
       const replayBtn = document.getElementById('demo-replay');
       if (!terminal || !playBtn || !pauseBtn || !replayBtn) return;
 
       const demoSteps = [
-        {
-          command: 'agentplan new "my-project" --desc "Build an AI product"',
-          output: [
-            '✔ Created project: my-project',
-            '  Description: Build an AI product',
-            '  Status: ready'
-          ]
-        },
-        {
-          command: 'agentplan ticket add my-project "Setup repo" --priority high',
-          output: [
-            '✔ Ticket #1 added to my-project',
-            '  Title: Setup repo',
-            '  Priority: high'
-          ]
-        },
-        {
-          command: 'agentplan ticket add my-project "Build API" --tag backend',
-          output: [
-            '✔ Ticket #2 added to my-project',
-            '  Title: Build API',
-            '  Tags: backend'
-          ]
-        },
-        {
-          command: 'agentplan next my-project',
-          output: [
-            '→ Next ticket: #1 Setup repo',
-            '  Priority: high',
-            '  Status: open'
-          ]
-        },
-        {
-          command: 'agentplan ticket done my-project 1 --agent dash',
-          output: [
-            '✔ Ticket #1 marked done',
-            '  Agent: dash',
-            '  Remaining open tickets: 1'
-          ]
-        },
-        {
-          command: 'agentplan status my-project',
-          output: [
-            'Project: my-project',
-            'Progress: 1/2 tickets complete (50%)',
-            'Open: #2 Build API [backend]'
-          ]
-        }
+        { command: 'agentplan create sprint-1', output: ["Created project 'sprint-1' (sprint-1)"] },
+        { command: 'agentplan ticket add sprint-1 "Build API" --priority high --tag backend', output: ['Added ticket #1: Build API [priority: high]'] },
+        { command: 'agentplan ticket add sprint-1 "Write tests" --priority medium --tag testing', output: ['Added ticket #2: Write tests [priority: medium]'] },
+        { command: 'agentplan depend sprint-1 2 --on 1', output: ['Ticket #2 now depends on: [1]'] },
+        { command: 'agentplan next sprint-1', output: ['📋 sprint-1: [1] Build API ○ (priority: high)'] },
+        { command: 'agentplan ticket done sprint-1 1 --agent dash --note "API shipped"', output: ['✓ Ticket #1: Build API → done [API shipped] (by dash)'], success: true },
+        { command: 'agentplan status sprint-1', output: ['1/2 done, 0 blocked, next: [2] Write tests'] }
       ];
 
-      const state = {
-        running: false,
-        paused: false,
-        started: false,
-        timer: null,
-        observerFired: false
-      };
+      const state = { running: false, paused: false, started: false, timer: null, observerFired: false };
 
-      function clearTimer() {
-        if (state.timer) {
-          clearTimeout(state.timer);
-          state.timer = null;
-        }
-      }
+      function clearTimer() { if (state.timer) { clearTimeout(state.timer); state.timer = null; } }
+      function updateControls() { playBtn.disabled = state.running && !state.paused; pauseBtn.disabled = !state.running || state.paused; }
 
-      function updateControls() {
-        playBtn.disabled = state.running && !state.paused;
-        pauseBtn.disabled = !state.running || state.paused;
-      }
-
-      function scrollTerminal() {
+      function addLine(text, cls) {
+        const d = document.createElement('div');
+        d.className = 'term-line ' + cls;
+        d.textContent = text;
+        terminal.appendChild(d);
         terminal.scrollTop = terminal.scrollHeight;
       }
 
-      function addLine(text, className) {
-        const line = document.createElement('div');
-        line.className = `term-line ${className}`;
-        line.textContent = text;
-        terminal.appendChild(line);
-        scrollTerminal();
+      function setPrompt(txt) {
+        let p = terminal.querySelector('.term-prompt');
+        if (!p) { p = document.createElement('div'); p.className = 'term-line term-command term-prompt'; terminal.appendChild(p); }
+        p.textContent = txt;
+        let c = p.querySelector('.cursor');
+        if (!c) { c = document.createElement('span'); c.className = 'cursor'; p.appendChild(c); }
+        terminal.scrollTop = terminal.scrollHeight;
       }
 
-      function setPrompt(text = '') {
-        let prompt = terminal.querySelector('.term-prompt');
-        if (!prompt) {
-          prompt = document.createElement('div');
-          prompt.className = 'term-line term-command term-prompt';
-          terminal.appendChild(prompt);
-        }
-        prompt.textContent = text;
-        let cursor = prompt.querySelector('.cursor');
-        if (!cursor) {
-          cursor = document.createElement('span');
-          cursor.className = 'cursor';
-          prompt.appendChild(cursor);
-        }
-        scrollTerminal();
-      }
+      function removePrompt() { const p = terminal.querySelector('.term-prompt'); if (p) p.remove(); }
+      function wait(ms) { return new Promise(res => { state.timer = setTimeout(() => { state.timer = null; res(); }, ms); }); }
 
-      function removePrompt() {
-        const prompt = terminal.querySelector('.term-prompt');
-        if (prompt) prompt.remove();
-      }
+      async function waitWhilePaused() { while (state.paused && state.running) await wait(120); }
 
-      function wait(ms) {
-        return new Promise((resolve) => {
-          state.timer = setTimeout(() => {
-            state.timer = null;
-            resolve();
-          }, ms);
-        });
-      }
-
-      async function waitWhilePaused() {
-        while (state.paused && state.running) {
-          await wait(120);
-        }
-      }
-
-      async function typeCommand(command) {
+      async function typeCommand(cmd) {
         setPrompt('$ ');
-        for (const char of command) {
+        for (const ch of cmd) {
           await waitWhilePaused();
           if (!state.running) return false;
-          const current = terminal.querySelector('.term-prompt');
-          if (!current) return false;
-          const cursor = current.querySelector('.cursor');
-          current.firstChild.textContent += char;
-          if (cursor) current.appendChild(cursor);
-          await wait(22 + Math.random() * 30);
+          const p = terminal.querySelector('.term-prompt');
+          if (!p) return false;
+          const c = p.querySelector('.cursor');
+          p.firstChild.textContent += ch;
+          if (c) p.appendChild(c);
+          await wait(18 + Math.random() * 28);
         }
-        await wait(220);
+        await wait(200);
         return true;
       }
 
       async function runDemo() {
         if (state.running) return;
-        state.running = true;
-        state.paused = false;
-        state.started = true;
+        state.running = true; state.paused = false; state.started = true;
         updateControls();
-
-        addLine('Demo: creating and managing tickets with agentplan', 'term-muted');
-
+        addLine('# agentplan demo — managing tickets across agents', 'term-muted');
         for (const step of demoSteps) {
           await waitWhilePaused();
           if (!state.running) return;
-
           const ok = await typeCommand(step.command);
           if (!ok) return;
-
           removePrompt();
-          addLine(`$ ${step.command}`, 'term-command');
-
-          for (const outLine of step.output) {
+          addLine('$ ' + step.command, 'term-command');
+          for (const line of step.output) {
             await waitWhilePaused();
             if (!state.running) return;
-            await wait(180);
-            addLine(outLine, 'term-output');
+            await wait(160);
+            addLine(line, step.success ? 'term-command' : 'term-output');
           }
-          await wait(420);
+          await wait(380);
         }
-
         setPrompt('$ ');
-        state.running = false;
-        state.paused = false;
+        state.running = false; state.paused = false;
         updateControls();
-      }
-
-      function pauseDemo() {
-        if (!state.running) return;
-        state.paused = true;
-        updateControls();
-      }
-
-      function resumeDemo() {
-        if (!state.running || !state.paused) return;
-        state.paused = false;
-        updateControls();
-      }
-
-      function replayDemo() {
-        clearTimer();
-        state.running = false;
-        state.paused = false;
-        terminal.innerHTML = '';
-        updateControls();
-        runDemo();
       }
 
       playBtn.addEventListener('click', () => {
-        if (state.running && state.paused) {
-          resumeDemo();
-          return;
-        }
+        if (state.running && state.paused) { state.paused = false; updateControls(); return; }
         if (!state.running) runDemo();
       });
+      pauseBtn.addEventListener('click', () => { if (state.running) { state.paused = true; updateControls(); } });
+      replayBtn.addEventListener('click', () => { clearTimer(); state.running = false; state.paused = false; terminal.innerHTML = ''; updateControls(); runDemo(); });
 
-      pauseBtn.addEventListener('click', pauseDemo);
-      replayBtn.addEventListener('click', replayDemo);
-
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && !state.observerFired && !state.started) {
-            state.observerFired = true;
-            runDemo();
-          }
-        });
+      const obs = new IntersectionObserver(entries => {
+        entries.forEach(e => { if (e.isIntersecting && !state.observerFired && !state.started) { state.observerFired = true; runDemo(); } });
       }, { threshold: 0.4 });
-
-      observer.observe(terminal);
+      obs.observe(terminal);
       updateControls();
     })();
   </script>

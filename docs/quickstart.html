@@ -6,32 +6,31 @@
   <title>agentplan Quickstart — install, create projects, and integrate with AI agents</title>
   <meta name="description" content="Get started with agentplan: install via pip, create your first project, manage tickets, and integrate with Claude, Codex, OpenClaw, or Python scripts." />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0b1020;
-      --panel: #121a33;
-      --panel-2: #162144;
-      --text: #e8edff;
-      --muted: #a8b3d9;
-      --accent: #5eead4;
-      --accent-2: #60a5fa;
-      --border: #2a3766;
-      --success: #34d399;
-      --shadow: 0 10px 30px rgba(0,0,0,.25);
+      --bg: #0a0e1a;
+      --bg-alt: #0f1420;
+      --panel: #151b2b;
+      --text: #e2e8f0;
+      --muted: #8892a8;
+      --accent: #22c55e;
+      --accent-2: #3b82f6;
+      --border: rgba(255,255,255,0.06);
+      --shadow: 0 8px 32px rgba(0,0,0,0.4);
     }
 
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     html { scroll-behavior: smooth; }
 
     body {
-      margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      background: radial-gradient(900px 600px at 10% -10%, #1a2b5a 0%, transparent 55%),
-                  radial-gradient(1000px 600px at 100% 0%, #1f3f66 0%, transparent 50%),
-                  var(--bg);
+      font-family: 'Inter', ui-sans-serif, sans-serif;
+      background: var(--bg);
       color: var(--text);
-      line-height: 1.55;
+      line-height: 1.6;
     }
 
     a { color: inherit; text-decoration: none; }
@@ -44,10 +43,10 @@
     .top-nav {
       position: sticky;
       top: 0;
-      z-index: 20;
-      backdrop-filter: blur(10px);
-      background: rgba(11, 16, 32, .7);
-      border-bottom: 1px solid rgba(42,55,102,.7);
+      z-index: 50;
+      backdrop-filter: blur(12px);
+      background: rgba(10,14,26,0.85);
+      border-bottom: 1px solid var(--border);
     }
 
     .top-nav .container {
@@ -55,74 +54,61 @@
       align-items: center;
       justify-content: space-between;
       padding: 14px 0;
-      gap: 16px;
     }
 
     .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
       font-weight: 700;
-      letter-spacing: .01em;
-    }
-
-    .brand-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      box-shadow: 0 0 14px rgba(94,234,212,.8);
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      color: var(--text);
     }
 
     .nav-links {
-      display: inline-flex;
+      display: flex;
       align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
+      gap: 4px;
     }
 
     .nav-link {
       color: var(--muted);
-      border: 1px solid transparent;
-      border-radius: 10px;
-      padding: 7px 11px;
-      font-size: .92rem;
-      transition: .2s ease;
+      font-size: 0.88rem;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 8px;
+      transition: color 0.2s, background 0.2s;
     }
 
-    .nav-link:hover {
-      color: var(--text);
-      border-color: var(--border);
-      background: rgba(255,255,255,.03);
-    }
+    .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.04); }
 
     .nav-link.is-active {
-      color: #031023;
-      border-color: transparent;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #071a0f;
+      background: var(--accent);
       font-weight: 600;
     }
 
     .hero {
-      padding: 48px 0 24px;
+      padding: 60px 0 40px;
+      border-bottom: 1px solid var(--border);
     }
 
     .pill {
       display: inline-flex;
       gap: .5rem;
       align-items: center;
-      padding: 6px 12px;
+      padding: 6px 16px;
       border: 1px solid var(--border);
       border-radius: 999px;
       color: var(--muted);
-      font-size: .86rem;
-      background: rgba(255,255,255,.02);
+      font-size: .82rem;
+      font-family: 'JetBrains Mono', monospace;
+      background: rgba(255,255,255,.04);
     }
 
     h1 {
-      font-size: clamp(2rem, 4.8vw, 3.2rem);
-      line-height: 1.12;
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
+      font-weight: 700;
+      line-height: 1.15;
       margin: 18px 0 14px;
       letter-spacing: -0.02em;
       max-width: 900px;
@@ -132,14 +118,15 @@
       margin: 0;
       max-width: 760px;
       color: var(--muted);
-      font-size: clamp(1rem, 2.2vw, 1.18rem);
+      font-size: clamp(1rem, 2vw, 1.1rem);
+      margin-top: 8px;
     }
 
     .grid {
       display: grid;
       grid-template-columns: 260px 1fr;
-      gap: 20px;
-      padding-bottom: 30px;
+      gap: 24px;
+      padding: 40px 0 60px;
     }
 
     .toc {
@@ -148,47 +135,57 @@
       align-self: start;
       border: 1px solid var(--border);
       border-radius: 14px;
-      background: rgba(255,255,255,.02);
-      padding: 14px;
+      background: var(--panel);
+      padding: 16px;
     }
 
     .toc h2 {
-      margin: 0 0 10px;
-      font-size: .98rem;
-      color: #dce6ff;
+      margin: 0 0 12px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
     .toc a {
       display: block;
       color: var(--muted);
-      font-size: .92rem;
+      font-size: 0.88rem;
       padding: 7px 9px;
-      border-radius: 9px;
+      border-radius: 8px;
+      transition: color 0.2s, background 0.2s;
     }
 
-    .toc a:hover {
-      color: var(--text);
-      background: rgba(255,255,255,.04);
-    }
+    .toc a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
 
     section {
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 20px;
-      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
-      margin-bottom: 16px;
+      padding: 28px;
+      background: var(--panel);
+      margin-bottom: 20px;
+    }
+
+    section h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 20px 0 10px;
+      color: var(--text);
     }
 
     .section-title {
-      font-size: 1.45rem;
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 1.5rem;
+      font-weight: 700;
       margin: 0 0 10px;
       letter-spacing: -0.01em;
     }
 
     .section-note {
       color: var(--muted);
-      margin: 0 0 14px;
-      font-size: .98rem;
+      margin: 0 0 16px;
+      font-size: 0.92rem;
     }
 
     .code-wrap {
@@ -205,14 +202,14 @@
       top: 10px;
       right: 10px;
       border: 1px solid var(--border);
-      background: rgba(255,255,255,.06);
+      background: rgba(255,255,255,0.06);
       color: var(--text);
       border-radius: 8px;
       padding: 6px 9px;
-      font-size: .78rem;
+      font-size: 0.78rem;
       font-weight: 600;
       cursor: pointer;
-      transition: .2s ease;
+      transition: 0.2s ease;
       z-index: 2;
     }
 
@@ -221,20 +218,16 @@
     pre {
       margin: 0;
       overflow-x: auto;
-      padding: 16px;
+      padding: 18px;
       background: transparent;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.01);
     }
 
     code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: .9rem;
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 0.88rem;
     }
 
-    .hljs {
-      background: transparent !important;
-      color: #dbeafe;
-    }
+    .hljs { background: transparent !important; }
 
     .command-list {
       display: grid;
@@ -245,27 +238,24 @@
     .command-item {
       border: 1px solid var(--border);
       border-radius: 10px;
-      background: rgba(255,255,255,.02);
-      padding: 10px 12px;
+      background: rgba(255,255,255,0.02);
+      padding: 12px 14px;
     }
 
-    .command-item code {
-      color: #ccf6ee;
-      font-size: .88rem;
-    }
+    .command-item code { color: #a7f3d0; font-size: 0.85rem; }
 
     .command-item p {
       margin: 6px 0 0;
       color: var(--muted);
-      font-size: .9rem;
+      font-size: 0.88rem;
     }
 
     footer {
       border-top: 1px solid var(--border);
-      margin-top: 24px;
-      padding: 20px 0 32px;
+      background: var(--bg);
+      padding: 32px 0 40px;
       color: var(--muted);
-      font-size: .93rem;
+      font-size: 0.9rem;
     }
 
     @media (max-width: 920px) {
@@ -274,23 +264,20 @@
     }
 
     @media (max-width: 640px) {
-      .top-nav .container { flex-direction: column; align-items: flex-start; }
-      .nav-links { justify-content: flex-start; }
-      section { padding: 16px; }
+      .top-nav .container { flex-direction: column; align-items: flex-start; gap: 10px; }
+      section { padding: 18px; }
     }
   </style>
 </head>
 <body>
   <nav class="top-nav" aria-label="Primary">
     <div class="container">
-      <a class="brand" href="index.html">
-        <span class="brand-dot" aria-hidden="true"></span>
-        <span>agentplan docs</span>
-      </a>
+      <a class="brand" href="index.html">&#9889; agentplan</a>
       <div class="nav-links">
         <a class="nav-link" href="index.html">Home</a>
         <a class="nav-link is-active" href="quickstart.html" aria-current="page">Quickstart</a>
-        <a class="nav-link" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a class="nav-link" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">GitHub</a>
+        <a class="nav-link" href="https://pypi.org/project/agentplan/" target="_blank" rel="noopener">PyPI</a>
       </div>
     </div>
   </nav>
@@ -460,7 +447,7 @@ print(prompt)
 
   <footer>
     <div class="container">
-      Built for practical AI execution. <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">github.com/fraction12/agentplan</a>
+      <p>Built for practical AI execution &nbsp;&mdash;&nbsp; <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener" style="color:var(--accent-2)">github.com/fraction12/agentplan</a></p>
     </div>
   </footer>
 
