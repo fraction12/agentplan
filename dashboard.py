@@ -26,17 +26,143 @@ INDEX_TEMPLATE = """
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>agentplan dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-      .progress-bar { transition: width 450ms ease-in-out; }
+      :root {
+        --font-heading: 'Playfair Display', Georgia, serif;
+        --font-body: 'Inter', ui-sans-serif, sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+        --color-bg: #0a0e1a;
+        --color-bg-alt: #0f1420;
+        --color-panel: #151b2b;
+        --color-panel-soft: #1b2236;
+        --color-text: #e2e8f0;
+        --color-muted: #8892a8;
+        --color-border: rgba(255, 255, 255, 0.08);
+        --color-shadow: rgba(0, 0, 0, 0.42);
+
+        --color-high: #ef4444;
+        --color-medium: #f97316;
+        --color-low: #8892a8;
+
+        --color-done: #22c55e;
+        --color-in-progress: #3b82f6;
+        --color-blocked: #f59e0b;
+        --color-todo: #94a3b8;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        font-family: var(--font-body);
+        background: var(--color-bg) !important;
+        color: var(--color-text);
+      }
+      h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); letter-spacing: -0.01em; }
+      a { color: #93c5fd; }
+      a:hover { color: #bfdbfe; }
+      .text-muted { color: var(--color-muted) !important; }
+
+      .card {
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        box-shadow: 0 12px 36px var(--color-shadow);
+        color: var(--color-text);
+      }
+      .card.priority-high { border-left: 4px solid var(--color-high); }
+      .card.priority-medium { border-left: 4px solid var(--color-medium); }
+      .card.priority-low,
+      .card.priority-none { border-left: 4px solid var(--color-low); }
+
+      .badge { font-family: var(--font-body); border: 1px solid transparent; }
+      .badge.status-badge { color: #061018; font-weight: 700; }
+      .badge.status-done { background: var(--color-done); }
+      .badge.status-in-progress { background: var(--color-in-progress); color: #eaf2ff; }
+      .badge.status-blocked { background: var(--color-blocked); }
+      .badge.status-todo,
+      .badge.status-pending,
+      .badge.status-skipped { background: var(--color-todo); }
+
+      .mono,
+      .project-code,
+      .ticket-id { font-family: var(--font-mono); }
+
+      .progress {
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid var(--color-border);
+        height: 0.7rem;
+      }
+      .progress-bar {
+        background: linear-gradient(90deg, var(--color-in-progress), #60a5fa);
+        transition: width 450ms ease-in-out;
+      }
+
+      .progress-ring {
+        --ring-size: 42px;
+        --ring-stroke: 4;
+        --ring-progress: 0;
+        --ring-track: rgba(255, 255, 255, 0.14);
+        --ring-color: var(--color-in-progress);
+        width: var(--ring-size);
+        height: var(--ring-size);
+      }
+      .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+      .progress-ring-track,
+      .progress-ring-value { fill: none; stroke-width: var(--ring-stroke); }
+      .progress-ring-track { stroke: var(--ring-track); }
+      .progress-ring-value {
+        stroke: var(--ring-color);
+        stroke-linecap: round;
+        stroke-dasharray: 100;
+        stroke-dashoffset: calc(100 - var(--ring-progress));
+        transition: stroke-dashoffset 450ms ease;
+      }
+
+      .agent-avatar {
+        --avatar-size: 2rem;
+        width: var(--avatar-size);
+        height: var(--avatar-size);
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: var(--color-bg-alt);
+        border: 1px solid var(--color-border);
+        color: var(--color-text);
+      }
+
+      .list-group-item,
+      .form-control {
+        background: var(--color-panel-soft);
+        border-color: var(--color-border);
+        color: var(--color-text);
+      }
+      .form-control::placeholder { color: var(--color-muted); }
+      .form-control:focus {
+        background: var(--color-panel-soft);
+        color: var(--color-text);
+        border-color: var(--color-in-progress);
+        box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.2);
+      }
+
+      .btn-outline-secondary { color: var(--color-muted); border-color: var(--color-border); }
+      .btn-outline-secondary:hover { color: var(--color-text); background: rgba(255,255,255,0.06); }
+
       .status-updated { animation: status-flash 650ms ease; }
       @keyframes status-flash {
-        from { background-color: #fff3cd; }
-        to { background-color: transparent; }
+        from { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35), 0 12px 36px var(--color-shadow); }
+        to { box-shadow: 0 12px 36px var(--color-shadow); }
       }
     </style>
   </head>
-  <body class="bg-light">
+  <body>
     <main class="container py-4">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h3 m-0">agentplan dashboard</h1>
@@ -47,13 +173,24 @@ INDEX_TEMPLATE = """
       <div class="row g-3" id="projects-grid">
       {% for project in projects %}
         <div class="col-12 col-md-6" data-project-id="{{ project.id }}">
-          <div class="card h-100 shadow-sm">
+          <div class="card h-100 shadow-sm {% if project.breakdown.blocked %}priority-high{% elif project.breakdown.todo %}priority-medium{% elif project.ticket_count %}priority-low{% else %}priority-none{% endif %}">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start mb-2">
-                <h2 class="h5 mb-0"><a class="text-decoration-none" href="{{ url_for('project_detail', slug=project.slug) }}">{{ project.title }}</a></h2>
-                <span class="badge text-bg-secondary">{{ project.slug }}</span>
+                <div>
+                  <h2 class="h5 mb-1"><a class="text-decoration-none" href="{{ url_for('project_detail', slug=project.slug) }}">{{ project.title }}</a></h2>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="agent-avatar">AG</span>
+                    <span class="badge project-code" style="background: var(--color-bg-alt); border-color: var(--color-border); color: var(--color-muted);">{{ project.slug }}</span>
+                  </div>
+                </div>
+                <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
+                  <svg viewBox="0 0 36 36">
+                    <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
+                    <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
+                  </svg>
+                </div>
               </div>
-              <p class="text-muted small mb-2">Status: <span class="project-status">{{ project.status }}</span></p>
+              <p class="text-muted small mb-2">Status: <span class="badge status-badge status-{{ project.status }} project-status">{{ project.status }}</span></p>
               <div class="mb-2 small project-progress-text">
                 <strong>{{ project.done_count }}/{{ project.ticket_count }}</strong> done
                 {% if project.ticket_count %}({{ project.progress_pct }}%){% endif %}
@@ -63,7 +200,7 @@ INDEX_TEMPLATE = """
               </div>
               <div class="d-flex flex-wrap gap-1 project-breakdown">
                 {% for status, count in project.breakdown.items() %}
-                <span class="badge rounded-pill text-bg-light border">{{ status }}: {{ count }}</span>
+                <span class="badge rounded-pill" style="background: var(--color-bg-alt); border-color: var(--color-border); color: var(--color-muted);">{{ status }}: {{ count }}</span>
                 {% endfor %}
               </div>
             </div>
@@ -79,7 +216,7 @@ INDEX_TEMPLATE = """
     <script>
       function breakdownMarkup(breakdown) {
         const order = ["todo", "in-progress", "blocked", "done", "skipped"];
-        return order.map((key) => `<span class="badge rounded-pill text-bg-light border">${key}: ${breakdown[key] ?? 0}</span>`).join("");
+        return order.map((key) => `<span class="badge rounded-pill" style="background: var(--color-bg-alt); border-color: var(--color-border); color: var(--color-muted);">${key}: ${breakdown[key] ?? 0}</span>`).join("");
       }
 
       function renderProjects(projects) {
@@ -99,10 +236,19 @@ INDEX_TEMPLATE = """
           const oldWidth = progressBar.style.width;
 
           statusNode.textContent = project.status;
+          statusNode.className = `badge status-badge status-${project.status}`;
           progressText.innerHTML = `<strong>${project.done_count}/${project.ticket_count}</strong> done${project.ticket_count ? ` (${project.progress_pct}%)` : ""}`;
           progressBar.style.width = `${project.progress_pct}%`;
           progressWrap.setAttribute("aria-valuenow", String(project.progress_pct));
           breakdownNode.innerHTML = breakdownMarkup(project.breakdown || {});
+
+          card.querySelector(".card").classList.remove("priority-high","priority-medium","priority-low","priority-none");
+          const todo = (project.breakdown || {}).todo || 0;
+          const blocked = (project.breakdown || {}).blocked || 0;
+          const done = (project.breakdown || {}).done || 0;
+          const total = project.ticket_count || 0;
+          const priorityClass = blocked > 0 ? "priority-high" : (todo > 0 ? "priority-medium" : (done === total && total > 0 ? "priority-low" : "priority-none"));
+          card.querySelector(".card").classList.add(priorityClass);
 
           if (oldStatus !== project.status || oldWidth !== `${project.progress_pct}%`) {
             card.classList.remove("status-updated");
@@ -151,9 +297,58 @@ PROJECT_TEMPLATE = """
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ project.title }} · agentplan dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      :root {
+        --font-heading: 'Playfair Display', Georgia, serif;
+        --font-body: 'Inter', ui-sans-serif, sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --color-bg: #0a0e1a;
+        --color-bg-alt: #0f1420;
+        --color-panel: #151b2b;
+        --color-panel-soft: #1b2236;
+        --color-text: #e2e8f0;
+        --color-muted: #8892a8;
+        --color-border: rgba(255,255,255,0.08);
+        --color-shadow: rgba(0,0,0,0.42);
+        --color-high: #ef4444;
+        --color-medium: #f97316;
+        --color-low: #8892a8;
+        --color-done: #22c55e;
+        --color-in-progress: #3b82f6;
+        --color-blocked: #f59e0b;
+        --color-todo: #94a3b8;
+      }
+      body { font-family: var(--font-body); background: var(--color-bg) !important; color: var(--color-text); }
+      h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); letter-spacing: -0.01em; }
+      .text-muted { color: var(--color-muted) !important; }
+      .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 12px 36px var(--color-shadow); color: var(--color-text); }
+      .card.priority-high { border-left: 4px solid var(--color-high); }
+      .card.priority-medium { border-left: 4px solid var(--color-medium); }
+      .card.priority-low, .card.priority-none { border-left: 4px solid var(--color-low); }
+      .badge.status-badge { color: #061018; font-weight: 700; }
+      .badge.status-done { background: var(--color-done); }
+      .badge.status-in-progress { background: var(--color-in-progress); color: #eaf2ff; }
+      .badge.status-blocked { background: var(--color-blocked); }
+      .badge.status-todo, .badge.status-pending, .badge.status-skipped { background: var(--color-todo); }
+      .ticket-id, .project-code { font-family: var(--font-mono); }
+      .progress-ring { --ring-size: 42px; --ring-stroke: 4; --ring-progress: 0; --ring-track: rgba(255,255,255,0.14); --ring-color: var(--color-in-progress); width: var(--ring-size); height: var(--ring-size); }
+      .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+      .progress-ring-track, .progress-ring-value { fill: none; stroke-width: var(--ring-stroke); }
+      .progress-ring-track { stroke: var(--ring-track); }
+      .progress-ring-value { stroke: var(--ring-color); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--ring-progress)); transition: stroke-dashoffset 450ms ease; }
+      .agent-avatar { --avatar-size: 2rem; width: var(--avatar-size); height: var(--avatar-size); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; background: var(--color-bg-alt); border: 1px solid var(--color-border); color: var(--color-text); }
+      .list-group-item, .form-control { background: var(--color-panel-soft); border-color: var(--color-border); color: var(--color-text); }
+      .form-control::placeholder { color: var(--color-muted); }
+      .form-control:focus { background: var(--color-panel-soft); color: var(--color-text); border-color: var(--color-in-progress); box-shadow: 0 0 0 0.2rem rgba(59,130,246,0.2); }
+      .btn-outline-secondary { color: var(--color-muted); border-color: var(--color-border); }
+      .btn-outline-secondary:hover { color: var(--color-text); background: rgba(255,255,255,0.06); }
+    </style>
   </head>
-  <body class="bg-light">
+  <body>
     <main class="container py-4">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h3 m-0">{{ project.title }}</h1>
@@ -184,7 +379,7 @@ PROJECT_TEMPLATE = """
         {% if grouped[status] %}
         <div class="list-group">
           {% for ticket in grouped[status] %}
-          <article class="list-group-item">
+          <article class="list-group-item card priority-{{ ticket.priority|lower }}">
             <div class="d-flex justify-content-between align-items-start gap-3">
               <div>
                 <div><strong><a class="text-decoration-none" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}">#{{ ticket.num }} {{ ticket.title }}</a></strong></div>
@@ -193,7 +388,7 @@ PROJECT_TEMPLATE = """
                 {% if ticket.dependencies %}<div class="small text-muted">depends on: {{ ticket.dependencies|join(', ') }}</div>{% endif %}
               </div>
               <div class="text-end">
-                <span class="badge text-bg-dark">{{ ticket.priority }}</span>
+                <span class="badge ticket-id" style="background: var(--color-bg-alt); color: var(--color-text); border-color: var(--color-border);">{{ ticket.priority }}</span>
               </div>
             </div>
           </article>
@@ -216,9 +411,58 @@ TICKET_TEMPLATE = """
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>#{{ ticket.num }} {{ ticket.title }} · {{ project.title }} · agentplan dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      :root {
+        --font-heading: 'Playfair Display', Georgia, serif;
+        --font-body: 'Inter', ui-sans-serif, sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --color-bg: #0a0e1a;
+        --color-bg-alt: #0f1420;
+        --color-panel: #151b2b;
+        --color-panel-soft: #1b2236;
+        --color-text: #e2e8f0;
+        --color-muted: #8892a8;
+        --color-border: rgba(255,255,255,0.08);
+        --color-shadow: rgba(0,0,0,0.42);
+        --color-high: #ef4444;
+        --color-medium: #f97316;
+        --color-low: #8892a8;
+        --color-done: #22c55e;
+        --color-in-progress: #3b82f6;
+        --color-blocked: #f59e0b;
+        --color-todo: #94a3b8;
+      }
+      body { font-family: var(--font-body); background: var(--color-bg) !important; color: var(--color-text); }
+      h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); letter-spacing: -0.01em; }
+      .text-muted { color: var(--color-muted) !important; }
+      .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 12px 36px var(--color-shadow); color: var(--color-text); }
+      .card.priority-high { border-left: 4px solid var(--color-high); }
+      .card.priority-medium { border-left: 4px solid var(--color-medium); }
+      .card.priority-low, .card.priority-none { border-left: 4px solid var(--color-low); }
+      .badge.status-badge { color: #061018; font-weight: 700; }
+      .badge.status-done { background: var(--color-done); }
+      .badge.status-in-progress { background: var(--color-in-progress); color: #eaf2ff; }
+      .badge.status-blocked { background: var(--color-blocked); }
+      .badge.status-todo, .badge.status-pending, .badge.status-skipped { background: var(--color-todo); }
+      .ticket-id, .project-code { font-family: var(--font-mono); }
+      .progress-ring { --ring-size: 42px; --ring-stroke: 4; --ring-progress: 0; --ring-track: rgba(255,255,255,0.14); --ring-color: var(--color-in-progress); width: var(--ring-size); height: var(--ring-size); }
+      .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+      .progress-ring-track, .progress-ring-value { fill: none; stroke-width: var(--ring-stroke); }
+      .progress-ring-track { stroke: var(--ring-track); }
+      .progress-ring-value { stroke: var(--ring-color); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--ring-progress)); transition: stroke-dashoffset 450ms ease; }
+      .agent-avatar { --avatar-size: 2rem; width: var(--avatar-size); height: var(--avatar-size); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; background: var(--color-bg-alt); border: 1px solid var(--color-border); color: var(--color-text); }
+      .list-group-item, .form-control { background: var(--color-panel-soft); border-color: var(--color-border); color: var(--color-text); }
+      .form-control::placeholder { color: var(--color-muted); }
+      .form-control:focus { background: var(--color-panel-soft); color: var(--color-text); border-color: var(--color-in-progress); box-shadow: 0 0 0 0.2rem rgba(59,130,246,0.2); }
+      .btn-outline-secondary { color: var(--color-muted); border-color: var(--color-border); }
+      .btn-outline-secondary:hover { color: var(--color-text); background: rgba(255,255,255,0.06); }
+    </style>
   </head>
-  <body class="bg-light">
+  <body>
     <main class="container py-4">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h4 m-0">#{{ ticket.num }} {{ ticket.title }}</h1>
@@ -228,11 +472,11 @@ TICKET_TEMPLATE = """
       <div class="card shadow-sm mb-3">
         <div class="card-body">
           <div class="d-flex flex-wrap gap-2 mb-2">
-            <span class="badge text-bg-primary">{{ ticket.status }}</span>
-            <span class="badge text-bg-dark">priority: {{ ticket.priority }}</span>
+            <span class="badge status-badge status-{{ ticket.status }}">{{ ticket.status }}</span>
+            <span class="badge ticket-id" style="background: var(--color-bg-alt); color: var(--color-text); border-color: var(--color-border);">priority: {{ ticket.priority }}</span>
             {% if ticket.tags %}
               {% for tag in ticket.tags %}
-              <span class="badge rounded-pill text-bg-light border">{{ tag }}</span>
+              <span class="badge rounded-pill" style="background: var(--color-bg-alt); border-color: var(--color-border); color: var(--color-muted);">{{ tag }}</span>
               {% endfor %}
             {% endif %}
           </div>
@@ -252,7 +496,7 @@ TICKET_TEMPLATE = """
 
       <div class="row g-3 mb-3">
         <div class="col-12 col-md-6">
-          <div class="card h-100 shadow-sm">
+          <div class="card h-100 shadow-sm priority-low">
             <div class="card-body">
               <h2 class="h6">Dependencies</h2>
               <div class="small text-muted mb-1">blocked by</div>
@@ -281,7 +525,7 @@ TICKET_TEMPLATE = """
         </div>
 
         <div class="col-12 col-md-6">
-          <div class="card h-100 shadow-sm">
+          <div class="card h-100 shadow-sm priority-low">
             <div class="card-body">
               <h2 class="h6">Subtasks</h2>
               {% if subtasks %}
@@ -289,7 +533,7 @@ TICKET_TEMPLATE = """
                 {% for subtask in subtasks %}
                 <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
                   <span>#{{ subtask.num }} {{ subtask.title }}</span>
-                  <span class="badge {{ 'text-bg-success' if subtask.status == 'done' else 'text-bg-secondary' }}">{{ subtask.status }}</span>
+                  <span class="badge status-badge {{ 'status-done' if subtask.status == 'done' else 'status-todo' }}">{{ subtask.status }}</span>
                 </li>
                 {% endfor %}
               </ul>
