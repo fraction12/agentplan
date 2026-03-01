@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>agentplan Quickstart — install, create projects, and integrate with AI agents</title>
+  <meta name="description" content="Get started with agentplan: install via pip, create your first project, manage tickets, and integrate with Claude, Codex, OpenClaw, or Python scripts." />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css" />
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a33;
+      --panel-2: #162144;
+      --text: #e8edff;
+      --muted: #a8b3d9;
+      --accent: #5eead4;
+      --accent-2: #60a5fa;
+      --border: #2a3766;
+      --success: #34d399;
+      --shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(900px 600px at 10% -10%, #1a2b5a 0%, transparent 55%),
+                  radial-gradient(1000px 600px at 100% 0%, #1f3f66 0%, transparent 50%),
+                  var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .container {
+      width: min(1100px, 92vw);
+      margin: 0 auto;
+    }
+
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(10px);
+      background: rgba(11, 16, 32, .7);
+      border-bottom: 1px solid rgba(42,55,102,.7);
+    }
+
+    .top-nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      gap: 16px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      letter-spacing: .01em;
+    }
+
+    .brand-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 0 14px rgba(94,234,212,.8);
+    }
+
+    .nav-links {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .nav-link {
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 7px 11px;
+      font-size: .92rem;
+      transition: .2s ease;
+    }
+
+    .nav-link:hover {
+      color: var(--text);
+      border-color: var(--border);
+      background: rgba(255,255,255,.03);
+    }
+
+    .nav-link.is-active {
+      color: #031023;
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      font-weight: 600;
+    }
+
+    .hero {
+      padding: 48px 0 24px;
+    }
+
+    .pill {
+      display: inline-flex;
+      gap: .5rem;
+      align-items: center;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: .86rem;
+      background: rgba(255,255,255,.02);
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4.8vw, 3.2rem);
+      line-height: 1.12;
+      margin: 18px 0 14px;
+      letter-spacing: -0.02em;
+      max-width: 900px;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: clamp(1rem, 2.2vw, 1.18rem);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 20px;
+      padding-bottom: 30px;
+    }
+
+    .toc {
+      position: sticky;
+      top: 84px;
+      align-self: start;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255,255,255,.02);
+      padding: 14px;
+    }
+
+    .toc h2 {
+      margin: 0 0 10px;
+      font-size: .98rem;
+      color: #dce6ff;
+    }
+
+    .toc a {
+      display: block;
+      color: var(--muted);
+      font-size: .92rem;
+      padding: 7px 9px;
+      border-radius: 9px;
+    }
+
+    .toc a:hover {
+      color: var(--text);
+      background: rgba(255,255,255,.04);
+    }
+
+    section {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-size: 1.45rem;
+      margin: 0 0 10px;
+      letter-spacing: -0.01em;
+    }
+
+    .section-note {
+      color: var(--muted);
+      margin: 0 0 14px;
+      font-size: .98rem;
+    }
+
+    .code-wrap {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 12px 0;
+      background: #070c1b;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 9px;
+      font-size: .78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: .2s ease;
+      z-index: 2;
+    }
+
+    .copy-btn:hover { filter: brightness(1.12); }
+
+    pre {
+      margin: 0;
+      overflow-x: auto;
+      padding: 16px;
+      background: transparent;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.01);
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: .9rem;
+    }
+
+    .hljs {
+      background: transparent !important;
+      color: #dbeafe;
+    }
+
+    .command-list {
+      display: grid;
+      gap: 10px;
+      margin: 12px 0 0;
+    }
+
+    .command-item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255,255,255,.02);
+      padding: 10px 12px;
+    }
+
+    .command-item code {
+      color: #ccf6ee;
+      font-size: .88rem;
+    }
+
+    .command-item p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      margin-top: 24px;
+      padding: 20px 0 32px;
+      color: var(--muted);
+      font-size: .93rem;
+    }
+
+    @media (max-width: 920px) {
+      .grid { grid-template-columns: 1fr; }
+      .toc { position: static; }
+    }
+
+    @media (max-width: 640px) {
+      .top-nav .container { flex-direction: column; align-items: flex-start; }
+      .nav-links { justify-content: flex-start; }
+      section { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="top-nav" aria-label="Primary">
+    <div class="container">
+      <a class="brand" href="index.html">
+        <span class="brand-dot" aria-hidden="true"></span>
+        <span>agentplan docs</span>
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="index.html">Home</a>
+        <a class="nav-link is-active" href="quickstart.html" aria-current="page">Quickstart</a>
+        <a class="nav-link" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container">
+      <span class="pill">⚡ Getting started in minutes</span>
+      <h1>Quickstart: install agentplan, create your first project, and integrate with your AI agents</h1>
+      <p class="lead">This guide is fully copy-paste friendly. Run the commands as-is, then adapt project names and ticket content to your workflow.</p>
+    </div>
+  </header>
+
+  <main class="container grid">
+    <aside class="toc" aria-label="Table of contents">
+      <h2>On this page</h2>
+      <a href="#installation">1) Installation</a>
+      <a href="#first-project">2) Create your first project</a>
+      <a href="#tickets">3) Add and work with tickets</a>
+      <a href="#integrations">4) Integration examples</a>
+      <a href="#cli-reference">5) CLI reference</a>
+    </aside>
+
+    <div>
+      <section id="installation">
+        <h2 class="section-title">1) Installation</h2>
+        <p class="section-note">Install <strong>agentplan</strong> from PyPI and verify the CLI is available.</p>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button">Copy</button>
+          <pre><code class="language-bash">python3 -m pip install --upgrade agentplan
+agentplan --help</code></pre>
+        </div>
+      </section>
+
+      <section id="first-project">
+        <h2 class="section-title">2) Create your first project</h2>
+        <p class="section-note">Initialize agentplan in your repo, create a project, then inspect its status.</p>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button">Copy</button>
+          <pre><code class="language-bash"># from your repository root
+agentplan init
+
+# create a project
+agentplan new "marketing-site" --desc "Ship docs and launch pages"
+
+# view all projects and status
+agentplan list
+agentplan status marketing-site</code></pre>
+        </div>
+      </section>
+
+      <section id="tickets">
+        <h2 class="section-title">3) Add tickets and work with them</h2>
+        <p class="section-note">Create granular work items, fetch the next actionable ticket, and mark it complete.</p>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button">Copy</button>
+          <pre><code class="language-bash"># add tickets
+agentplan ticket add marketing-site "Write quickstart docs" --priority high --tag docs
+agentplan ticket add marketing-site "Add terminal demo" --priority medium --tag frontend
+agentplan ticket add marketing-site "Publish to GitHub Pages" --priority high --tag release
+
+# get next ticket (dependency & priority aware)
+agentplan next marketing-site
+
+# claim/assign and complete a ticket
+agentplan ticket assign marketing-site 1 --agent dash
+agentplan ticket done marketing-site 1 --agent dash
+
+# review progress
+agentplan status marketing-site</code></pre>
+        </div>
+      </section>
+
+      <section id="integrations">
+        <h2 class="section-title">4) Integration examples</h2>
+        <p class="section-note">Use these snippets to connect agentplan with your preferred coding agent workflow.</p>
+
+        <h3>Claude Code / Claude (Anthropic)</h3>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button">Copy</button>
+          <pre><code class="language-bash"># get next ticket from agentplan, then hand to Claude Code
+NEXT_TICKET=$(agentplan next marketing-site --plain)
+claude "Work on this ticket from agentplan:\n\n$NEXT_TICKET\n\nWhen complete, summarize what changed and any follow-ups."</code></pre>
+        </div>
+
+        <h3>Codex (OpenAI)</h3>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button">Copy</button>
+          <pre><code class="language-bash"># fetch next task and execute with Codex in your project directory
+TASK=$(agentplan next marketing-site --plain)
+codex exec --full-auto "Implement this agentplan ticket:\n\n$TASK\n\nRun tests and report results."</code></pre>
+        </div>
+
+        <h3>OpenClaw agents</h3>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button">Copy</button>
+          <pre><code class="language-bash"># example: assign a ticket to a named OpenClaw agent before execution
+agentplan ticket assign marketing-site 2 --agent dash
+
+# your OpenClaw agent prompt can include:
+# "Run: agentplan next marketing-site --agent dash
+# Then implement that ticket and mark it done with:
+# agentplan ticket done marketing-site &lt;id&gt; --agent dash"</code></pre>
+        </div>
+
+        <h3>Generic Python integration</h3>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button">Copy</button>
+          <pre><code class="language-python">import subprocess
+
+def run(cmd: list[str]) -> str:
+    return subprocess.check_output(cmd, text=True).strip()
+
+project = "marketing-site"
+next_ticket = run(["agentplan", "next", project, "--plain"])
+
+prompt = f"""Implement this ticket:\n\n{next_ticket}\n\nReturn changed files and test results."""
+
+# Replace with your model/client call:
+print("Send to your agent model:")
+print(prompt)
+
+# After successful implementation, mark done (replace '1' with actual ticket id)
+# run(["agentplan", "ticket", "done", project, "1", "--agent", "python-worker"])</code></pre>
+        </div>
+      </section>
+
+      <section id="cli-reference">
+        <h2 class="section-title">5) CLI reference (key commands)</h2>
+        <p class="section-note">Core commands you'll use daily.</p>
+        <div class="command-list">
+          <article class="command-item">
+            <code>agentplan init</code>
+            <p>Initialize agentplan metadata in the current repository.</p>
+          </article>
+          <article class="command-item">
+            <code>agentplan new &lt;project-name&gt; --desc "..."</code>
+            <p>Create a new tracked project.</p>
+          </article>
+          <article class="command-item">
+            <code>agentplan ticket add &lt;project&gt; "&lt;title&gt;" [--priority] [--tag]</code>
+            <p>Add a ticket to a project.</p>
+          </article>
+          <article class="command-item">
+            <code>agentplan next &lt;project&gt;</code>
+            <p>Show the next actionable ticket based on priority/dependencies.</p>
+          </article>
+          <article class="command-item">
+            <code>agentplan ticket assign &lt;project&gt; &lt;ticket-id&gt; --agent &lt;name&gt;</code>
+            <p>Assign ownership to an agent or person.</p>
+          </article>
+          <article class="command-item">
+            <code>agentplan ticket done &lt;project&gt; &lt;ticket-id&gt; --agent &lt;name&gt;</code>
+            <p>Mark a ticket complete with explicit executor attribution.</p>
+          </article>
+          <article class="command-item">
+            <code>agentplan status &lt;project&gt;</code>
+            <p>Display project progress and open work.</p>
+          </article>
+          <article class="command-item">
+            <code>agentplan list</code>
+            <p>List all tracked projects.</p>
+          </article>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      Built for practical AI execution. <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">github.com/fraction12/agentplan</a>
+    </div>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+  <script>
+    (() => {
+      if (window.hljs) {
+        window.hljs.highlightAll();
+      }
+
+      document.querySelectorAll('.code-wrap').forEach((block) => {
+        const button = block.querySelector('.copy-btn');
+        const code = block.querySelector('code');
+        if (!button || !code) return;
+
+        button.addEventListener('click', async () => {
+          const text = code.innerText;
+          try {
+            await navigator.clipboard.writeText(text);
+            const previous = button.textContent;
+            button.textContent = 'Copied';
+            setTimeout(() => {
+              button.textContent = previous || 'Copy';
+            }, 1400);
+          } catch {
+            button.textContent = 'Failed';
+            setTimeout(() => { button.textContent = 'Copy'; }, 1400);
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -38,6 +38,62 @@
       margin: 0 auto;
     }
 
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(10px);
+      background: rgba(11, 16, 32, .7);
+      border-bottom: 1px solid rgba(42,55,102,.7);
+    }
+
+    .top-nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      gap: 16px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      letter-spacing: .01em;
+    }
+
+    .brand-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 0 14px rgba(94,234,212,.8);
+    }
+
+    .nav-links {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .nav-link {
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 7px 11px;
+      font-size: .92rem;
+      transition: .2s ease;
+    }
+
+    .nav-link:hover {
+      color: var(--text);
+      border-color: var(--border);
+      background: rgba(255,255,255,.03);
+    }
+
     .hero {
       padding: 88px 0 56px;
     }
@@ -304,6 +360,8 @@
     }
 
     @media (max-width: 640px) {
+      .top-nav .container { flex-direction: column; align-items: flex-start; }
+      .nav-links { justify-content: flex-start; }
       .hero { padding-top: 72px; }
       .features { grid-template-columns: 1fr; }
       .btn { width: 100%; }
@@ -312,6 +370,20 @@
   </style>
 </head>
 <body>
+  <nav class="top-nav" aria-label="Primary">
+    <div class="container">
+      <a class="brand" href="index.html">
+        <span class="brand-dot" aria-hidden="true"></span>
+        <span>agentplan docs</span>
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="index.html" aria-current="page">Home</a>
+        <a class="nav-link" href="quickstart.html">Quickstart</a>
+        <a class="nav-link" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
   <header class="hero">
     <div class="container">
       <span class="pill">⚡ agentplan · lightweight AI project tracker</span>
@@ -322,6 +394,7 @@
       </p>
       <div class="actions">
         <a class="btn btn-primary" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+        <a class="btn btn-secondary" href="quickstart.html">Read quickstart guide</a>
         <a class="btn btn-secondary" href="#quickstart">See CLI examples</a>
       </div>
     </div>
