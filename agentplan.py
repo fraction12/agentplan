@@ -51,6 +51,7 @@ def init_db(conn):
             project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             num INTEGER NOT NULL,
             title TEXT NOT NULL,
+            description TEXT,
             status TEXT NOT NULL DEFAULT 'pending',
             priority TEXT NOT NULL DEFAULT 'none',
             tags TEXT NOT NULL DEFAULT '',
@@ -138,6 +139,12 @@ def init_db(conn):
         conn.execute("SELECT done_by FROM tickets LIMIT 0")
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE tickets ADD COLUMN done_by TEXT")
+        conn.commit()
+    # Migration: add description column if missing
+    try:
+        conn.execute("SELECT description FROM tickets LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE tickets ADD COLUMN description TEXT")
         conn.commit()
     # Migration: create subtasks table/index if missing
     conn.execute("""
@@ -432,8 +439,8 @@ def cmd_ticket_add(args):
     num = _next_ticket_num(conn, proj["id"])
     tags = _parse_tags(args.tag)
     conn.execute(
-        "INSERT INTO tickets (project_id, num, title, priority, tags, depends_on, notes) VALUES (?,?,?,?,?,?,?)",
-        (proj["id"], num, args.title, args.priority or "none", tags, json.dumps(deps), args.notes),
+        "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes) VALUES (?,?,?,?,?,?,?,?)",
+        (proj["id"], num, args.title, args.desc, args.priority or "none", tags, json.dumps(deps), args.notes),
     )
     if deps:
         tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
@@ -656,6 +663,8 @@ def cmd_ticket_list(args):
         elif t["status"] == "done" and t["done_by"]:
             line += f" [done_by: {t['done_by']}]"
         print(line)
+        if t["description"]:
+            print(f"       Description: {t['description']}")
     conn.close()
 
 
@@ -781,6 +790,8 @@ def cmd_status(args):
             elif t["status"] == "done" and t["done_by"]:
                 line += f" [done_by: {t['done_by']}]"
             print(line)
+            if t["description"]:
+                print(f"       Description: {t['description']}")
             if t["status"] == "done" and t["close_note"]:
                 print(f"       Note: {t['close_note']}")
 
@@ -1015,7 +1026,7 @@ def build_parser():
     tp = sub.add_parser("ticket", help="Manage tickets")
     ts = tp.add_subparsers(dest="ticket_command")
     a = ts.add_parser("add")
-    a.add_argument("project"); a.add_argument("title"); a.add_argument("--depends"); a.add_argument("--notes")
+    a.add_argument("project"); a.add_argument("title"); a.add_argument("--desc"); a.add_argument("--depends"); a.add_argument("--notes")
     a.add_argument("--tag", help="Comma-separated tags (e.g. security,css)")
     a.add_argument("--priority", choices=PRIORITY_CHOICES[:-1], default="none")
     u = ts.add_parser("update")

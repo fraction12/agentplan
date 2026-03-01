@@ -277,6 +277,24 @@ def test_add_ticket_tags_persisted():
     assert row["tags"] == "css,security"
 
 
+def test_add_ticket_desc_persisted():
+    cli("create", "Desc Project")
+    out, err, code = cli(
+        "ticket",
+        "add",
+        "desc-project",
+        "Document flow",
+        "--desc",
+        "Longer context for implementers.",
+    )
+    assert code == 0, err
+    assert "added ticket #1" in out.lower()
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT description FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["description"] == "Longer context for implementers."
+
+
 def test_ticket_update_priority():
     cli("create", "Update Project")
     cli("ticket", "add", "update-project", "Task one")
@@ -340,6 +358,51 @@ def test_status_filters_by_tag():
     assert "Implement CSP" in out
     assert "Fix button spacing" not in out
     assert out.strip().splitlines()[0] == "0/1 done, 0 blocked, next: [1] Implement CSP"
+
+
+def test_ticket_list_shows_desc():
+    cli("create", "List Desc Project")
+    cli(
+        "ticket",
+        "add",
+        "list-desc-project",
+        "Implement parser",
+        "--desc",
+        "Parse both compact and full modes.",
+    )
+    out, err, code = cli("ticket", "list", "list-desc-project")
+    assert code == 0, err
+    assert "Description: Parse both compact and full modes." in out
+
+
+def test_status_shows_desc():
+    cli("create", "Status Desc Project")
+    cli(
+        "ticket",
+        "add",
+        "status-desc-project",
+        "Implement parser",
+        "--desc",
+        "Parse both compact and full modes.",
+    )
+    out, err, code = cli("status", "status-desc-project")
+    assert code == 0, err
+    assert "Description: Parse both compact and full modes." in out
+
+
+def test_status_json_includes_desc():
+    cli("create", "Status Json Desc Project")
+    cli(
+        "ticket",
+        "add",
+        "status-json-desc-project",
+        "Implement parser",
+        "--desc",
+        "Parse both compact and full modes.",
+    )
+    out, err, code = cli("status", "status-json-desc-project", "--format", "json")
+    assert code == 0, err
+    assert '"description": "Parse both compact and full modes."' in out
 
 
 def test_status_summary_line_with_blocked_and_next():
