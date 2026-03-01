@@ -56,6 +56,8 @@ def init_db(conn):
             tags TEXT NOT NULL DEFAULT '',
             depends_on TEXT DEFAULT '[]',
             notes TEXT,
+            started_by TEXT,
+            done_by TEXT,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
             completed_at TEXT
         );
@@ -124,6 +126,18 @@ def init_db(conn):
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE tickets ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
         conn.execute("UPDATE tickets SET tags='' WHERE tags IS NULL")
+        conn.commit()
+    # Migration: add started_by column if missing
+    try:
+        conn.execute("SELECT started_by FROM tickets LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE tickets ADD COLUMN started_by TEXT")
+        conn.commit()
+    # Migration: add done_by column if missing
+    try:
+        conn.execute("SELECT done_by FROM tickets LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE tickets ADD COLUMN done_by TEXT")
         conn.commit()
     # Migration: create subtasks table/index if missing
     conn.execute("""
@@ -490,15 +504,18 @@ def cmd_ticket_done(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     close_note = getattr(args, 'note', None)
+    done_by = getattr(args, "agent", None)
     for num_str in args.ticket_ids:
         t = resolve_ticket(conn, proj["id"], num_str, proj["slug"])
         conn.execute(
-            "UPDATE tickets SET status='done', completed_at=?, close_note=? WHERE id=?",
-            (_now(), close_note, t["id"])
+            "UPDATE tickets SET status='done', completed_at=?, close_note=?, done_by=? WHERE id=?",
+            (_now(), close_note, done_by, t["id"])
         )
         msg = f"✓ Ticket #{t['num']}: {t['title']} → done"
         if close_note:
             msg += f" [{close_note}]"
+        if done_by:
+            msg += f" (by {done_by})"
         print(msg)
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     was_active = proj["status"] == "active"
@@ -525,10 +542,17 @@ def cmd_ticket_start(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
-    conn.execute("UPDATE tickets SET status='in-progress' WHERE id=?", (t["id"],))
+    started_by = getattr(args, "agent", None)
+    conn.execute(
+        "UPDATE tickets SET status='in-progress', started_by=? WHERE id=?",
+        (started_by, t["id"]),
+    )
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     conn.commit()
-    print(f"▶ Ticket #{t['num']}: {t['title']} → in-progress")
+    msg = f"▶ Ticket #{t['num']}: {t['title']} → in-progress"
+    if started_by:
+        msg += f" (by {started_by})"
+    print(msg)
     conn.close()
 
 
@@ -565,10 +589,14 @@ def cmd_ticket_list(args):
         line = f"  {icon} {t['num']}. {t['title']}{progress_segment} [priority: {_priority_label(t['priority'])}]"
         if t["status"] == "in-progress":
             line += " (in-progress)"
+            if t["started_by"]:
+                line += f" [started_by: {t['started_by']}]"
         elif blocked and t["status"] == "pending":
             deps = json.loads(t["depends_on"] or "[]")
             waiting = [str(d) for d in deps if d not in done_nums]
             line += f" (blocked — waiting on {', '.join(waiting)})"
+        elif t["status"] == "done" and t["done_by"]:
+            line += f" [done_by: {t['done_by']}]"
         print(line)
     conn.close()
 
@@ -686,10 +714,14 @@ def cmd_status(args):
             line = f"  {icon} {t['num']}. {t['title']}{progress_segment} [priority: {_priority_label(t['priority'])}]"
             if t["status"] == "in-progress":
                 line += " (in-progress)"
+                if t["started_by"]:
+                    line += f" [started_by: {t['started_by']}]"
             elif blocked and t["status"] == "pending":
                 deps = json.loads(t["depends_on"] or "[]")
                 waiting = [str(d) for d in deps if d not in done_nums]
                 line += f" (blocked — waiting on {', '.join(waiting)})"
+            elif t["status"] == "done" and t["done_by"]:
+                line += f" [done_by: {t['done_by']}]"
             print(line)
             if t["status"] == "done" and t["close_note"]:
                 print(f"       Note: {t['close_note']}")
@@ -939,10 +971,12 @@ def build_parser():
     d = ts.add_parser("done")
     d.add_argument("project"); d.add_argument("ticket_ids", nargs="+")
     d.add_argument("--note", help="Optional closing note/reason")
+    d.add_argument("--agent", help="Agent name marking ticket done (e.g. dash)")
     s = ts.add_parser("skip")
     s.add_argument("project"); s.add_argument("ticket_ids", nargs="+")
     st = ts.add_parser("start")
     st.add_argument("project"); st.add_argument("ticket_id")
+    st.add_argument("--agent", help="Agent name starting ticket (e.g. dash)")
     tl = ts.add_parser("list")
     tl.add_argument("project"); tl.add_argument("--status", choices=["pending", "done", "in-progress", "skipped", "all"])
 

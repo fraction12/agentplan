@@ -123,6 +123,36 @@ def test_mark_ticket_done():
     assert code == 0, err
 
 
+def test_ticket_start_with_agent_stores_started_by_and_shows_in_status():
+    cli("create", "Start Agent Project")
+    cli("ticket", "add", "start-agent-project", "Implement parser")
+    out, err, code = cli("ticket", "start", "start-agent-project", "1", "--agent", "dash")
+    assert code == 0, err
+    assert "(by dash)" in out
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT started_by FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["started_by"] == "dash"
+    status_out, status_err, status_code = cli("status", "start-agent-project")
+    assert status_code == 0, status_err
+    assert "[started_by: dash]" in status_out
+
+
+def test_ticket_done_with_agent_stores_done_by_and_shows_in_status():
+    cli("create", "Done Agent Project")
+    cli("ticket", "add", "done-agent-project", "Ship feature")
+    out, err, code = cli("ticket", "done", "done-agent-project", "1", "--agent", "dash")
+    assert code == 0, err
+    assert "(by dash)" in out
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT done_by FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["done_by"] == "dash"
+    status_out, status_err, status_code = cli("status", "done-agent-project")
+    assert status_code == 0, status_err
+    assert "[done_by: dash]" in status_out
+
+
 def test_subtask_add_and_list():
     cli("create", "Subtask Project")
     cli("ticket", "add", "subtask-project", "Implement feature")
