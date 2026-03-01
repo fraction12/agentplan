@@ -113,7 +113,7 @@ PROJECT_TEMPLATE = """
           <article class="list-group-item">
             <div class="d-flex justify-content-between align-items-start gap-3">
               <div>
-                <div><strong>#{{ ticket.num }} {{ ticket.title }}</strong></div>
+                <div><strong><a class="text-decoration-none" href="{{ url_for('ticket_detail', project_id=project.id, ticket_num=ticket.num) }}">#{{ ticket.num }} {{ ticket.title }}</a></strong></div>
                 {% if ticket.description %}<div class="small mt-1">{{ ticket.description }}</div>{% endif %}
                 {% if ticket.tags %}<div class="small text-muted mt-1">tags: {{ ticket.tags|join(', ') }}</div>{% endif %}
                 {% if ticket.dependencies %}<div class="small text-muted">depends on: {{ ticket.dependencies|join(', ') }}</div>{% endif %}
@@ -130,6 +130,120 @@ PROJECT_TEMPLATE = """
         {% endif %}
       </section>
       {% endfor %}
+    </main>
+  </body>
+</html>
+"""
+
+TICKET_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>#{{ ticket.num }} {{ ticket.title }} · {{ project.title }} · agentplan dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  </head>
+  <body class="bg-light">
+    <main class="container py-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h4 m-0">#{{ ticket.num }} {{ ticket.title }}</h1>
+        <a href="{{ url_for('project_detail', project_id=project.id) }}" class="btn btn-sm btn-outline-secondary">Back to project</a>
+      </div>
+
+      <div class="card shadow-sm mb-3">
+        <div class="card-body">
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <span class="badge text-bg-primary">{{ ticket.status }}</span>
+            <span class="badge text-bg-dark">priority: {{ ticket.priority }}</span>
+            {% if ticket.tags %}
+              {% for tag in ticket.tags %}
+              <span class="badge rounded-pill text-bg-light border">{{ tag }}</span>
+              {% endfor %}
+            {% endif %}
+          </div>
+          <h2 class="h6">Description</h2>
+          {% if ticket.description %}
+          <p class="mb-0">{{ ticket.description }}</p>
+          {% else %}
+          <p class="text-muted mb-0">No description.</p>
+          {% endif %}
+          {% if ticket.close_note %}
+          <hr>
+          <h2 class="h6">Close notes</h2>
+          <p class="mb-0">{{ ticket.close_note }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-12 col-md-6">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body">
+              <h2 class="h6">Dependencies</h2>
+              <div class="small text-muted mb-1">blocked by</div>
+              {% if blocked_by %}
+              <ul class="mb-3">
+                {% for dep in blocked_by %}
+                <li><a href="{{ url_for('ticket_detail', project_id=project.id, ticket_num=dep.num) }}">#{{ dep.num }} {{ dep.title }}</a></li>
+                {% endfor %}
+              </ul>
+              {% else %}
+              <p class="text-muted small">None.</p>
+              {% endif %}
+
+              <div class="small text-muted mb-1">blocks</div>
+              {% if blocks %}
+              <ul class="mb-0">
+                {% for dep in blocks %}
+                <li><a href="{{ url_for('ticket_detail', project_id=project.id, ticket_num=dep.num) }}">#{{ dep.num }} {{ dep.title }}</a></li>
+                {% endfor %}
+              </ul>
+              {% else %}
+              <p class="text-muted small mb-0">None.</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-md-6">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body">
+              <h2 class="h6">Subtasks</h2>
+              {% if subtasks %}
+              <ul class="list-group list-group-flush">
+                {% for subtask in subtasks %}
+                <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                  <span>#{{ subtask.num }} {{ subtask.title }}</span>
+                  <span class="badge {{ 'text-bg-success' if subtask.status == 'done' else 'text-bg-secondary' }}">{{ subtask.status }}</span>
+                </li>
+                {% endfor %}
+              </ul>
+              {% else %}
+              <p class="text-muted small mb-0">No subtasks.</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h2 class="h6">History / audit log</h2>
+          {% if history %}
+          <ul class="list-group list-group-flush">
+            {% for item in history %}
+            <li class="list-group-item px-0">
+              <div class="small text-muted">{{ item.changed_at }}</div>
+              <div>{{ item.message }}</div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="text-muted small mb-0">No history yet.</p>
+          {% endif %}
+        </div>
+      </div>
     </main>
   </body>
 </html>
@@ -265,6 +379,86 @@ def create_app():
             done_count=done_count,
             total_count=len(rows),
             filters={"status": status_filter, "priority": priority_filter, "tag": tag_filter},
+        )
+
+
+    @app.route("/project/<int:project_id>/ticket/<int:ticket_num>")
+    def ticket_detail(project_id, ticket_num):
+        conn = get_connection(_db_path())
+        try:
+            project = conn.execute("SELECT id, slug, title, status FROM projects WHERE id=?", (project_id,)).fetchone()
+            if not project:
+                abort(404)
+
+            row = conn.execute(
+                """
+                SELECT id, num, title, description, status, priority, tags, depends_on, close_note
+                FROM tickets
+                WHERE project_id=? AND num=?
+                """,
+                (project_id, ticket_num),
+            ).fetchone()
+            if not row:
+                abort(404)
+
+            ticket = _normalize_ticket(row)
+            ticket["close_note"] = row["close_note"] or ""
+
+            subtasks = conn.execute(
+                "SELECT num, title, status FROM subtasks WHERE ticket_id=? ORDER BY num",
+                (ticket["id"],),
+            ).fetchall()
+
+            dep_nums = ticket["dependencies"]
+            blocked_by = []
+            if dep_nums:
+                placeholders = ",".join("?" for _ in dep_nums)
+                blocked_rows = conn.execute(
+                    f"SELECT num, title FROM tickets WHERE project_id=? AND num IN ({placeholders}) ORDER BY num",
+                    (project_id, *dep_nums),
+                ).fetchall()
+                blocked_by = [dict(r) for r in blocked_rows]
+
+            project_ticket_rows = conn.execute(
+                "SELECT num, title, depends_on FROM tickets WHERE project_id=? AND id!=? ORDER BY num",
+                (project_id, ticket["id"]),
+            ).fetchall()
+            blocks = []
+            for r in project_ticket_rows:
+                try:
+                    ticket_deps = json.loads(r["depends_on"] or "[]")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    ticket_deps = []
+                if ticket["num"] in ticket_deps:
+                    blocks.append({"num": r["num"], "title": r["title"]})
+
+            history_rows = conn.execute(
+                "SELECT changed_at, old_state, new_state FROM ticket_history WHERE ticket_id=? ORDER BY id DESC",
+                (ticket["id"],),
+            ).fetchall()
+            log_rows = conn.execute(
+                "SELECT created_at, entry FROM log WHERE ticket_id=? ORDER BY id DESC",
+                (ticket["id"],),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        history = []
+        for r in history_rows:
+            old_state = r["old_state"] or "(none)"
+            history.append({"changed_at": r["changed_at"], "message": f"state: {old_state} → {r['new_state']}"})
+        for r in log_rows:
+            history.append({"changed_at": r["created_at"], "message": r["entry"]})
+        history.sort(key=lambda item: item["changed_at"], reverse=True)
+
+        return render_template_string(
+            TICKET_TEMPLATE,
+            project=project,
+            ticket=ticket,
+            subtasks=subtasks,
+            blocked_by=blocked_by,
+            blocks=blocks,
+            history=history,
         )
 
     return app

@@ -932,3 +932,42 @@ def test_dashboard_project_detail_returns_ticket_titles():
     body = resp.get_data(as_text=True)
     assert "Dashboard ticket one" in body
     assert "Dashboard ticket two" in body
+
+
+
+def test_dashboard_project_detail_links_to_ticket_detail_view():
+    from dashboard import app
+
+    cli("create", "Web Links")
+    cli("ticket", "add", "web-links", "Clickable ticket")
+
+    client = app.test_client()
+    resp = client.get("/project/1")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert '/project/1/ticket/1' in body
+
+
+def test_dashboard_ticket_detail_includes_dependencies_subtasks_history_and_close_note():
+    from dashboard import app
+
+    cli("create", "Web Ticket Detail")
+    cli("ticket", "add", "web-ticket-detail", "First ticket")
+    cli("ticket", "add", "web-ticket-detail", "Second ticket", "--depends", "1")
+    cli("ticket", "done", "web-ticket-detail", "1")
+    cli("subtask", "add", "web-ticket-detail", "2", "Write tests")
+    cli("subtask", "done", "web-ticket-detail", "2", "1")
+    cli("ticket", "start", "web-ticket-detail", "2")
+    cli("ticket", "done", "web-ticket-detail", "2", "--note", "Shipped")
+
+    client = app.test_client()
+    resp = client.get("/project/1/ticket/2")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Second ticket" in body
+    assert "First ticket" in body
+    assert "Write tests" in body
+    assert "History / audit log" in body
+    assert "Close notes" in body
+    assert "Shipped" in body
+    assert "Back to project" in body
