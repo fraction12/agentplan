@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>agentplan — Structured project tracking for AI agents</title>
+  <meta name="description" content="agentplan is a lightweight, CLI-first project and ticket tracker for AI agents. Track work across projects, assign tickets, and ship faster." />
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a33;
+      --panel-2: #162144;
+      --text: #e8edff;
+      --muted: #a8b3d9;
+      --accent: #5eead4;
+      --accent-2: #60a5fa;
+      --border: #2a3766;
+      --success: #34d399;
+      --shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(900px 600px at 10% -10%, #1a2b5a 0%, transparent 55%),
+                  radial-gradient(1000px 600px at 100% 0%, #1f3f66 0%, transparent 50%),
+                  var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .container {
+      width: min(1100px, 92vw);
+      margin: 0 auto;
+    }
+
+    .hero {
+      padding: 88px 0 56px;
+    }
+
+    .pill {
+      display: inline-flex;
+      gap: .5rem;
+      align-items: center;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: .86rem;
+      background: rgba(255,255,255,.02);
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4.8vw, 3.4rem);
+      line-height: 1.12;
+      margin: 18px 0 14px;
+      letter-spacing: -0.02em;
+      max-width: 850px;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 730px;
+      color: var(--muted);
+      font-size: clamp(1rem, 2.2vw, 1.2rem);
+    }
+
+    .actions {
+      margin-top: 30px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 11px 18px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      font-weight: 600;
+      transition: .2s ease;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #031023;
+      box-shadow: var(--shadow);
+    }
+
+    .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.05); }
+
+    .btn-secondary {
+      border-color: var(--border);
+      color: var(--muted);
+      background: rgba(255,255,255,.02);
+    }
+
+    section {
+      padding: 28px 0;
+    }
+
+    .section-title {
+      font-size: 1.55rem;
+      margin: 0 0 14px;
+      letter-spacing: -0.01em;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 8px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 1.03rem;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .96rem;
+    }
+
+    pre {
+      margin: 0;
+      overflow-x: auto;
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #070c1b;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.01);
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: .92rem;
+      color: #ccf6ee;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,.015);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 680px;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      font-size: .94rem;
+    }
+
+    th {
+      color: #d5defc;
+      background: rgba(255,255,255,.025);
+      font-weight: 600;
+    }
+
+    td { color: var(--muted); }
+
+    tbody tr:last-child td { border-bottom: none; }
+
+    .yes { color: var(--success); font-weight: 600; }
+    .no { color: #fda4af; font-weight: 600; }
+
+    footer {
+      border-top: 1px solid var(--border);
+      margin-top: 42px;
+      padding: 20px 0 32px;
+      color: var(--muted);
+      font-size: .93rem;
+    }
+
+    @media (max-width: 900px) {
+      .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 640px) {
+      .hero { padding-top: 72px; }
+      .features { grid-template-columns: 1fr; }
+      .btn { width: 100%; }
+      .actions { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="container">
+      <span class="pill">⚡ agentplan · lightweight AI project tracker</span>
+      <h1>Structured project tracking for AI agents</h1>
+      <p class="lead">
+        Plan and ship work with a simple, dependency-aware ticket workflow.
+        agentplan keeps multi-project tasks organized, agent-assignable, and fully CLI-native.
+      </p>
+      <div class="actions">
+        <a class="btn btn-primary" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+        <a class="btn btn-secondary" href="#quickstart">See CLI examples</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div class="container">
+        <h2 class="section-title">Why teams use agentplan</h2>
+        <div class="features">
+          <article class="card">
+            <h3>Multi-project workflows</h3>
+            <p>Track active work across multiple repos and initiatives without context loss.</p>
+          </article>
+          <article class="card">
+            <h3>Ticket-level tracking</h3>
+            <p>Create, prioritize, and close granular tickets so agents always have clear next steps.</p>
+          </article>
+          <article class="card">
+            <h3>Agent assignment</h3>
+            <p>Assign tickets to specific agents and keep ownership explicit from start to done.</p>
+          </article>
+          <article class="card">
+            <h3>Progress logs</h3>
+            <p>Attach concise status updates to each ticket for transparent execution history.</p>
+          </article>
+          <article class="card">
+            <h3>Dependency resolution</h3>
+            <p>Define dependencies so blockers are visible and sequencing stays deterministic.</p>
+          </article>
+          <article class="card">
+            <h3>CLI-first by design</h3>
+            <p>No heavy setup, no platform lock-in — just fast commands that fit existing toolchains.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart">
+      <div class="container">
+        <h2 class="section-title">CLI example</h2>
+        <pre><code># initialize agentplan in your project
+agentplan init
+
+# add a ticket
+agentplan add ticket "Build landing page" --project "agentplan-v03" --assignee "dash"
+
+# fetch the next actionable ticket
+agentplan next
+
+# mark ticket complete
+agentplan done T7</code></pre>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <h2 class="section-title">Comparison</h2>
+        <div class="table-wrap">
+          <table aria-label="agentplan comparison table">
+            <thead>
+              <tr>
+                <th>Capability</th>
+                <th>agentplan</th>
+                <th>CrewAI</th>
+                <th>AutoGen</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Lightweight footprint</td>
+                <td class="yes">Yes</td>
+                <td class="no">No</td>
+                <td class="no">No</td>
+              </tr>
+              <tr>
+                <td>No runtime dependencies</td>
+                <td class="yes">Yes</td>
+                <td class="no">No</td>
+                <td class="no">No</td>
+              </tr>
+              <tr>
+                <td>CLI-native workflow</td>
+                <td class="yes">Yes</td>
+                <td>Partial</td>
+                <td>Partial</td>
+              </tr>
+              <tr>
+                <td>Agent-agnostic ticket tracking</td>
+                <td class="yes">Yes</td>
+                <td>Framework-specific</td>
+                <td>Framework-specific</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      Built for practical AI execution. <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener noreferrer">github.com/fraction12/agentplan</a>
+    </div>
+  </footer>
+</body>
+</html>
