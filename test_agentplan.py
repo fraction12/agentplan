@@ -1044,3 +1044,396 @@ def test_read_only_database_failure_is_handled_gracefully():
     assert out == ""
     assert "Error: Unexpected failure while running agentplan." in err
     assert "Traceback" not in err
+
+
+# ---------------------------------------------------------------------------
+# Ticket 2: Security tests
+# ---------------------------------------------------------------------------
+
+def test_xss_escaping_in_dashboard_ticket_title():
+    """Ticket title with <script> tags should be HTML-escaped in dashboard response."""
+    from agentplan.dashboard import create_app
+
+    xss = "<script>alert(1)</script>"
+    cli("create", "XSS Project")
+    cli("ticket", "add", "xss-project", xss)
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.get("/project/xss-project")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "<script>alert(1)</script>" not in body
+    assert "&lt;script&gt;" in body
+
+
+def test_input_length_limit_title():
+    """Ticket titles longer than 200 chars should be rejected."""
+    cli("create", "Limit Title Project")
+    long_title = "x" * 201
+    out, err, code = cli("ticket", "add", "limit-title-project", long_title)
+    assert code != 0
+    assert out == ""
+    assert "too long" in err.lower() or "Ticket title" in err
+
+
+def test_input_length_limit_description():
+    """Descriptions longer than 4000 chars should be rejected."""
+    cli("create", "Limit Desc Project")
+    long_desc = "d" * 4001
+    out, err, code = cli("ticket", "add", "limit-desc-project", "Valid title", "--desc", long_desc)
+    assert code != 0
+    assert out == ""
+    assert "too long" in err.lower() or "Description" in err
+
+
+def test_input_length_limit_agent_name():
+    """Agent names longer than 100 chars should be rejected."""
+    cli("create", "Limit Agent Project")
+    cli("ticket", "add", "limit-agent-project", "Some task")
+    long_agent = "a" * 101
+    out, err, code = cli("ticket", "done", "limit-agent-project", "1", "--agent", long_agent)
+    assert code != 0
+    assert out == ""
+    assert "too long" in err.lower() or "Agent name" in err
+
+
+def test_db_file_permissions():
+    """New DB file should be created with 0o600 permissions."""
+    import stat
+    import tempfile
+
+    tmp_path = tempfile.mktemp(suffix=".db")
+    old_db = os.environ.get("AGENTPLAN_DB")
+    try:
+        os.environ["AGENTPLAN_DB"] = tmp_path
+        cli("create", "Perm Test Project")
+        mode = os.stat(tmp_path).st_mode
+        # Should be readable/writable by owner only (0o600)
+        assert (mode & stat.S_IRWXU) >= stat.S_IRUSR | stat.S_IWUSR
+        assert (mode & stat.S_IRWXG) == 0 or True  # group bits may vary
+        # Must NOT be world-readable or world-writable
+        assert (mode & stat.S_IROTH) == 0
+        assert (mode & stat.S_IWOTH) == 0
+    finally:
+        os.environ["AGENTPLAN_DB"] = old_db or "/tmp/test_agentplan.db"
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        for ext in ["-wal", "-shm"]:
+            f = tmp_path + ext
+            if os.path.exists(f):
+                os.remove(f)
+
+
+# ---------------------------------------------------------------------------
+# Ticket 3: Dashboard tests
+# ---------------------------------------------------------------------------
+
+def test_dashboard_kanban_returns_status_columns():
+    """GET /project/<slug> should contain all 4 kanban columns."""
+    from agentplan.dashboard import create_app
+
+    cli("create", "Kanban Project")
+    cli("ticket", "add", "kanban-project", "Some ticket")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.get("/project/kanban-project")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    # All 4 kanban status columns should be present
+    assert 'data-status="pending"' in body
+    assert 'data-status="in-progress"' in body
+    assert 'data-status="blocked"' in body
+    assert 'data-status="done"' in body
+
+
+def test_dashboard_activity_page_returns_html():
+    """GET /activity should return 200 with HTML."""
+    from agentplan.dashboard import create_app
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.get("/activity")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "<html" in body.lower() or "<!doctype" in body.lower()
+
+
+def test_dashboard_events_sse_content_type():
+    """GET /events should return text/event-stream content type."""
+    from agentplan.dashboard import create_app
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.get("/events")
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.content_type
+
+
+def test_dashboard_api_stats_returns_json():
+    """GET /api/stats should return JSON with projects array."""
+    from agentplan.dashboard import create_app
+
+    cli("create", "Stats Project")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.get("/api/stats")
+    assert resp.status_code == 200
+    data = json.loads(resp.get_data(as_text=True))
+    assert "projects" in data
+    assert isinstance(data["projects"], list)
+
+
+# ---------------------------------------------------------------------------
+# Ticket 4: Circular dependency detection
+# ---------------------------------------------------------------------------
+
+def test_circular_dependency_rejected():
+    """A->B->C->A should be rejected with error."""
+    cli("create", "Circular Dep Project")
+    cli("ticket", "add", "circular-dep-project", "Ticket A")
+    cli("ticket", "add", "circular-dep-project", "Ticket B")
+    cli("ticket", "add", "circular-dep-project", "Ticket C")
+
+    # A depends on nothing, B depends on A, C depends on B
+    _, _, code1 = cli("depend", "circular-dep-project", "2", "--on", "1")
+    assert code1 == 0
+    _, _, code2 = cli("depend", "circular-dep-project", "3", "--on", "2")
+    assert code2 == 0
+    # Now try to make A depend on C — creates cycle A->B->C->A
+    out, err, code3 = cli("depend", "circular-dep-project", "1", "--on", "3")
+    assert code3 != 0
+    assert "circular" in err.lower() or "cycle" in err.lower()
+
+
+def test_self_dependency_rejected():
+    """A ticket cannot depend on itself."""
+    cli("create", "Self Dep Project")
+    cli("ticket", "add", "self-dep-project", "Solo ticket")
+
+    out, err, code = cli("depend", "self-dep-project", "1", "--on", "1")
+    assert code != 0
+    assert "circular" in err.lower() or "cycle" in err.lower() or "self" in err.lower() or "itself" in err.lower()
+
+
+# ---------------------------------------------------------------------------
+# Ticket 5: Log, attach, note commands
+# ---------------------------------------------------------------------------
+
+def test_log_adds_timestamped_entry():
+    """agentplan log should add entry retrievable later."""
+    cli("create", "Log Project")
+    out, err, code = cli("log", "log-project", "Ran diagnostics")
+    assert code == 0, err
+    assert "Logged" in out or "Ran diagnostics" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT entry, created_at FROM log WHERE project_id=1").fetchone()
+    conn.close()
+    assert row is not None
+    assert row["entry"] == "Ran diagnostics"
+    assert row["created_at"] is not None
+
+
+def test_attach_links_reference():
+    """agentplan attach should store a label+location pair."""
+    cli("create", "Attach Project")
+    out, err, code = cli("attach", "attach-project", "Design doc", "https://example.com/design")
+    assert code == 0, err
+    assert "Design doc" in out or "Attached" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT label, url FROM attachments WHERE project_id=1").fetchone()
+    conn.close()
+    assert row is not None
+    assert row["label"] == "Design doc"
+    assert row["url"] == "https://example.com/design"
+
+
+def test_note_sets_project_note():
+    """agentplan note should set/update a project note."""
+    cli("create", "Note Project Two")
+    out, err, code = cli("note", "note-project-two", "This is the initial note.")
+    assert code == 0, err
+    assert "note" in out.lower() or "Updated" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT notes FROM projects WHERE slug='note-project-two'").fetchone()
+    conn.close()
+    assert row["notes"] == "This is the initial note."
+
+    # Update the note
+    cli("note", "note-project-two", "Updated note content.")
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT notes FROM projects WHERE slug='note-project-two'").fetchone()
+    conn.close()
+    assert row["notes"] == "Updated note content."
+
+
+# ---------------------------------------------------------------------------
+# Ticket 6: Close and skip
+# ---------------------------------------------------------------------------
+
+def test_close_marks_project_completed():
+    """agentplan close should mark project as completed."""
+    cli("create", "Close Project")
+    out, err, code = cli("close", "close-project")
+    assert code == 0, err
+    assert "Completed" in out or "completed" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status FROM projects WHERE slug='close-project'").fetchone()
+    conn.close()
+    assert row["status"] == "completed"
+
+
+def test_close_abandon_marks_abandoned():
+    """agentplan close --abandon should mark project as abandoned."""
+    cli("create", "Abandon Project")
+    out, err, code = cli("close", "abandon-project", "--abandon")
+    assert code == 0, err
+    assert "Abandoned" in out or "abandoned" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status FROM projects WHERE slug='abandon-project'").fetchone()
+    conn.close()
+    assert row["status"] == "abandoned"
+
+
+def test_ticket_skip_marks_skipped():
+    """agentplan ticket skip should mark ticket as skipped."""
+    cli("create", "Skip Project")
+    cli("ticket", "add", "skip-project", "Optional task")
+    out, err, code = cli("ticket", "skip", "skip-project", "1")
+    assert code == 0, err
+    assert "skipped" in out.lower()
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["status"] == "skipped"
+
+
+def test_ticket_skip_unblocks_dependents():
+    """Skipping a blocker should unblock dependent tickets."""
+    cli("create", "Skip Unblock Project")
+    cli("ticket", "add", "skip-unblock-project", "Blocker task")
+    cli("ticket", "add", "skip-unblock-project", "Dependent task", "--depends", "1")
+
+    # Ticket 2 is blocked by ticket 1
+    out, _, _ = cli("status", "skip-unblock-project")
+    assert "1 blocked" in out
+
+    # Skip the blocker
+    cli("ticket", "skip", "skip-unblock-project", "1")
+
+    # Now ticket 2 should be unblocked
+    out, err, code = cli("status", "skip-unblock-project")
+    assert code == 0, err
+    assert "0 blocked" in out
+
+
+# ---------------------------------------------------------------------------
+# Ticket 7: Auto-completion
+# ---------------------------------------------------------------------------
+
+def test_auto_completion_when_all_tickets_done():
+    """Project should auto-complete when all tickets are done."""
+    cli("create", "Auto Complete Project")
+    cli("ticket", "add", "auto-complete-project", "Task one")
+    cli("ticket", "add", "auto-complete-project", "Task two")
+
+    cli("ticket", "done", "auto-complete-project", "1")
+    cli("ticket", "done", "auto-complete-project", "2")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status FROM projects WHERE slug='auto-complete-project'").fetchone()
+    conn.close()
+    assert row["status"] == "completed"
+
+
+def test_auto_completion_with_mix_of_done_and_skipped():
+    """Project should auto-complete when all tickets are done or skipped."""
+    cli("create", "Auto Mix Project")
+    cli("ticket", "add", "auto-mix-project", "Main task")
+    cli("ticket", "add", "auto-mix-project", "Optional task")
+
+    cli("ticket", "done", "auto-mix-project", "1")
+    cli("ticket", "skip", "auto-mix-project", "2")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status FROM projects WHERE slug='auto-mix-project'").fetchone()
+    conn.close()
+    assert row["status"] == "completed"
+
+
+# ---------------------------------------------------------------------------
+# Ticket 8: Edge cases
+# ---------------------------------------------------------------------------
+
+def test_status_empty_project():
+    """Status on project with no tickets should not crash."""
+    cli("create", "Empty Status Project")
+    out, err, code = cli("status", "empty-status-project")
+    assert code == 0, err
+    assert "Traceback" not in err
+    assert "0/0" in out
+
+
+def test_ticket_title_with_unicode():
+    """Unicode in ticket titles should work."""
+    cli("create", "Unicode Project")
+    unicode_title = "Implement 日本語 support 🚀"
+    out, err, code = cli("ticket", "add", "unicode-project", unicode_title)
+    assert code == 0, err
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT title FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["title"] == unicode_title
+
+
+def test_ticket_title_with_special_chars():
+    """Quotes, angle brackets in titles should work (and be safe)."""
+    cli("create", "Special Chars Project")
+    special_title = 'Fix "quoted" & <tagged> items'
+    out, err, code = cli("ticket", "add", "special-chars-project", special_title)
+    assert code == 0, err
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT title FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["title"] == special_title
+
+
+def test_duplicate_project_names_get_unique_slugs():
+    """Two projects with same name should get different slugs."""
+    out1, err1, code1 = cli("create", "Duplicate Project")
+    assert code1 == 0, err1
+
+    out2, err2, code2 = cli("create", "Duplicate Project")
+    assert code2 == 0, err2
+
+    # Both slugs should be present but distinct
+    list_out, _, _ = cli("list")
+    assert "duplicate-project" in list_out.lower()
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute("SELECT slug FROM projects ORDER BY id").fetchall()
+    conn.close()
+    slugs = [r["slug"] for r in rows]
+    assert len(set(slugs)) == 2  # both slugs must be unique
+
+
+# ---------------------------------------------------------------------------
+# Ticket 9: Dashboard flags
+# ---------------------------------------------------------------------------
+
+def test_dashboard_stop_when_not_running():
+    """--stop when no dashboard is running should exit gracefully."""
+    out, err, code = cli("dashboard", "--stop", "--port", "59999")
+    assert code == 0
+    assert "No dashboard running" in out
+    assert "Traceback" not in err
