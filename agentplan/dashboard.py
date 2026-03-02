@@ -941,7 +941,7 @@ PROJECT_TEMPLATE = """
       }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
-      h1, h2, h3, h4, h5, h6 { letter-spacing: -0.01em; }
+      h1, h2, h3, h4, h5, h6 { letter-spacing: -0.01em; font-family: var(--font-body); } h1 { font-family: var(--font-heading); }
       .page { max-width: 1200px; margin: 0 auto; padding: 2rem; }
       .topbar {
         display: grid;
@@ -1682,7 +1682,7 @@ TICKET_TEMPLATE = """
         --color-todo: #94a3b8;
       }
       body { font-family: var(--font-body); background: var(--color-bg) !important; color: var(--color-text); }
-      h1, h2, h3, h4, h5, h6 { letter-spacing: -0.01em; }
+      h1, h2, h3, h4, h5, h6 { letter-spacing: -0.01em; font-family: var(--font-body); } h1 { font-family: var(--font-heading); }
       .text-muted { color: var(--color-muted) !important; }
       .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 12px 36px var(--color-shadow); color: var(--color-text); }
       .card.priority-high { border-left: 4px solid var(--color-high); }
