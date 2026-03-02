@@ -89,7 +89,7 @@ def test_changelog_exists_and_has_v020_header():
     content = changelog_path.read_text(encoding="utf-8")
     assert "# Changelog" in content
     assert "## v0." in content  # has at least one versioned entry
-    assert "## [0.2.0]" in content
+    assert "## v0.2.0" in content
 
 
 def test_invalid_arguments_are_human_friendly():
