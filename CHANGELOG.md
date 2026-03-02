@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.4.2 - 2026-03-01
+
+### Changed
+- Activity feed redesigned — Linear/Vercel-style with colored left borders, no emoji, one-line rows, pill filters, day grouping, bulk event collapsing, clickable ticket refs
+- Typography standardized across all dashboard pages — Playfair Display for h1 only, Inter for everything else, JetBrains Mono for data/IDs
+- Show completed toggle on home page (was Show archived)
+- Activity log text truncated to 120 chars to prevent horizontal overflow
+- Flask dashboard runs threaded for reliable SSE connections
+
+### Fixed
+- Undefined JS function call on activity page (applyRelativeTimes)
+- Feed rows no longer cause horizontal scroll on long log messages
+- h2-h6 forced to Inter to prevent Playfair inheritance
+
 ## v0.4.1 - 2026-03-01
 
 ### Fixed
