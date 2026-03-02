@@ -307,7 +307,7 @@ INDEX_TEMPLATE = """
 
       {% if projects %}
       <div class="toggle-row">
-        <label class="toggle-label"><input id="show-archived" type="checkbox"> Show archived</label>
+        <label class="toggle-label"><input id="show-completed" type="checkbox"> Show completed</label>
       </div>
 
       <section class="project-section" id="active-section">
@@ -433,14 +433,16 @@ INDEX_TEMPLATE = """
       }
 
       function renderProjects(projects) {
-        const showArchived = document.getElementById("show-archived")?.checked;
-        const visible = (projects || []).filter((p) => showArchived || p.status !== "archived");
+        const showCompleted = document.getElementById("show-completed")?.checked;
+        const visible = (projects || []);
         const active = visible.filter((p) => p.status !== "completed");
         const completed = visible.filter((p) => p.status === "completed");
 
         const activeGrid = document.getElementById("active-projects-grid");
         const completedGrid = document.getElementById("completed-projects-grid");
         if (activeGrid) activeGrid.innerHTML = active.map((p) => projectCard(p, false)).join("");
+        const completedSection = document.getElementById("completed-section");
+        if (completedSection) completedSection.style.display = showCompleted ? "" : "none";
         if (completedGrid) completedGrid.innerHTML = completed.map((p) => projectCard(p, true)).join("");
       }
 
@@ -450,8 +452,8 @@ INDEX_TEMPLATE = """
 
         applyRelativeTimes();
 
-        const archivedToggle = document.getElementById("show-archived");
-        if (archivedToggle) archivedToggle.addEventListener("change", () => renderProjects(window.__latestProjects || []));
+        const completedToggle = document.getElementById("show-completed");
+        if (completedToggle) completedToggle.addEventListener("change", () => renderProjects(window.__latestProjects || []));
 
         if (!window.EventSource) {
           setConnection(false, "SSE unsupported");
@@ -590,7 +592,7 @@ ACTIVITY_TEMPLATE = """
         text-transform: uppercase;
         letter-spacing: 0.06em;
       }
-      .feed-row {
+      .feed-row { overflow: hidden;
         border: 1px solid var(--color-border);
         border-left: 3px solid var(--color-muted);
         border-radius: 10px;
@@ -599,7 +601,7 @@ ACTIVITY_TEMPLATE = """
       }
       .feed-line { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
       .feed-agent { font-family: var(--font-mono); font-size: 0.75rem; color: #c6d2ea; flex: 0 0 auto; }
-      .feed-action { font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .feed-action { flex: 1 1 0; font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
       .feed-action.log { font-style: italic; }
       .ticket-link { color: var(--status-in-progress); text-decoration: none; }
       .ticket-link:hover { text-decoration: underline; }
@@ -792,7 +794,7 @@ ACTIVITY_TEMPLATE = """
         if (item.collapsed_count) {
           detail = `${esc(String(item.collapsed_count))} tickets created in ${project}`;
         } else if (actionType === "log") {
-          detail = esc(item.action || "logged update");
+          const raw = item.action || "logged update"; detail = esc(raw.length > 120 ? raw.slice(0, 117) + "…" : raw);
         } else {
           detail = `${verb}${ticket ? ` ${esc("#" + ticket)}` : ""} in ${project}`;
         }
