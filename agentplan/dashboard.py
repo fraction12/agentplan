@@ -959,7 +959,7 @@ PROJECT_TEMPLATE = """
       .brand { font-family: var(--font-body); font-weight: var(--fw-card-title); font-size: var(--fs-card-title); }
       .project-title { margin: 0 0 12px; font-family: var(--font-heading); font-size: var(--fs-h1); font-weight: var(--fw-h1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .project-code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.08em; }
-      .topbar-right { display: flex; align-items: center; gap: 12px; }
+      .topbar-right { display: flex; align-items: center; gap: 12px; justify-self: end; color: var(--color-muted); font-family: var(--font-body); font-size: var(--fs-body); }
       .sse-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-small); color: var(--color-muted); }
       .status-dot {
         width: 10px;
@@ -1047,23 +1047,15 @@ PROJECT_TEMPLATE = """
         border: 1px solid var(--color-border);
         border-radius: 12px;
         box-shadow: 0 12px 36px var(--color-shadow);
-        padding: 10px 10px 10px 14px;
+        padding: 10px;
         transition: transform 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease, opacity 0.3s ease;
       }
-      .ticket-card::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-        border-top-left-radius: 12px;
-        border-bottom-left-radius: 12px;
-        background: var(--color-low);
-      }
-      .ticket-card.priority-high::before { background: var(--color-high); }
-      .ticket-card.priority-medium::before { background: var(--color-medium); }
-      .ticket-card.priority-low::before, .ticket-card.priority-none::before { background: var(--color-low); }
+      .priority-pill { display: inline-block; font-family: var(--font-body); font-size: 0.65rem; font-weight: 500; padding: 2px 8px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+      .priority-pill.p-high { background: rgba(239,68,68,0.15); color: #f87171; }
+      .priority-pill.p-medium { background: rgba(249,115,22,0.15); color: #fb923c; }
+      .priority-pill.p-low { background: rgba(136,146,168,0.1); color: var(--color-muted); }
+      .priority-pill.p-none { display: none; }
+      .pill-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; align-items: center; }
       .ticket-link:hover .ticket-card, .ticket-link:focus-visible .ticket-card { transform: translateY(-1px); border-color: rgba(59,130,246,0.55); }
       .ticket-link.is-entering { opacity: 0; transform: translateY(10px) scale(0.98); }
       .ticket-link.is-leaving { opacity: 0; transform: translateY(-6px) scale(0.98); pointer-events: none; }
@@ -1263,7 +1255,6 @@ PROJECT_TEMPLATE = """
         <div class="topbar-left">
           <div>
             <div class="brand">agentplan</div>
-            <div class="project-code">{{ project.slug }}</div>
           </div>
         </div>
         <nav class="topbar-nav">
@@ -1271,23 +1262,20 @@ PROJECT_TEMPLATE = """
           <a href="{{ url_for('activity') }}" class="btn-back">Activity</a>
         </nav>
         <div class="topbar-right">
+          <span id="project-clock" class="clock"></span>
           <span class="sse-status"><span id="project-sse-dot" class="status-dot disconnected" aria-hidden="true"></span><span id="project-sse-label">connecting…</span></span>
         </div>
       </header>
 
       <h1 class="project-title">{{ project.title }}</h1>
 
-      <div class="legend-strip" aria-label="Status color legend">
-        <span class="legend-item"><span class="legend-dot todo"></span>todo</span>
-        <span class="legend-item"><span class="legend-dot in-progress"></span>in-progress</span>
-        <span class="legend-item"><span class="legend-dot blocked"></span>blocked</span>
-        <span class="legend-item"><span class="legend-dot done"></span>done</span>
-        <span class="legend-item"><span class="legend-dot skipped"></span>skipped</span>
-      </div>
+      
 
       <div class="project-meta">
         <span>{{ done_count }}/{{ total_count }} done</span>
       </div>
+
+      
 
       <form method="get" class="filters" aria-label="filters">
         <select name="status" aria-label="Status filter">
@@ -1336,13 +1324,12 @@ PROJECT_TEMPLATE = """
                     {% endif %}
                   </div>
 
-                  {% if ticket.tags %}
-                  <div class="tag-row">
-                    {% for tag in ticket.tags %}
+                  <div class="pill-row">
+                    <span class="priority-pill p-{{ ticket.priority|lower }}">{{ ticket.priority|lower }}</span>
+                    {% for tag in (ticket.tags or []) %}
                     <span class="tag-pill tag-{{ ticket.tag_tones.get(tag, 'blue') }}">{{ tag }}</span>
                     {% endfor %}
                   </div>
-                  {% endif %}
 
                   {% if ticket.assignee %}
                   <div class="agent-row">
@@ -1384,6 +1371,16 @@ PROJECT_TEMPLATE = """
 
     </main>
     <script>
+
+      function setClock(ts) {
+        const el = document.getElementById("project-clock");
+        if (!el) return;
+        const d = ts ? new Date(ts) : new Date();
+        el.textContent = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+      }
+      setClock();
+      setInterval(() => setClock(), 1000);
+
       (() => {
         const panel = document.getElementById("ticket-panel");
         const backdrop = document.getElementById("ticket-panel-backdrop");
@@ -1505,7 +1502,7 @@ PROJECT_TEMPLATE = """
           const subtask = ticket.subtask_total > 0 ? `<div class="progress-meta"><span>subtasks</span><span>${ticket.subtask_done}/${ticket.subtask_total}</span></div><div class="mini-progress" role="img" aria-label="subtask progress"><div class="mini-progress-value" style="--progress: ${ticket.subtask_pct}%;"></div></div>` : "";
           return `<article class="ticket-card priority-${esc((ticket.priority || "none").toLowerCase())} ${ticket.active_agent ? "has-active-agent" : ""}">
             <div class="ticket-head"><div><div class="ticket-id">#${ticket.num}</div><div class="ticket-title">${esc(ticket.title)}</div></div>${due}</div>
-            ${tags ? `<div class="tag-row">${tags}</div>` : ""}
+            <div class="pill-row"><span class="priority-pill p-${esc((ticket.priority || "none").toLowerCase())}">${esc((ticket.priority || "none").toLowerCase())}</span>${tags || ""}</div>
             ${assignee}
             ${subtask}
           </article>`;
