@@ -77,8 +77,8 @@ INDEX_TEMPLATE = """
       }
 
       .topbar {
-        display: flex;
-        justify-content: space-between;
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
         align-items: center;
         margin-bottom: 20px;
         padding: 14px 16px;
@@ -86,18 +86,9 @@ INDEX_TEMPLATE = """
         border: 1px solid var(--color-border);
         border-radius: 14px;
       }
-      .brand {
-        font-weight: 700;
-        font-size: 1rem;
-        letter-spacing: -0.01em;
-      }
-      .topbar-right {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        color: var(--color-muted);
-        font-size: 0.9rem;
-      }
+      .brand { font-weight: 700; font-size: 1rem; letter-spacing: -0.01em; }
+      .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
+      .topbar-right { display: flex; align-items: center; gap: 12px; color: var(--color-muted); font-size: 0.9rem; justify-self: end; }
       .clock {
         font-family: var(--font-mono);
         color: var(--color-text);
@@ -151,11 +142,16 @@ INDEX_TEMPLATE = """
         line-height: 1;
       }
 
+      .project-section-title { margin: 0 0 10px; font-size: 0.98rem; font-weight: 700; letter-spacing: 0.02em; }
       .projects-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 14px;
       }
+      .project-section { margin-bottom: 18px; }
+      .toggle-row { margin-bottom: 12px; display: flex; justify-content: flex-end; }
+      .toggle-label { display: inline-flex; align-items: center; gap: 8px; color: var(--color-muted); font-size: 0.84rem; }
+      .projects-grid.completed .project-card { padding: 12px; opacity: 0.9; }
       .project-link {
         display: block;
         color: inherit;
@@ -273,9 +269,12 @@ INDEX_TEMPLATE = """
   <body>
     <main class="page">
       <header class="topbar">
-        <div class="brand">⚡ agentplan</div>
+        <div class="brand">agentplan</div>
+        <nav class="topbar-nav">
+          <a class="top-link" href="{{ url_for('index') }}">Home</a>
+          <a class="top-link" href="{{ url_for('activity') }}">Activity</a>
+        </nav>
         <div class="topbar-right">
-          <a class="top-link" href="{{ url_for('activity') }}">Live activity</a>
           <span id="live-clock" class="clock">--:--:--</span>
           <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
         </div>
@@ -289,37 +288,73 @@ INDEX_TEMPLATE = """
       </section>
 
       {% if projects %}
-      <section class="projects-grid" id="projects-grid">
-        {% for project in projects %}
-        <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}">
-          <article class="project-card">
-            <div class="project-top">
-              <div>
-                <h2 class="project-title">{{ project.title }}</h2>
-                <div class="project-code">{{ project.slug }}</div>
+      <div class="toggle-row">
+        <label class="toggle-label"><input id="show-archived" type="checkbox"> Show archived</label>
+      </div>
+
+      <section class="project-section" id="active-section">
+        <h2 class="project-section-title">Active Projects</h2>
+        <section class="projects-grid" id="active-projects-grid">
+          {% for project in active_projects %}
+          <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}">
+            <article class="project-card">
+              <div class="project-top">
+                <div>
+                  <h2 class="project-title">{{ project.title }}</h2>
+                  <div class="project-code">{{ project.slug }}</div>
+                </div>
+                <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
+                  <svg viewBox="0 0 36 36">
+                    <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
+                    <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
+                  </svg>
+                  <span class="progress-ring-label project-progress-percent">{{ project.progress_pct }}%</span>
+                </div>
               </div>
-              <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
-                <svg viewBox="0 0 36 36">
-                  <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
-                  <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
-                </svg>
-                <span class="progress-ring-label project-progress-percent">{{ project.progress_pct }}%</span>
+              <div class="project-meta">
+                <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
+                <div class="dot-breakdown project-breakdown">
+                  {% for status in ["todo", "in-progress", "blocked", "done", "skipped"] %}
+                  <span class="dot-item"><span class="dot {{ status }}"></span><span class="dot-value" data-status="{{ status }}">{{ project.breakdown.get(status, 0) }}</span></span>
+                  {% endfor %}
+                </div>
+                <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
               </div>
-            </div>
-            <div class="project-meta">
-              <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
-              <div class="dot-breakdown project-breakdown">
-                {% for status in ["todo", "in-progress", "blocked", "done", "skipped"] %}
-                <span class="dot-item"><span class="dot {{ status }}"></span><span class="dot-value" data-status="{{ status }}">{{ project.breakdown.get(status, 0) }}</span></span>
-                {% endfor %}
-              </div>
-              <div class="project-last-activity">Last activity: <span class="project-updated-at">{{ project.updated_at or "n/a" }}</span></div>
-            </div>
-          </article>
-        </a>
-        {% endfor %}
+            </article>
+          </a>
+          {% endfor %}
+        </section>
       </section>
-      {% else %}
+
+      <section class="project-section" id="completed-section">
+        <h2 class="project-section-title">Completed</h2>
+        <section class="projects-grid completed" id="completed-projects-grid">
+          {% for project in completed_projects %}
+          <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}">
+            <article class="project-card">
+              <div class="project-top">
+                <div>
+                  <h2 class="project-title">{{ project.title }}</h2>
+                  <div class="project-code">{{ project.slug }}</div>
+                </div>
+                <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
+                  <svg viewBox="0 0 36 36">
+                    <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
+                    <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
+                  </svg>
+                  <span class="progress-ring-label project-progress-percent">{{ project.progress_pct }}%</span>
+                </div>
+              </div>
+              <div class="project-meta">
+                <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
+                <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
+              </div>
+            </article>
+          </a>
+          {% endfor %}
+        </section>
+      </section>
+{% else %}
       <div class="empty">No projects found.</div>
       {% endif %}
     </main>
@@ -347,30 +382,58 @@ INDEX_TEMPLATE = """
         document.getElementById("stat-active-agents").textContent = summary.active_agents ?? 0;
       }
 
-      function renderProjects(projects) {
-        const byId = new Map((projects || []).map((p) => [String(p.id), p]));
-        document.querySelectorAll("[data-project-id]").forEach((card) => {
-          const project = byId.get(card.dataset.projectId);
-          if (!project) return;
+      function esc(v) {
+        return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+      }
 
-          const ring = card.querySelector(".progress-ring");
-          ring.style.setProperty("--ring-progress", String(project.progress_pct || 0));
-          card.querySelector(".project-progress-percent").textContent = `${project.progress_pct || 0}%`;
-          card.querySelector(".project-progress-done").textContent = String(project.done_count || 0);
-          card.querySelector(".project-progress-total").textContent = String(project.ticket_count || 0);
-          card.querySelector(".project-updated-at").textContent = project.updated_at || "n/a";
+      function formatRelative(ts) {
+        if (!ts) return "n/a";
+        const d = new Date(ts);
+        if (Number.isNaN(d.valueOf())) return esc(ts);
+        const now = new Date();
+        const diffSec = Math.floor((now - d) / 1000);
+        if (diffSec < 60) return "just now";
+        if (diffSec < 3600) return `${Math.floor(diffSec / 60)} min ago`;
+        if (diffSec < 6 * 3600) return `${Math.floor(diffSec / 3600)} hours ago`;
+        const sameDay = now.toDateString() === d.toDateString();
+        if (sameDay) return `Today at ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+        const y = new Date(now); y.setDate(now.getDate() - 1);
+        if (y.toDateString() === d.toDateString()) return `Yesterday at ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+        return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      }
 
-          const breakdown = project.breakdown || {};
-          card.querySelectorAll(".dot-value").forEach((node) => {
-            const key = node.dataset.status;
-            node.textContent = String(breakdown[key] || 0);
-          });
+      function applyRelativeTimes() {
+        document.querySelectorAll(".project-updated-at[data-timestamp]").forEach((node) => {
+          node.textContent = formatRelative(node.dataset.timestamp || "");
         });
+      }
+
+      function projectCard(project, isCompleted) {
+        const breakdown = project.breakdown || {};
+        const breakdownHtml = isCompleted ? '' : `<div class="dot-breakdown project-breakdown">${statusOrder.map((status) => `<span class="dot-item"><span class="dot ${status}"></span><span class="dot-value" data-status="${status}">${breakdown[status] || 0}</span></span>`).join("")}</div>`;
+        return `<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}"><article class="project-card"><div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div></div></article></a>`;
+      }
+
+      function renderProjects(projects) {
+        const showArchived = document.getElementById("show-archived")?.checked;
+        const visible = (projects || []).filter((p) => showArchived || p.status !== "archived");
+        const active = visible.filter((p) => p.status !== "completed");
+        const completed = visible.filter((p) => p.status === "completed");
+
+        const activeGrid = document.getElementById("active-projects-grid");
+        const completedGrid = document.getElementById("completed-projects-grid");
+        if (activeGrid) activeGrid.innerHTML = active.map((p) => projectCard(p, false)).join("");
+        if (completedGrid) completedGrid.innerHTML = completed.map((p) => projectCard(p, true)).join("");
       }
 
       (function subscribe() {
         setClock();
         setInterval(() => setClock(), 1000);
+
+        applyRelativeTimes();
+
+        const archivedToggle = document.getElementById("show-archived");
+        if (archivedToggle) archivedToggle.addEventListener("change", () => renderProjects(window.__latestProjects || []));
 
         if (!window.EventSource) {
           setConnection(false, "SSE unsupported");
@@ -387,7 +450,8 @@ INDEX_TEMPLATE = """
           try {
             const payload = JSON.parse(event.data);
             renderSummary(payload.summary || {});
-            renderProjects(payload.projects || []);
+            window.__latestProjects = payload.projects || [];
+            renderProjects(window.__latestProjects);
             setClock(payload.server_time || null);
             setConnection(true, "connected");
           } catch (_err) {
@@ -431,9 +495,10 @@ ACTIVITY_TEMPLATE = """
       * { box-sizing: border-box; }
       body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
       .page { width: min(1180px, 94vw); margin: 0 auto; padding: 24px 0 32px; }
-      .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; padding: 14px 16px; background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); border-radius: 14px; }
-      .brand { margin: 0; font-family: var(--font-heading); font-size: 1.3rem; }
-      .topbar-right { display: flex; align-items: center; gap: 10px; }
+      .topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 16px; padding: 14px 16px; background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); border-radius: 14px; }
+      .brand { margin: 0; font-size: 1rem; font-family: var(--font-body); font-weight: 700; }
+      .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
+      .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
       .btn-nav { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-size: 0.85rem; }
       .btn-nav:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .clock { font-family: var(--font-mono); }
@@ -470,6 +535,7 @@ ACTIVITY_TEMPLATE = """
       .feed-row.action-blocked { border-left-color: #f59e0b; }
       .feed-row.action-log { border-left-color: #94a3b8; }
       .feed-row.action-other { border-left-color: #a78bfa; }
+      .feed-day { margin: 8px 0 2px; padding: 4px 2px; color: var(--color-muted); font-family: var(--font-mono); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em; }
 
       .pause-note { padding: 0 14px 10px; font-size: 0.76rem; color: var(--color-muted); }
 
@@ -488,9 +554,12 @@ ACTIVITY_TEMPLATE = """
   <body>
     <main class="page">
       <header class="topbar">
-        <h1 class="brand">Live activity feed</h1>
+        <div class="brand">agentplan</div>
+        <nav class="topbar-nav">
+          <a href="{{ url_for('index') }}" class="btn-nav">Home</a>
+          <a href="{{ url_for('activity') }}" class="btn-nav">Activity</a>
+        </nav>
         <div class="topbar-right">
-          <a href="{{ url_for('index') }}" class="btn-nav">Projects</a>
           <span id="live-clock" class="clock">--:--:--</span>
           <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
         </div>
@@ -500,6 +569,10 @@ ACTIVITY_TEMPLATE = """
         <aside class="card">
           <h2>Project filter</h2>
           <div id="project-filters" class="filters"></div>
+          <h2>Agent filter</h2>
+          <div id="agent-filters" class="filters"></div>
+          <h2>Action filter</h2>
+          <div id="action-filters" class="filters"></div>
           <h2>Active agents</h2>
           <ul id="presence-list" class="presence-list"></ul>
           <p id="presence-empty" class="presence-empty" hidden>No active agents in the last 15 minutes.</p>
@@ -515,7 +588,7 @@ ACTIVITY_TEMPLATE = """
 
     <script>
       const FEED_LIMIT = 300;
-      const feedState = { events: [], activeProject: "all", paused: false };
+      const feedState = { events: [], activeProject: "all", activeAgent: "all", activeAction: "all", paused: false };
 
       function setClock(ts) {
         const d = ts ? new Date(ts) : new Date();
@@ -576,37 +649,114 @@ ACTIVITY_TEMPLATE = """
         });
       }
 
+      function renderAgentFilters(events) {
+        const wrap = document.getElementById("agent-filters");
+        const agents = [...new Set((events || []).map((e) => e.agent || "system"))].sort();
+        const options = ["all", ...agents];
+        wrap.innerHTML = "";
+        options.forEach((agent) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `filter-pill${feedState.activeAgent === agent ? " active" : ""}`;
+          btn.textContent = agent === "all" ? "All agents" : agent;
+          btn.addEventListener("click", () => { feedState.activeAgent = agent; renderAgentFilters(events); renderFeed(); });
+          wrap.appendChild(btn);
+        });
+      }
+
+      function renderActionFilters() {
+        const wrap = document.getElementById("action-filters");
+        const options = ["all", "created", "started", "done", "blocked", "skipped"];
+        wrap.innerHTML = "";
+        options.forEach((action) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `filter-pill${feedState.activeAction === action ? " active" : ""}`;
+          btn.textContent = action === "all" ? "All actions" : action;
+          btn.addEventListener("click", () => { feedState.activeAction = action; renderActionFilters(); renderFeed(); });
+          wrap.appendChild(btn);
+        });
+      }
+
+      function dayLabel(ts) {
+        const d = new Date(ts);
+        const now = new Date();
+        if (d.toDateString() === now.toDateString()) return "Today";
+        const y = new Date(now); y.setDate(now.getDate() - 1);
+        if (d.toDateString() === y.toDateString()) return "Yesterday";
+        return d.toLocaleDateString([], { month: "short", day: "numeric" });
+      }
+
+      function collapseCreated(rows) {
+        const collapsed = [];
+        for (let i = 0; i < rows.length; ) {
+          const start = rows[i];
+          if (start.action_type !== "created" || !start.project_slug) { collapsed.push(start); i += 1; continue; }
+          const startTs = new Date(start.timestamp).valueOf();
+          const group = [start];
+          let j = i + 1;
+          while (j < rows.length) {
+            const next = rows[j];
+            const nextTs = new Date(next.timestamp).valueOf();
+            if (next.action_type !== "created" || next.project_slug !== start.project_slug || Math.abs(nextTs - startTs) > 60000) break;
+            group.push(next);
+            j += 1;
+          }
+          if (group.length >= 3) {
+            collapsed.push({
+              id: `bulk-${start.id}`,
+              timestamp: start.timestamp,
+              emoji: "🆕",
+              agent: start.agent,
+              action: `${group.length} tickets created in ${start.project_title || start.project_slug}`,
+              action_type: "created",
+              ticket_label: "#-",
+              project_slug: start.project_slug,
+            });
+            i = j;
+          } else {
+            collapsed.push(...group);
+            i = j;
+          }
+        }
+        return collapsed;
+      }
+
       function renderFeed() {
         const container = document.getElementById("feed");
         const beforePinnedBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 28;
         container.innerHTML = "";
 
-        const rows = feedState.events.filter((item) => feedState.activeProject === "all" || item.project_slug === feedState.activeProject);
+        let rows = feedState.events.filter((item) => (feedState.activeProject === "all" || item.project_slug === feedState.activeProject));
+        rows = rows.filter((item) => (feedState.activeAgent === "all" || (item.agent || "system") === feedState.activeAgent));
+        rows = rows.filter((item) => (feedState.activeAction === "all" || item.action_type === feedState.activeAction));
+        rows = collapseCreated(rows);
+
+        let lastDay = "";
         rows.forEach((item) => {
+          const day = dayLabel(item.timestamp);
+          if (day !== lastDay) {
+            const header = document.createElement("div");
+            header.className = "feed-day";
+            header.textContent = day;
+            container.appendChild(header);
+            lastDay = day;
+          }
           const row = document.createElement("article");
           row.className = `feed-row action-${item.action_type || "other"}`;
-          row.innerHTML = `
-            <div class="feed-top">
-              <span class="feed-emoji">${esc(item.emoji || "📝")}</span>
-              <span class="feed-agent">${esc(item.agent || "system")}</span>
-              <span class="feed-action">${esc(item.action || "updated")}</span>
-              <span class="feed-ticket">${esc(item.ticket_label || "#-")}</span>
-              <span class="feed-project">${esc(item.project_slug || "-")}</span>
-              <span class="feed-time">${formatRelative(item.timestamp)}</span>
-            </div>
-          `;
+          row.innerHTML = `<div class="feed-top"><span class="feed-emoji">${esc(item.emoji || "📝")}</span><span class="feed-agent">${esc(item.agent || "system")}</span><span class="feed-action">${esc(item.action || "updated")}</span><span class="feed-ticket">${esc(item.ticket_label || "#-")}</span><span class="feed-project">${esc(item.project_slug || "-")}</span><span class="feed-time">${formatRelative(item.timestamp)}</span></div>`;
           container.appendChild(row);
         });
 
-        if (!feedState.paused && (beforePinnedBottom || feedState.events.length <= 4)) {
-          container.scrollTop = container.scrollHeight;
-        }
+        if (!feedState.paused && (beforePinnedBottom || feedState.events.length <= 4)) container.scrollTop = container.scrollHeight;
       }
 
       function applyActivity(payload) {
         const incoming = payload.events || [];
         feedState.events = incoming.slice(-FEED_LIMIT);
         renderFilters(payload.projects || []);
+        renderAgentFilters(feedState.events);
+        renderActionFilters();
         renderPresence(payload.active_agents || []);
         renderFeed();
       }
@@ -614,6 +764,11 @@ ACTIVITY_TEMPLATE = """
       (function boot() {
         setClock();
         setInterval(() => setClock(), 1000);
+
+        applyRelativeTimes();
+
+        const archivedToggle = document.getElementById("show-archived");
+        if (archivedToggle) archivedToggle.addEventListener("change", () => renderProjects(window.__latestProjects || []));
 
         const feed = document.getElementById("feed");
         feed.addEventListener("mouseenter", () => { feedState.paused = true; });
@@ -679,8 +834,8 @@ PROJECT_TEMPLATE = """
       h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); letter-spacing: -0.01em; }
       .page { width: min(1320px, 94vw); margin: 0 auto; padding: 24px 0 32px; }
       .topbar {
-        display: flex;
-        justify-content: space-between;
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
         align-items: center;
         gap: 14px;
         margin-bottom: 16px;
@@ -690,7 +845,9 @@ PROJECT_TEMPLATE = """
         border-radius: 14px;
       }
       .topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-      .project-title { margin: 0; font-size: clamp(1.2rem, 2.2vw, 1.6rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
+      .brand { font-weight: 700; font-size: 1rem; }
+      .project-title { margin: 0 0 12px; font-size: clamp(1.2rem, 2.2vw, 1.6rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .project-code { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.08em; }
       .topbar-right { display: flex; align-items: center; gap: 12px; }
       .sse-status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--color-muted); }
@@ -721,6 +878,23 @@ PROJECT_TEMPLATE = """
       .btn-back:hover { color: var(--color-text); background: rgba(255, 255, 255, 0.05); }
 
       .project-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--color-muted); font-size: 0.9rem; }
+      .legend-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: 0 0 12px;
+        padding: 10px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--color-muted); }
+      .legend-dot { width: 8px; height: 8px; border-radius: 999px; }
+      .legend-dot.todo { background: #94a3b8; }
+      .legend-dot.in-progress { background: #3b82f6; }
+      .legend-dot.blocked { background: #f59e0b; }
+      .legend-dot.done { background: #22c55e; }
+      .legend-dot.skipped { background: #64748b; }
       .kanban-grid { display: grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap: 14px; align-items: start; }
       .kanban-column {
         background: rgba(255, 255, 255, 0.015);
@@ -852,7 +1026,7 @@ PROJECT_TEMPLATE = """
         gap: 8px;
         margin-bottom: 16px;
       }
-      .filters input {
+      .filters select {
         width: 100%;
         background: var(--color-panel-soft);
         border: 1px solid var(--color-border);
@@ -861,7 +1035,6 @@ PROJECT_TEMPLATE = """
         padding: 8px 10px;
         font-size: 0.88rem;
       }
-      .filters input::placeholder { color: var(--color-muted); }
       .filter-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
       .btn { border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-size: 0.82rem; color: var(--color-muted); background: transparent; cursor: pointer; }
       .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
@@ -970,25 +1143,52 @@ PROJECT_TEMPLATE = """
       <header class="topbar">
         <div class="topbar-left">
           <div>
-            <h1 class="project-title">{{ project.title }}</h1>
+            <div class="brand">agentplan</div>
             <div class="project-code">{{ project.slug }}</div>
           </div>
         </div>
+        <nav class="topbar-nav">
+          <a href="{{ url_for('index') }}" class="btn-back">Home</a>
+          <a href="{{ url_for('activity') }}" class="btn-back">Activity</a>
+        </nav>
         <div class="topbar-right">
           <span class="sse-status"><span id="project-sse-dot" class="status-dot disconnected" aria-hidden="true"></span><span id="project-sse-label">connecting…</span></span>
-          <a href="{{ url_for('activity') }}" class="btn-back">Activity</a>
-          <a href="{{ url_for('index') }}" class="btn-back">All projects</a>
         </div>
       </header>
+
+      <h1 class="project-title">{{ project.title }}</h1>
+
+      <div class="legend-strip" aria-label="Status color legend">
+        <span class="legend-item"><span class="legend-dot todo"></span>todo</span>
+        <span class="legend-item"><span class="legend-dot in-progress"></span>in-progress</span>
+        <span class="legend-item"><span class="legend-dot blocked"></span>blocked</span>
+        <span class="legend-item"><span class="legend-dot done"></span>done</span>
+        <span class="legend-item"><span class="legend-dot skipped"></span>skipped</span>
+      </div>
 
       <div class="project-meta">
         <span>{{ done_count }}/{{ total_count }} done</span>
       </div>
 
       <form method="get" class="filters" aria-label="filters">
-        <input type="text" name="status" placeholder="status (e.g. done)" value="{{ filters.status }}">
-        <input type="text" name="priority" placeholder="priority (e.g. high)" value="{{ filters.priority }}">
-        <input type="text" name="tag" placeholder="tag (e.g. api)" value="{{ filters.tag }}">
+        <select name="status" aria-label="Status filter">
+          <option value="" {{ "selected" if not filters.status else "" }}>All statuses</option>
+          {% for status in ["todo", "in-progress", "blocked", "done", "skipped"] %}
+          <option value="{{ status }}" {{ "selected" if filters.status == status else "" }}>{{ status }}</option>
+          {% endfor %}
+        </select>
+        <select name="priority" aria-label="Priority filter">
+          <option value="" {{ "selected" if not filters.priority else "" }}>All priorities</option>
+          {% for priority in ["1", "2", "3", "4", "5"] %}
+          <option value="{{ priority }}" {{ "selected" if filters.priority == priority else "" }}>Priority {{ priority }}</option>
+          {% endfor %}
+        </select>
+        <select name="tag" aria-label="Tag filter">
+          <option value="" {{ "selected" if not filters.tag else "" }}>All tags</option>
+          {% for tag in available_tags %}
+          <option value="{{ tag }}" {{ "selected" if filters.tag == tag|lower else "" }}>{{ tag }}</option>
+          {% endfor %}
+        </select>
         <div class="filter-actions">
           <button class="btn btn-primary" type="submit">Apply filters</button>
           <a class="btn" href="{{ url_for('project_detail', slug=project.slug) }}">Reset</a>
@@ -1528,8 +1728,10 @@ def _ticket_matches(ticket, status_filter, priority_filter, tag_filter):
         normalized_status = "pending" if status_filter == "todo" else status_filter
         if ticket["status"] != normalized_status:
             return False
-    if priority_filter and (ticket["priority"] or "none").lower() != priority_filter:
-        return False
+    if priority_filter:
+        ticket_priority = str(ticket.get("priority") or "").strip().lower()
+        if ticket_priority != priority_filter:
+            return False
     if tag_filter:
         tags = {t.strip().lower() for t in (ticket["tags"] or "").split(",") if t.strip()}
         if tag_filter not in tags:
@@ -1566,7 +1768,7 @@ def _normalize_ticket(row):
         "title": row["title"],
         "description": row["description"] or "",
         "status": row["status"],
-        "priority": row["priority"] or "none",
+        "priority": str(row["priority"]).strip() if row["priority"] is not None else "",
         "tags": tags,
         "tag_tones": tag_tones,
         "dependencies": dependencies,
@@ -1650,12 +1852,16 @@ def _status_action_meta(new_state):
 def _log_action_meta(entry):
     raw = (entry or "").strip()
     lowered = raw.lower()
+    if "create" in lowered:
+        return "created", "🆕", "created"
     if "block" in lowered:
         return "blocked", "⛔", "blocked"
     if "done" in lowered or "completed" in lowered or "closed" in lowered:
         return "done", "✅", "completed"
     if "start" in lowered or "claimed" in lowered:
         return "started", "🚀", "started"
+    if "skip" in lowered:
+        return "skipped", "⏭️", "skipped"
     return "log", "📝", raw or "logged update"
 
 
@@ -1929,7 +2135,16 @@ def create_app():
     @app.route("/")
     def index():
         payload = _project_stats_payload()
-        return render_template_string(INDEX_TEMPLATE, projects=payload["projects"], summary=payload["summary"])
+        projects = payload["projects"]
+        active_projects = [p for p in projects if p["status"] != "completed" and p["status"] != "archived"]
+        completed_projects = [p for p in projects if p["status"] == "completed"]
+        return render_template_string(
+            INDEX_TEMPLATE,
+            projects=projects,
+            active_projects=active_projects,
+            completed_projects=completed_projects,
+            summary=payload["summary"],
+        )
 
     @app.route("/api/stats")
     def api_stats():
@@ -1988,6 +2203,16 @@ def create_app():
                 (project["id"],),
             ).fetchall()
 
+            available_tags = sorted(
+                {
+                    tag.strip()
+                    for row in rows
+                    for tag in (row["tags"] or "").split(",")
+                    if tag.strip()
+                },
+                key=lambda value: value.lower(),
+            )
+
             ticket_ids = [row["id"] for row in rows]
             subtask_progress = {}
             if ticket_ids:
@@ -2044,6 +2269,7 @@ def create_app():
             done_count=done_count,
             total_count=len(rows),
             filters={"status": status_filter, "priority": priority_filter, "tag": tag_filter},
+            available_tags=available_tags,
         )
 
     @app.route("/api/ticket/<slug>/<int:ticket_num>")

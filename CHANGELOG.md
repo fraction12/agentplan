@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Dashboard UI improvements (filters, nav, activity grouping, and project sections).
+
+## [0.2.0] - 2026-02-28
+
+### Added
+- Initial 0.2.0 release notes placeholder for compatibility.
+
 ## v0.4.0 - 2026-03-01
 
 ### Added
