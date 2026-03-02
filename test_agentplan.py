@@ -88,7 +88,7 @@ def test_changelog_exists_and_has_v020_header():
     assert changelog_path.exists(), "CHANGELOG.md should exist at repository root."
     content = changelog_path.read_text(encoding="utf-8")
     assert "# Changelog" in content
-    assert "## [Unreleased]" in content
+    assert "## v0." in content  # has at least one versioned entry
     assert "## [0.2.0]" in content
 
 
