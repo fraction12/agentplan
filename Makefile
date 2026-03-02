@@ -66,7 +66,7 @@ endif
 	@# ── Git: commit, tag, push ──
 	@echo "🏷️  Committing and tagging..."
 	git add -A
-	git commit -m "release: v$(V)"
+	git diff --cached --quiet || git commit -m "release: v$(V)"
 	git tag -a "v$(V)" -m "Release v$(V)"
 	git push origin main --tags
 	@echo ""
