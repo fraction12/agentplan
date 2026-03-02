@@ -45,6 +45,11 @@ INDEX_TEMPLATE = """
         --font-heading: 'Playfair Display', Georgia, serif;
         --font-body: 'Inter', ui-sans-serif, sans-serif;
         --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --text-4xl: 2rem;
+        --text-2xl: 1.25rem;
+        --text-base: 0.875rem;
+        --text-sm: 0.75rem;
+        --text-mono: 0.8rem;
 
         --color-bg: #0a0e1a;
         --color-bg-alt: #0f1420;
@@ -55,11 +60,11 @@ INDEX_TEMPLATE = """
         --color-border: rgba(255, 255, 255, 0.08);
         --color-shadow: rgba(0, 0, 0, 0.42);
 
-        --color-done: #22c55e;
-        --color-in-progress: #3b82f6;
-        --color-blocked: #f59e0b;
-        --color-todo: #94a3b8;
-        --color-skipped: #64748b;
+        --status-done: #22c55e;
+        --status-in-progress: #3b82f6;
+        --status-blocked: #f59e0b;
+        --status-todo: #94a3b8;
+        --status-skipped: #64748b;
       }
 
       * { box-sizing: border-box; }
@@ -71,9 +76,9 @@ INDEX_TEMPLATE = """
       }
 
       .page {
-        width: min(1180px, 92vw);
+        max-width: 1200px;
         margin: 0 auto;
-        padding: 24px 0 32px;
+        padding: 2rem;
       }
 
       .topbar {
@@ -102,6 +107,7 @@ INDEX_TEMPLATE = """
         font-size: 0.82rem;
       }
       .top-link:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .top-link.active { color: var(--color-text); font-weight: 700; text-decoration: underline; }
       .sse-status {
         display: inline-flex;
         align-items: center;
@@ -113,7 +119,7 @@ INDEX_TEMPLATE = """
         border-radius: 50%;
         background: #64748b;
       }
-      .status-dot.connected { background: var(--color-done); box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15); }
+      .status-dot.connected { background: var(--status-done); box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15); }
       .status-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15); }
 
       .stats-grid {
@@ -193,7 +199,7 @@ INDEX_TEMPLATE = """
         --ring-stroke: 3.6;
         --ring-progress: 0;
         --ring-track: rgba(255, 255, 255, 0.14);
-        --ring-color: var(--color-in-progress);
+        --ring-color: var(--status-in-progress);
         width: var(--ring-size);
         height: var(--ring-size);
         position: relative;
@@ -247,11 +253,11 @@ INDEX_TEMPLATE = """
         height: 8px;
         border-radius: 50%;
       }
-      .dot.todo { background: var(--color-todo); }
-      .dot.in-progress { background: var(--color-in-progress); }
-      .dot.blocked { background: var(--color-blocked); }
-      .dot.done { background: var(--color-done); }
-      .dot.skipped { background: var(--color-skipped); }
+      .dot.todo { background: var(--status-todo); }
+      .dot.in-progress { background: var(--status-in-progress); }
+      .dot.blocked { background: var(--status-blocked); }
+      .dot.done { background: var(--status-done); }
+      .dot.skipped { background: var(--status-skipped); }
 
       .empty {
         border: 1px dashed var(--color-border);
@@ -271,7 +277,7 @@ INDEX_TEMPLATE = """
       <header class="topbar">
         <div class="brand">agentplan</div>
         <nav class="topbar-nav">
-          <a class="top-link" href="{{ url_for('index') }}">Home</a>
+          <a class="top-link active" href="{{ url_for('index') }}">Home</a>
           <a class="top-link" href="{{ url_for('activity') }}">Activity</a>
         </nav>
         <div class="topbar-right">
@@ -483,6 +489,11 @@ ACTIVITY_TEMPLATE = """
         --font-heading: 'Playfair Display', Georgia, serif;
         --font-body: 'Inter', ui-sans-serif, sans-serif;
         --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --text-4xl: 2rem;
+        --text-2xl: 1.25rem;
+        --text-base: 0.875rem;
+        --text-sm: 0.75rem;
+        --text-mono: 0.8rem;
         --color-bg: #0a0e1a;
         --color-bg-alt: #0f1420;
         --color-panel: #151b2b;
@@ -494,13 +505,14 @@ ACTIVITY_TEMPLATE = """
       }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
-      .page { width: min(1180px, 94vw); margin: 0 auto; padding: 24px 0 32px; }
+      .page { max-width: 1200px; margin: 0 auto; padding: 2rem; }
       .topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 16px; padding: 14px 16px; background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); border-radius: 14px; }
       .brand { margin: 0; font-size: 1rem; font-family: var(--font-body); font-weight: 700; }
       .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
       .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
       .btn-nav { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-size: 0.85rem; }
       .btn-nav:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .btn-nav.active { color: var(--color-text); font-weight: 700; text-decoration: underline; }
       .clock { font-family: var(--font-mono); }
       .status-dot { width: 10px; height: 10px; border-radius: 999px; background: #64748b; display: inline-block; }
       .status-dot.connected { background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,0.15); }
@@ -508,7 +520,8 @@ ACTIVITY_TEMPLATE = """
       .sse-status { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: 0.84rem; }
 
       .layout { display: grid; grid-template-columns: 280px 1fr; gap: 14px; }
-      .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 12px 36px var(--color-shadow); }
+      .card { padding: 1.25rem; background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 12px 36px var(--color-shadow); transition: border-color 0.25s ease, transform 0.25s ease; }
+      .card:hover { border-color: rgba(255,255,255,0.16); transform: translateY(-1px); }
       .card h2 { margin: 0 0 10px; padding: 14px 14px 0; font-size: 0.86rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-muted); font-family: var(--font-body); }
 
       .presence-list { list-style: none; margin: 0; padding: 0 14px 14px; display: grid; gap: 8px; }
@@ -557,7 +570,7 @@ ACTIVITY_TEMPLATE = """
         <div class="brand">agentplan</div>
         <nav class="topbar-nav">
           <a href="{{ url_for('index') }}" class="btn-nav">Home</a>
-          <a href="{{ url_for('activity') }}" class="btn-nav">Activity</a>
+          <a href="{{ url_for('activity') }}" class="btn-nav active">Activity</a>
         </nav>
         <div class="topbar-right">
           <span id="live-clock" class="clock">--:--:--</span>
@@ -765,11 +778,6 @@ ACTIVITY_TEMPLATE = """
         setClock();
         setInterval(() => setClock(), 1000);
 
-        applyRelativeTimes();
-
-        const archivedToggle = document.getElementById("show-archived");
-        if (archivedToggle) archivedToggle.addEventListener("change", () => renderProjects(window.__latestProjects || []));
-
         const feed = document.getElementById("feed");
         feed.addEventListener("mouseenter", () => { feedState.paused = true; });
         feed.addEventListener("mouseleave", () => {
@@ -816,6 +824,11 @@ PROJECT_TEMPLATE = """
         --font-heading: 'Playfair Display', Georgia, serif;
         --font-body: 'Inter', ui-sans-serif, sans-serif;
         --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --text-4xl: 2rem;
+        --text-2xl: 1.25rem;
+        --text-base: 0.875rem;
+        --text-sm: 0.75rem;
+        --text-mono: 0.8rem;
         --color-bg: #0a0e1a;
         --color-bg-alt: #0f1420;
         --color-panel: #151b2b;
@@ -832,7 +845,7 @@ PROJECT_TEMPLATE = """
       * { box-sizing: border-box; }
       body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
       h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); letter-spacing: -0.01em; }
-      .page { width: min(1320px, 94vw); margin: 0 auto; padding: 24px 0 32px; }
+      .page { max-width: 1200px; margin: 0 auto; padding: 2rem; }
       .topbar {
         display: grid;
         grid-template-columns: 1fr auto 1fr;
@@ -876,6 +889,7 @@ PROJECT_TEMPLATE = """
         font-size: 0.86rem;
       }
       .btn-back:hover { color: var(--color-text); background: rgba(255, 255, 255, 0.05); }
+      .btn-back.active { color: var(--color-text); font-weight: 700; text-decoration: underline; }
 
       .project-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--color-muted); font-size: 0.9rem; }
       .legend-strip {
@@ -1530,6 +1544,11 @@ TICKET_TEMPLATE = """
         --font-heading: 'Playfair Display', Georgia, serif;
         --font-body: 'Inter', ui-sans-serif, sans-serif;
         --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --text-4xl: 2rem;
+        --text-2xl: 1.25rem;
+        --text-base: 0.875rem;
+        --text-sm: 0.75rem;
+        --text-mono: 0.8rem;
         --color-bg: #0a0e1a;
         --color-bg-alt: #0f1420;
         --color-panel: #151b2b;
@@ -1554,12 +1573,12 @@ TICKET_TEMPLATE = """
       .card.priority-medium { border-left: 4px solid var(--color-medium); }
       .card.priority-low, .card.priority-none { border-left: 4px solid var(--color-low); }
       .badge.status-badge { color: #061018; font-weight: 700; }
-      .badge.status-done { background: var(--color-done); }
-      .badge.status-in-progress { background: var(--color-in-progress); color: #eaf2ff; }
-      .badge.status-blocked { background: var(--color-blocked); }
-      .badge.status-todo, .badge.status-pending, .badge.status-skipped { background: var(--color-todo); }
+      .badge.status-done { background: var(--status-done); }
+      .badge.status-in-progress { background: var(--status-in-progress); color: #eaf2ff; }
+      .badge.status-blocked { background: var(--status-blocked); }
+      .badge.status-todo, .badge.status-pending, .badge.status-skipped { background: var(--status-todo); }
       .ticket-id, .project-code { font-family: var(--font-mono); }
-      .progress-ring { --ring-size: 42px; --ring-stroke: 4; --ring-progress: 0; --ring-track: rgba(255,255,255,0.14); --ring-color: var(--color-in-progress); width: var(--ring-size); height: var(--ring-size); }
+      .progress-ring { --ring-size: 42px; --ring-stroke: 4; --ring-progress: 0; --ring-track: rgba(255,255,255,0.14); --ring-color: var(--status-in-progress); width: var(--ring-size); height: var(--ring-size); }
       .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
       .progress-ring-track, .progress-ring-value { fill: none; stroke-width: var(--ring-stroke); }
       .progress-ring-track { stroke: var(--ring-track); }
@@ -1567,13 +1586,13 @@ TICKET_TEMPLATE = """
       .agent-avatar { --avatar-size: 2rem; width: var(--avatar-size); height: var(--avatar-size); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; background: var(--color-bg-alt); border: 1px solid var(--color-border); color: var(--color-text); }
       .list-group-item, .form-control { background: var(--color-panel-soft); border-color: var(--color-border); color: var(--color-text); }
       .form-control::placeholder { color: var(--color-muted); }
-      .form-control:focus { background: var(--color-panel-soft); color: var(--color-text); border-color: var(--color-in-progress); box-shadow: 0 0 0 0.2rem rgba(59,130,246,0.2); }
+      .form-control:focus { background: var(--color-panel-soft); color: var(--color-text); border-color: var(--status-in-progress); box-shadow: 0 0 0 0.2rem rgba(59,130,246,0.2); }
       .btn-outline-secondary { color: var(--color-muted); border-color: var(--color-border); }
       .btn-outline-secondary:hover { color: var(--color-text); background: rgba(255,255,255,0.06); }
     </style>
   </head>
   <body>
-    <main class="container py-4">
+    <main class="container py-4 page">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h4 m-0">#{{ ticket.num }} {{ ticket.title }}</h1>
         <a href="{{ url_for('project_detail', slug=project.slug) }}" class="btn btn-sm btn-outline-secondary">Back to project</a>
@@ -2326,7 +2345,7 @@ def run_dashboard(host="0.0.0.0", port=5001, open_browser=False):
         def _open():
             webbrowser.open(f"http://localhost:{port}")
         threading.Timer(0.6, _open).start()
-    app.run(host=host, port=port)
+    app.run(host=host, port=port, threaded=True)
 
 
 if __name__ == "__main__":
