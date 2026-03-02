@@ -506,73 +506,125 @@ ACTIVITY_TEMPLATE = """
         --text-base: 0.875rem;
         --text-sm: 0.75rem;
         --text-mono: 0.8rem;
+
         --color-bg: #0a0e1a;
         --color-bg-alt: #0f1420;
         --color-panel: #151b2b;
         --color-panel-soft: #1b2236;
         --color-text: #e2e8f0;
         --color-muted: #8892a8;
-        --color-border: rgba(255,255,255,0.08);
-        --color-shadow: rgba(0,0,0,0.42);
+        --color-border: rgba(255, 255, 255, 0.08);
+        --color-shadow: rgba(0, 0, 0, 0.42);
+
+        --status-done: #22c55e;
+        --status-in-progress: #3b82f6;
+        --status-blocked: #f59e0b;
+        --status-todo: #94a3b8;
+        --status-skipped: #64748b;
       }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
       .page { max-width: 1200px; margin: 0 auto; padding: 2rem; }
-      .topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 16px; padding: 14px 16px; background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); border-radius: 14px; }
-      .brand { margin: 0; font-size: 1rem; font-family: var(--font-body); font-weight: 700; }
+      .topbar {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        margin-bottom: 20px;
+        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+      }
+      .brand { font-family: var(--font-body); font-weight: 600; font-size: 1rem; letter-spacing: -0.01em; }
       .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
-      .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
-      .btn-nav { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-family: var(--font-body); font-weight: 500; font-size: 0.875rem; }
-      .btn-nav:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
-      .btn-nav.active { color: var(--color-text); font-weight: 700; text-decoration: underline; }
-      .clock { font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
-      .status-dot { width: 10px; height: 10px; border-radius: 999px; background: #64748b; display: inline-block; }
-      .status-dot.connected { background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,0.15); }
-      .status-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,0.15); }
-      .sse-status { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; }
+      .topbar-right { display: flex; align-items: center; gap: 12px; color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; justify-self: end; }
+      .clock { font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; color: var(--color-text); }
+      .top-link {
+        color: var(--color-muted);
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        padding: 6px 10px;
+        text-decoration: none;
+        font-family: var(--font-body);
+        font-weight: 500;
+        font-size: 0.875rem;
+      }
+      .top-link:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .top-link.active { color: var(--color-text); font-weight: 700; text-decoration: underline; }
+      .sse-status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--color-muted); }
+      .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; }
+      .status-dot.connected { background: var(--status-done); box-shadow: 0 0 0 0 rgba(34,197,94,0.55); animation: pulse-live 1.6s infinite; }
+      .status-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,0.15); animation: none; }
 
-      .layout { display: grid; grid-template-columns: 280px 1fr; gap: 14px; }
-      .card { padding: 1.25rem; background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 12px 36px var(--color-shadow); transition: border-color 0.25s ease, transform 0.25s ease; }
-      .card:hover { border-color: rgba(255,255,255,0.16); transform: translateY(-1px); }
-      .card h2 { margin: 0 0 10px; padding: 14px 14px 0; font-size: 1.25rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-muted); font-family: var(--font-body); font-weight: 600; }
+      .activity-shell {
+        background: var(--color-panel);
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        box-shadow: 0 12px 36px var(--color-shadow);
+        padding: 14px;
+      }
+      .filters-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+      .filter-pill {
+        border: 1px solid var(--color-border);
+        background: transparent;
+        color: var(--color-muted);
+        border-radius: 999px;
+        padding: 5px 11px;
+        font-family: var(--font-body);
+        font-weight: 500;
+        font-size: 0.75rem;
+        cursor: pointer;
+      }
+      .filter-pill.active { background: var(--color-panel-soft); color: var(--color-text); }
+      .presence-line { margin: 0 0 12px; color: var(--color-muted); font-family: var(--font-body); font-size: 0.75rem; }
 
-      .presence-list { list-style: none; margin: 0; padding: 0 14px 14px; display: grid; gap: 8px; }
-      .presence-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
-      .presence-agent { display: inline-flex; align-items: center; gap: 8px; }
-      .pulse-dot { width: 9px; height: 9px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); animation: pulse 1.6s infinite; }
-      .presence-time { color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; }
-      .presence-empty { color: var(--color-muted); padding: 0 14px 14px; margin: 0; font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; }
-
-      .filters { padding: 0 14px 14px; display: flex; flex-wrap: wrap; gap: 8px; }
-      .filter-pill { border: 1px solid var(--color-border); background: var(--color-panel-soft); color: var(--color-muted); border-radius: 999px; padding: 5px 11px; font-family: var(--font-body); font-weight: 500; font-size: 0.75rem; cursor: pointer; }
-      .filter-pill.active { color: var(--color-text); border-color: rgba(59,130,246,0.6); background: rgba(59,130,246,0.16); }
-
-      .feed-wrap { overflow: hidden; }
-      .feed { max-height: 68vh; overflow: auto; padding: 8px 10px 12px; display: grid; gap: 8px; }
-      .feed-row { border: 1px solid var(--color-border); border-left-width: 4px; border-radius: 10px; background: var(--color-panel-soft); padding: 10px; display: grid; gap: 4px; }
-      .feed-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
-      .feed-emoji { font-size: 1rem; }
-      .feed-agent { font-family: var(--font-body); font-weight: 600; }
-      .feed-action { color: var(--color-text); font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
-      .feed-ticket, .feed-project, .feed-time { font-family: var(--font-mono); font-size: 0.74rem; color: var(--color-muted); }
-      .feed-row.action-done { border-left-color: #22c55e; }
-      .feed-row.action-started { border-left-color: #3b82f6; }
-      .feed-row.action-blocked { border-left-color: #f59e0b; }
-      .feed-row.action-log { border-left-color: #94a3b8; }
-      .feed-row.action-other { border-left-color: #a78bfa; }
-      .feed-day { margin: 8px 0 2px; padding: 4px 2px; color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
-
-      .pause-note { padding: 0 14px 10px; font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; color: var(--color-muted); }
-
-      @keyframes pulse {
-        0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
-        70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
-        100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+      .feed { max-height: 72vh; overflow: auto; display: grid; gap: 8px; padding-right: 2px; }
+      .feed-day {
+        margin-top: 10px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid var(--color-border);
+        color: var(--color-muted);
+        font-family: var(--font-body);
+        font-weight: 600;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .feed-row {
+        border: 1px solid var(--color-border);
+        border-left: 3px solid var(--color-muted);
+        border-radius: 10px;
+        background: var(--color-panel-soft);
+        padding: 8px 10px;
+      }
+      .feed-line { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
+      .feed-agent { font-family: var(--font-mono); font-size: 0.75rem; color: #c6d2ea; flex: 0 0 auto; }
+      .feed-action { font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .feed-action.log { font-style: italic; }
+      .ticket-link { color: var(--status-in-progress); text-decoration: none; }
+      .ticket-link:hover { text-decoration: underline; }
+      .feed-time { margin-left: auto; flex: 0 0 auto; font-family: var(--font-body); font-size: 0.75rem; color: var(--color-muted); }
+      .count-badge {
+        flex: 0 0 auto;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        padding: 1px 7px;
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        color: var(--color-muted);
+        background: rgba(255,255,255,0.03);
       }
 
-      @media (max-width: 940px) {
-        .layout { grid-template-columns: 1fr; }
-        .feed { max-height: 60vh; }
+      .feed-row.action-done { border-left-color: var(--status-done); }
+      .feed-row.action-started, .feed-row.action-in-progress { border-left-color: var(--status-in-progress); }
+      .feed-row.action-blocked { border-left-color: var(--status-blocked); }
+      .feed-row.action-created, .feed-row.action-other, .feed-row.action-log { border-left-color: var(--color-muted); }
+      .feed-row.action-skipped { border-left-color: var(--status-skipped); }
+
+      @keyframes pulse-live {
+        0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.55); }
+        70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+        100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
       }
     </style>
   </head>
@@ -581,39 +633,27 @@ ACTIVITY_TEMPLATE = """
       <header class="topbar">
         <div class="brand">agentplan</div>
         <nav class="topbar-nav">
-          <a href="{{ url_for('index') }}" class="btn-nav">Home</a>
-          <a href="{{ url_for('activity') }}" class="btn-nav active">Activity</a>
+          <a href="{{ url_for('index') }}" class="top-link">Home</a>
+          <a href="{{ url_for('activity') }}" class="top-link active">Activity</a>
         </nav>
         <div class="topbar-right">
-          <span id="live-clock" class="clock">--:--:--</span>
           <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
+          <span id="live-clock" class="clock">--:--:--</span>
         </div>
       </header>
 
-      <div class="layout">
-        <aside class="card">
-          <h2>Project filter</h2>
-          <div id="project-filters" class="filters"></div>
-          <h2>Agent filter</h2>
-          <div id="agent-filters" class="filters"></div>
-          <h2>Action filter</h2>
-          <div id="action-filters" class="filters"></div>
-          <h2>Active agents</h2>
-          <ul id="presence-list" class="presence-list"></ul>
-          <p id="presence-empty" class="presence-empty" hidden>No active agents in the last 15 minutes.</p>
-        </aside>
-
-        <section class="card feed-wrap">
-          <h2>Event stream</h2>
-          <p class="pause-note">Hover feed to pause auto-scroll.</p>
-          <div id="feed" class="feed"></div>
-        </section>
-      </div>
+      <section class="activity-shell">
+        <div id="agent-filters" class="filters-row"></div>
+        <div id="action-filters" class="filters-row"></div>
+        <p id="presence-line" class="presence-line" hidden></p>
+        <div id="feed" class="feed"></div>
+      </section>
     </main>
 
     <script>
       const FEED_LIMIT = 300;
-      const feedState = { events: [], activeProject: "all", activeAgent: "all", activeAction: "all", paused: false };
+      const ACTION_OPTIONS = ["all", "created", "started", "done", "blocked", "skipped", "log"];
+      const feedState = { events: [], activeAgent: "all", activeAction: "all" };
 
       function setClock(ts) {
         const d = ts ? new Date(ts) : new Date();
@@ -632,79 +672,19 @@ ACTIVITY_TEMPLATE = """
         return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
       }
 
-      function formatRelative(ts) {
-        if (!ts) return "";
-        const d = new Date(ts);
-        if (Number.isNaN(d.valueOf())) return esc(ts);
-        return d.toLocaleTimeString();
-      }
-
-      function renderPresence(presence) {
-        const list = document.getElementById("presence-list");
-        const empty = document.getElementById("presence-empty");
-        list.innerHTML = "";
-        if (!presence || presence.length === 0) {
-          empty.hidden = false;
-          return;
-        }
-        empty.hidden = true;
-        presence.forEach((agent) => {
-          const li = document.createElement("li");
-          li.className = "presence-item";
-          li.innerHTML = `<span class="presence-agent"><span class="pulse-dot"></span>${esc(agent.name)}</span><span class="presence-time">${formatRelative(agent.last_seen)}</span>`;
-          list.appendChild(li);
-        });
-      }
-
-      function renderFilters(projects) {
-        const wrap = document.getElementById("project-filters");
-        const options = ["all", ...(projects || [])];
-        wrap.innerHTML = "";
-        options.forEach((slug) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = `filter-pill${feedState.activeProject === slug ? " active" : ""}`;
-          btn.textContent = slug === "all" ? "All projects" : slug;
-          btn.addEventListener("click", () => {
-            feedState.activeProject = slug;
-            renderFilters(projects);
-            renderFeed();
-          });
-          wrap.appendChild(btn);
-        });
-      }
-
-      function renderAgentFilters(events) {
-        const wrap = document.getElementById("agent-filters");
-        const agents = [...new Set((events || []).map((e) => e.agent || "system"))].sort();
-        const options = ["all", ...agents];
-        wrap.innerHTML = "";
-        options.forEach((agent) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = `filter-pill${feedState.activeAgent === agent ? " active" : ""}`;
-          btn.textContent = agent === "all" ? "All agents" : agent;
-          btn.addEventListener("click", () => { feedState.activeAgent = agent; renderAgentFilters(events); renderFeed(); });
-          wrap.appendChild(btn);
-        });
-      }
-
-      function renderActionFilters() {
-        const wrap = document.getElementById("action-filters");
-        const options = ["all", "created", "started", "done", "blocked", "skipped"];
-        wrap.innerHTML = "";
-        options.forEach((action) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = `filter-pill${feedState.activeAction === action ? " active" : ""}`;
-          btn.textContent = action === "all" ? "All actions" : action;
-          btn.addEventListener("click", () => { feedState.activeAction = action; renderActionFilters(); renderFeed(); });
-          wrap.appendChild(btn);
-        });
+      function relativeTime(ts) {
+        const d = new Date(ts || "");
+        if (Number.isNaN(d.valueOf())) return "";
+        const diff = Math.max(0, Math.floor((Date.now() - d.valueOf()) / 1000));
+        if (diff < 60) return `${diff}s ago`;
+        if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        return `${Math.floor(diff / 86400)}d ago`;
       }
 
       function dayLabel(ts) {
-        const d = new Date(ts);
+        const d = new Date(ts || "");
+        if (Number.isNaN(d.valueOf())) return "Unknown";
         const now = new Date();
         if (d.toDateString() === now.toDateString()) return "Today";
         const y = new Date(now); y.setDate(now.getDate() - 1);
@@ -712,18 +692,71 @@ ACTIVITY_TEMPLATE = """
         return d.toLocaleDateString([], { month: "short", day: "numeric" });
       }
 
+      function ticketNum(item) {
+        const m = String(item.ticket_label || "").match(/#(\\d+)/);
+        return m ? m[1] : "";
+      }
+
+      function renderPresence(presence) {
+        const line = document.getElementById("presence-line");
+        if (!presence || presence.length === 0) {
+          line.hidden = true;
+          line.textContent = "";
+          return;
+        }
+        line.hidden = false;
+        const parts = presence.map((a) => `${esc(a.name)} (${esc(relativeTime(a.last_seen))})`);
+        line.innerHTML = `Active agents ${parts.join(" · ")}`;
+      }
+
+      function renderAgentFilters(events) {
+        const wrap = document.getElementById("agent-filters");
+        const agents = [...new Set((events || []).map((e) => (e.agent || "system")))].sort();
+        const options = ["all", ...agents];
+        wrap.innerHTML = "";
+        options.forEach((agent) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `filter-pill${feedState.activeAgent === agent ? " active" : ""}`;
+          btn.textContent = agent === "all" ? "All" : agent;
+          btn.addEventListener("click", () => {
+            feedState.activeAgent = agent;
+            renderAgentFilters(events);
+            renderFeed();
+          });
+          wrap.appendChild(btn);
+        });
+      }
+
+      function renderActionFilters() {
+        const wrap = document.getElementById("action-filters");
+        wrap.innerHTML = "";
+        ACTION_OPTIONS.forEach((action) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `filter-pill${feedState.activeAction === action ? " active" : ""}`;
+          btn.textContent = action === "all" ? "All" : action;
+          btn.addEventListener("click", () => {
+            feedState.activeAction = action;
+            renderActionFilters();
+            renderFeed();
+          });
+          wrap.appendChild(btn);
+        });
+      }
+
       function collapseCreated(rows) {
         const collapsed = [];
         for (let i = 0; i < rows.length; ) {
           const start = rows[i];
           if (start.action_type !== "created" || !start.project_slug) { collapsed.push(start); i += 1; continue; }
-          const startTs = new Date(start.timestamp).valueOf();
+          const startTs = new Date(start.timestamp || "").valueOf();
           const group = [start];
           let j = i + 1;
           while (j < rows.length) {
             const next = rows[j];
-            const nextTs = new Date(next.timestamp).valueOf();
-            if (next.action_type !== "created" || next.project_slug !== start.project_slug || Math.abs(nextTs - startTs) > 60000) break;
+            const nextTs = new Date(next.timestamp || "").valueOf();
+            if (next.action_type !== "created" || next.project_slug !== start.project_slug || Number.isNaN(nextTs) || Number.isNaN(startTs) || Math.abs(nextTs - startTs) > 60000) break;
             group.push(next);
             j += 1;
           }
@@ -731,12 +764,12 @@ ACTIVITY_TEMPLATE = """
             collapsed.push({
               id: `bulk-${start.id}`,
               timestamp: start.timestamp,
-              emoji: "🆕",
-              agent: start.agent,
-              action: `${group.length} tickets created in ${start.project_title || start.project_slug}`,
+              agent: start.agent || "system",
               action_type: "created",
-              ticket_label: "#-",
               project_slug: start.project_slug,
+              project_title: start.project_title,
+              collapsed_count: group.length,
+              ticket_label: "",
             });
             i = j;
           } else {
@@ -747,14 +780,39 @@ ACTIVITY_TEMPLATE = """
         return collapsed;
       }
 
+      function renderRow(item) {
+        const actionType = item.action_type || "other";
+        const agent = esc(item.agent || "system");
+        const project = esc(item.project_slug || "-");
+        const ticket = ticketNum(item);
+        const verbMap = { created: "created", started: "started", done: "completed", blocked: "blocked", skipped: "skipped" };
+        const verb = verbMap[actionType] || "updated";
+
+        let detail = '';
+        if (item.collapsed_count) {
+          detail = `${esc(String(item.collapsed_count))} tickets created in ${project}`;
+        } else if (actionType === "log") {
+          detail = esc(item.action || "logged update");
+        } else {
+          detail = `${verb}${ticket ? ` ${esc("#" + ticket)}` : ""} in ${project}`;
+        }
+
+        const ticketHref = ticket && item.project_slug ? `/project/${encodeURIComponent(item.project_slug)}#ticket-${ticket}` : "";
+        const ticketHtml = (!item.collapsed_count && ticket && item.project_slug) ? ` <a class="ticket-link" href="${esc(ticketHref)}">${esc("#" + ticket)}</a>` : "";
+        const badgeHtml = item.collapsed_count ? `<span class="count-badge">${esc(String(item.collapsed_count))}</span>` : "";
+        const actionClass = actionType === "log" ? "feed-action log" : "feed-action";
+
+        return `<div class="feed-line"><span class="feed-agent">${agent}</span><span class="${actionClass}">${detail}${ticketHtml}</span>${badgeHtml}<span class="feed-time">${esc(relativeTime(item.timestamp))}</span></div>`;
+      }
+
       function renderFeed() {
         const container = document.getElementById("feed");
-        const beforePinnedBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 28;
+        const pinnedBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 28;
         container.innerHTML = "";
 
-        let rows = feedState.events.filter((item) => (feedState.activeProject === "all" || item.project_slug === feedState.activeProject));
+        let rows = feedState.events.slice();
         rows = rows.filter((item) => (feedState.activeAgent === "all" || (item.agent || "system") === feedState.activeAgent));
-        rows = rows.filter((item) => (feedState.activeAction === "all" || item.action_type === feedState.activeAction));
+        rows = rows.filter((item) => (feedState.activeAction === "all" || (item.action_type || "other") === feedState.activeAction));
         rows = collapseCreated(rows);
 
         let lastDay = "";
@@ -769,17 +827,15 @@ ACTIVITY_TEMPLATE = """
           }
           const row = document.createElement("article");
           row.className = `feed-row action-${item.action_type || "other"}`;
-          row.innerHTML = `<div class="feed-top"><span class="feed-emoji">${esc(item.emoji || "📝")}</span><span class="feed-agent">${esc(item.agent || "system")}</span><span class="feed-action">${esc(item.action || "updated")}</span><span class="feed-ticket">${esc(item.ticket_label || "#-")}</span><span class="feed-project">${esc(item.project_slug || "-")}</span><span class="feed-time">${formatRelative(item.timestamp)}</span></div>`;
+          row.innerHTML = renderRow(item);
           container.appendChild(row);
         });
 
-        if (!feedState.paused && (beforePinnedBottom || feedState.events.length <= 4)) container.scrollTop = container.scrollHeight;
+        if (pinnedBottom || feedState.events.length <= 4) container.scrollTop = container.scrollHeight;
       }
 
       function applyActivity(payload) {
-        const incoming = payload.events || [];
-        feedState.events = incoming.slice(-FEED_LIMIT);
-        renderFilters(payload.projects || []);
+        feedState.events = (payload.events || []).slice(-FEED_LIMIT);
         renderAgentFilters(feedState.events);
         renderActionFilters();
         renderPresence(payload.active_agents || []);
@@ -790,31 +846,24 @@ ACTIVITY_TEMPLATE = """
         setClock();
         setInterval(() => setClock(), 1000);
 
-        const feed = document.getElementById("feed");
-        feed.addEventListener("mouseenter", () => { feedState.paused = true; });
-        feed.addEventListener("mouseleave", () => {
-          feedState.paused = false;
-          feed.scrollTop = feed.scrollHeight;
-        });
-
         if (!window.EventSource) {
-          setConnection(false, "SSE unsupported");
+          setConnection(false, "reconnecting");
           return;
         }
 
         const source = new EventSource("{{ url_for('events') }}");
-        source.addEventListener("open", () => setConnection(true, "connected"));
+        source.addEventListener("open", () => setConnection(true, "live"));
         source.addEventListener("activity_feed", (event) => {
           try {
             const payload = JSON.parse(event.data);
             applyActivity(payload);
             setClock(payload.server_time || null);
-            setConnection(true, "connected");
+            setConnection(true, "live");
           } catch (_err) {
-            setConnection(false, "parse error");
+            setConnection(false, "reconnecting");
           }
         });
-        source.onerror = () => setConnection(false, "reconnecting…");
+        source.onerror = () => setConnection(false, "reconnecting");
       })();
     </script>
   </body>
@@ -1999,7 +2048,7 @@ def _activity_feed_payload(limit=300):
             ts = datetime.fromisoformat(item["timestamp"])
         except (TypeError, ValueError):
             continue
-        if (now_dt - ts).total_seconds() <= 900:
+        if (now_dt - ts).total_seconds() <= 3600:
             latest_by_agent[agent] = item["timestamp"]
 
     active_agents = [
