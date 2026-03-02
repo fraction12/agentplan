@@ -91,11 +91,13 @@ INDEX_TEMPLATE = """
         border: 1px solid var(--color-border);
         border-radius: 14px;
       }
-      .brand { font-weight: 700; font-size: 1rem; letter-spacing: -0.01em; }
+      .brand { font-family: var(--font-body); font-weight: 600; font-size: 1rem; letter-spacing: -0.01em; }
       .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
-      .topbar-right { display: flex; align-items: center; gap: 12px; color: var(--color-muted); font-size: 0.9rem; justify-self: end; }
+      .topbar-right { display: flex; align-items: center; gap: 12px; color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; justify-self: end; }
       .clock {
-        font-family: var(--font-mono);
+        font-family: var(--font-body);
+        font-weight: 400;
+        font-size: 0.875rem;
         color: var(--color-text);
       }
       .top-link {
@@ -104,7 +106,9 @@ INDEX_TEMPLATE = """
         border-radius: 10px;
         padding: 6px 10px;
         text-decoration: none;
-        font-size: 0.82rem;
+        font-family: var(--font-body);
+        font-weight: 500;
+        font-size: 0.875rem;
       }
       .top-link:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .top-link.active { color: var(--color-text); font-weight: 700; text-decoration: underline; }
@@ -136,19 +140,22 @@ INDEX_TEMPLATE = """
         padding: 16px;
       }
       .stat-label {
-        font-size: 0.8rem;
+        font-family: var(--font-body);
+        font-weight: 400;
+        font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 0.06em;
         color: var(--color-muted);
       }
       .stat-value {
         margin-top: 8px;
+        font-family: var(--font-mono);
         font-size: clamp(1.7rem, 4vw, 2.3rem);
         font-weight: 700;
         line-height: 1;
       }
 
-      .project-section-title { margin: 0 0 10px; font-size: 0.98rem; font-weight: 700; letter-spacing: 0.02em; }
+      .project-section-title { margin: 0 0 10px; font-family: var(--font-body); font-size: 1.25rem; font-weight: 600; letter-spacing: 0.02em; }
       .projects-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -183,8 +190,9 @@ INDEX_TEMPLATE = """
       }
       .project-title {
         margin: 0;
-        font-family: var(--font-heading);
-        font-size: 1.24rem;
+        font-family: var(--font-body);
+        font-weight: 600;
+        font-size: 1rem;
         line-height: 1.2;
       }
       .project-code {
@@ -232,7 +240,9 @@ INDEX_TEMPLATE = """
       }
       .project-progress-text,
       .project-last-activity {
-        font-size: 0.86rem;
+        font-family: var(--font-body);
+        font-weight: 400;
+        font-size: 0.75rem;
         color: var(--color-muted);
       }
 
@@ -245,7 +255,9 @@ INDEX_TEMPLATE = """
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        font-size: 0.8rem;
+        font-family: var(--font-body);
+        font-weight: 400;
+        font-size: 0.75rem;
         color: var(--color-muted);
       }
       .dot {
@@ -510,47 +522,47 @@ ACTIVITY_TEMPLATE = """
       .brand { margin: 0; font-size: 1rem; font-family: var(--font-body); font-weight: 700; }
       .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
       .topbar-right { display: flex; align-items: center; gap: 10px; justify-self: end; }
-      .btn-nav { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-size: 0.85rem; }
+      .btn-nav { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-family: var(--font-body); font-weight: 500; font-size: 0.875rem; }
       .btn-nav:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .btn-nav.active { color: var(--color-text); font-weight: 700; text-decoration: underline; }
-      .clock { font-family: var(--font-mono); }
+      .clock { font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
       .status-dot { width: 10px; height: 10px; border-radius: 999px; background: #64748b; display: inline-block; }
       .status-dot.connected { background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,0.15); }
       .status-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,0.15); }
-      .sse-status { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: 0.84rem; }
+      .sse-status { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; }
 
       .layout { display: grid; grid-template-columns: 280px 1fr; gap: 14px; }
       .card { padding: 1.25rem; background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 12px 36px var(--color-shadow); transition: border-color 0.25s ease, transform 0.25s ease; }
       .card:hover { border-color: rgba(255,255,255,0.16); transform: translateY(-1px); }
-      .card h2 { margin: 0 0 10px; padding: 14px 14px 0; font-size: 0.86rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-muted); font-family: var(--font-body); }
+      .card h2 { margin: 0 0 10px; padding: 14px 14px 0; font-size: 1.25rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-muted); font-family: var(--font-body); font-weight: 600; }
 
       .presence-list { list-style: none; margin: 0; padding: 0 14px 14px; display: grid; gap: 8px; }
-      .presence-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.86rem; }
+      .presence-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
       .presence-agent { display: inline-flex; align-items: center; gap: 8px; }
       .pulse-dot { width: 9px; height: 9px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); animation: pulse 1.6s infinite; }
-      .presence-time { color: var(--color-muted); font-family: var(--font-mono); font-size: 0.74rem; }
-      .presence-empty { color: var(--color-muted); padding: 0 14px 14px; margin: 0; font-size: 0.84rem; }
+      .presence-time { color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; }
+      .presence-empty { color: var(--color-muted); padding: 0 14px 14px; margin: 0; font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; }
 
       .filters { padding: 0 14px 14px; display: flex; flex-wrap: wrap; gap: 8px; }
-      .filter-pill { border: 1px solid var(--color-border); background: var(--color-panel-soft); color: var(--color-muted); border-radius: 999px; padding: 5px 11px; font-size: 0.78rem; cursor: pointer; }
+      .filter-pill { border: 1px solid var(--color-border); background: var(--color-panel-soft); color: var(--color-muted); border-radius: 999px; padding: 5px 11px; font-family: var(--font-body); font-weight: 500; font-size: 0.75rem; cursor: pointer; }
       .filter-pill.active { color: var(--color-text); border-color: rgba(59,130,246,0.6); background: rgba(59,130,246,0.16); }
 
       .feed-wrap { overflow: hidden; }
       .feed { max-height: 68vh; overflow: auto; padding: 8px 10px 12px; display: grid; gap: 8px; }
       .feed-row { border: 1px solid var(--color-border); border-left-width: 4px; border-radius: 10px; background: var(--color-panel-soft); padding: 10px; display: grid; gap: 4px; }
-      .feed-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.86rem; }
+      .feed-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
       .feed-emoji { font-size: 1rem; }
-      .feed-agent { font-weight: 700; }
-      .feed-action { color: var(--color-text); }
+      .feed-agent { font-family: var(--font-body); font-weight: 600; }
+      .feed-action { color: var(--color-text); font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
       .feed-ticket, .feed-project, .feed-time { font-family: var(--font-mono); font-size: 0.74rem; color: var(--color-muted); }
       .feed-row.action-done { border-left-color: #22c55e; }
       .feed-row.action-started { border-left-color: #3b82f6; }
       .feed-row.action-blocked { border-left-color: #f59e0b; }
       .feed-row.action-log { border-left-color: #94a3b8; }
       .feed-row.action-other { border-left-color: #a78bfa; }
-      .feed-day { margin: 8px 0 2px; padding: 4px 2px; color: var(--color-muted); font-family: var(--font-mono); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em; }
+      .feed-day { margin: 8px 0 2px; padding: 4px 2px; color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
 
-      .pause-note { padding: 0 14px 10px; font-size: 0.76rem; color: var(--color-muted); }
+      .pause-note { padding: 0 14px 10px; font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; color: var(--color-muted); }
 
       @keyframes pulse {
         0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
@@ -844,7 +856,7 @@ PROJECT_TEMPLATE = """
       }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
-      h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); letter-spacing: -0.01em; }
+      h1, h2, h3, h4, h5, h6 { font-family: var(--font-body); letter-spacing: -0.01em; }
       .page { max-width: 1200px; margin: 0 auto; padding: 2rem; }
       .topbar {
         display: grid;
@@ -859,11 +871,11 @@ PROJECT_TEMPLATE = """
       }
       .topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
       .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
-      .brand { font-weight: 700; font-size: 1rem; }
-      .project-title { margin: 0 0 12px; font-size: clamp(1.2rem, 2.2vw, 1.6rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .brand { font-family: var(--font-body); font-weight: 600; font-size: 1rem; }
+      .project-title { margin: 0 0 12px; font-family: var(--font-heading); font-weight: 700; font-size: clamp(2rem, 3vw, 2.3rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .project-code { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.08em; }
       .topbar-right { display: flex; align-items: center; gap: 12px; }
-      .sse-status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--color-muted); }
+      .sse-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; color: var(--color-muted); }
       .status-dot {
         width: 10px;
         height: 10px;
@@ -886,12 +898,14 @@ PROJECT_TEMPLATE = """
         border-radius: 10px;
         padding: 7px 10px;
         text-decoration: none;
-        font-size: 0.86rem;
+        font-family: var(--font-body);
+        font-weight: 500;
+        font-size: 0.875rem;
       }
       .btn-back:hover { color: var(--color-text); background: rgba(255, 255, 255, 0.05); }
       .btn-back.active { color: var(--color-text); font-weight: 700; text-decoration: underline; }
 
-      .project-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--color-muted); font-size: 0.9rem; }
+      .project-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; }
       .legend-strip {
         display: flex;
         flex-wrap: wrap;
@@ -902,7 +916,7 @@ PROJECT_TEMPLATE = """
         border-radius: 12px;
         background: rgba(255, 255, 255, 0.02);
       }
-      .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--color-muted); }
+      .legend-item { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; color: var(--color-muted); }
       .legend-dot { width: 8px; height: 8px; border-radius: 999px; }
       .legend-dot.todo { background: #94a3b8; }
       .legend-dot.in-progress { background: #3b82f6; }
@@ -925,7 +939,7 @@ PROJECT_TEMPLATE = """
         padding: 12px 12px 10px;
         border-bottom: 1px solid var(--color-border);
       }
-      .kanban-column-title { margin: 0; font-size: 0.96rem; font-family: var(--font-body); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); }
+      .kanban-column-title { margin: 0; font-size: 1.25rem; font-family: var(--font-body); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); }
       .kanban-count {
         min-width: 1.65rem;
         height: 1.65rem;
@@ -940,7 +954,7 @@ PROJECT_TEMPLATE = """
         font-size: 0.76rem;
       }
       .kanban-column-body { padding: 10px; display: grid; gap: 10px; overflow-y: auto; max-height: 70vh; }
-      .kanban-empty { color: var(--color-muted); font-size: 0.84rem; margin: 4px; }
+      .kanban-empty { color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; margin: 4px; }
       .ticket-link { text-decoration: none; color: inherit; display: block; cursor: pointer; transition: transform 0.42s ease, opacity 0.3s ease; }
       .ticket-card {
         position: relative;
@@ -989,14 +1003,16 @@ PROJECT_TEMPLATE = """
 
       .ticket-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
       .ticket-id { font-family: var(--font-mono); color: var(--color-muted); font-size: 0.75rem; }
-      .ticket-title { margin: 2px 0 0; font-size: 0.94rem; font-weight: 600; line-height: 1.32; word-break: break-word; overflow: hidden; }
-      .ticket-due { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-muted); white-space: nowrap; }
+      .ticket-title { margin: 2px 0 0; font-family: var(--font-body); font-size: 1rem; font-weight: 600; line-height: 1.32; word-break: break-word; overflow: hidden; }
+      .ticket-due { font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; color: var(--color-muted); white-space: nowrap; }
       .ticket-due.overdue { color: var(--color-due-overdue); font-weight: 600; }
       .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
       .tag-pill {
         border-radius: 999px;
         padding: 2px 8px;
-        font-size: 0.7rem;
+        font-family: var(--font-body);
+        font-weight: 500;
+        font-size: 0.75rem;
         border: 1px solid transparent;
       }
       .tag-blue { background: rgba(59,130,246,0.18); color: #bfdbfe; border-color: rgba(59,130,246,0.35); }
@@ -1013,15 +1029,15 @@ PROJECT_TEMPLATE = """
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-family: var(--font-mono);
-        font-size: 0.66rem;
+        font-family: var(--font-body);
+        font-size: 0.75rem;
         font-weight: 600;
         background: var(--color-bg-alt);
         border: 1px solid var(--color-border);
         color: var(--color-text);
       }
-      .agent-name { font-size: 0.78rem; color: var(--color-muted); }
-      .progress-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: var(--color-muted); font-size: 0.72rem; }
+      .agent-name { font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; color: var(--color-muted); }
+      .progress-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: var(--color-muted); font-family: var(--font-mono); font-size: 0.75rem; }
       .mini-progress {
         height: 5px;
         border-radius: 999px;
@@ -1047,10 +1063,12 @@ PROJECT_TEMPLATE = """
         color: var(--color-text);
         border-radius: 10px;
         padding: 8px 10px;
-        font-size: 0.88rem;
+        font-family: var(--font-body);
+        font-weight: 400;
+        font-size: 0.875rem;
       }
       .filter-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
-      .btn { border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-size: 0.82rem; color: var(--color-muted); background: transparent; cursor: pointer; }
+      .btn { border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-family: var(--font-body); font-weight: 500; font-size: 0.75rem; color: var(--color-muted); background: transparent; cursor: pointer; }
       .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .btn-primary { background: rgba(59,130,246,0.18); color: #dbeafe; border-color: rgba(59,130,246,0.35); }
 
@@ -1090,7 +1108,7 @@ PROJECT_TEMPLATE = """
         border-bottom: 1px solid var(--color-border);
       }
       .ticket-panel-id { font-family: var(--font-mono); font-size: 0.76rem; color: var(--color-muted); }
-      .ticket-panel-title { margin: 4px 0 0; font-size: 1.1rem; line-height: 1.25; }
+      .ticket-panel-title { margin: 4px 0 0; font-family: var(--font-body); font-weight: 600; font-size: 1rem; line-height: 1.25; }
       .ticket-panel-close {
         flex-shrink: 0;
         width: 32px;
@@ -1102,6 +1120,7 @@ PROJECT_TEMPLATE = """
         cursor: pointer;
       }
       .ticket-panel-close:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .panel-subtitle { margin-bottom: 6px; }
       .ticket-panel-content { padding: 16px; overflow-y: auto; display: grid; gap: 14px; }
       .panel-block {
         background: rgba(255,255,255,0.02);
@@ -1111,20 +1130,21 @@ PROJECT_TEMPLATE = """
       }
       .panel-block h3 {
         margin: 0 0 10px;
-        font-size: 0.83rem;
+        font-size: 1.25rem;
         text-transform: uppercase;
         letter-spacing: 0.06em;
         font-family: var(--font-body);
+        font-weight: 600;
         color: var(--color-muted);
       }
-      .panel-muted { margin: 0; color: var(--color-muted); font-size: 0.84rem; }
-      .panel-description { margin: 0; white-space: pre-wrap; line-height: 1.45; }
+      .panel-muted { margin: 0; color: var(--color-muted); font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; }
+      .panel-description { margin: 0; white-space: pre-wrap; line-height: 1.45; font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
       .subtask-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-      .subtask-item { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center; font-size: 0.88rem; }
+      .subtask-item { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center; font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
       .subtask-item input { accent-color: #3b82f6; }
       .dep-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       .dep-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-      .dep-item { font-family: var(--font-mono); font-size: 0.78rem; color: #c7d2fe; }
+      .dep-item { font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; color: #c7d2fe; }
       .audit-timeline { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 1px solid var(--color-border); display: grid; gap: 10px; }
       .audit-item { position: relative; }
       .audit-item::before {
@@ -1322,8 +1342,8 @@ PROJECT_TEMPLATE = """
             <section class="panel-block">
               <h3>Dependency Graph</h3>
               <div class="dep-grid">
-                <div><div class="panel-muted" style="margin-bottom:6px;">blocked by</div>${renderList(data.blocked_by, "No blockers.")}</div>
-                <div><div class="panel-muted" style="margin-bottom:6px;">blocks</div>${renderList(data.blocks, "No blocked tickets.")}</div>
+                <div><div class="panel-muted panel-subtitle">blocked by</div>${renderList(data.blocked_by, "No blockers.")}</div>
+                <div><div class="panel-muted panel-subtitle">blocks</div>${renderList(data.blocks, "No blocked tickets.")}</div>
               </div>
             </section>
             <section class="panel-block">
@@ -1566,7 +1586,7 @@ TICKET_TEMPLATE = """
         --color-todo: #94a3b8;
       }
       body { font-family: var(--font-body); background: var(--color-bg) !important; color: var(--color-text); }
-      h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); letter-spacing: -0.01em; }
+      h1, h2, h3, h4, h5, h6 { font-family: var(--font-body); letter-spacing: -0.01em; }
       .text-muted { color: var(--color-muted) !important; }
       .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 12px 36px var(--color-shadow); color: var(--color-text); }
       .card.priority-high { border-left: 4px solid var(--color-high); }
@@ -1577,24 +1597,34 @@ TICKET_TEMPLATE = """
       .badge.status-in-progress { background: var(--status-in-progress); color: #eaf2ff; }
       .badge.status-blocked { background: var(--status-blocked); }
       .badge.status-todo, .badge.status-pending, .badge.status-skipped { background: var(--status-todo); }
+      .priority-pill, .tag-pill-muted { background: var(--color-bg-alt); border-color: var(--color-border); }
+      .priority-pill { color: var(--color-text); }
+      .tag-pill-muted { color: var(--color-muted); }
       .ticket-id, .project-code { font-family: var(--font-mono); }
       .progress-ring { --ring-size: 42px; --ring-stroke: 4; --ring-progress: 0; --ring-track: rgba(255,255,255,0.14); --ring-color: var(--status-in-progress); width: var(--ring-size); height: var(--ring-size); }
       .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
       .progress-ring-track, .progress-ring-value { fill: none; stroke-width: var(--ring-stroke); }
       .progress-ring-track { stroke: var(--ring-track); }
       .progress-ring-value { stroke: var(--ring-color); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--ring-progress)); transition: stroke-dashoffset 450ms ease; }
-      .agent-avatar { --avatar-size: 2rem; width: var(--avatar-size); height: var(--avatar-size); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; background: var(--color-bg-alt); border: 1px solid var(--color-border); color: var(--color-text); }
+      .agent-avatar { --avatar-size: 2rem; width: var(--avatar-size); height: var(--avatar-size); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-body); font-size: 0.75rem; font-weight: 600; background: var(--color-bg-alt); border: 1px solid var(--color-border); color: var(--color-text); }
       .list-group-item, .form-control { background: var(--color-panel-soft); border-color: var(--color-border); color: var(--color-text); }
       .form-control::placeholder { color: var(--color-muted); }
       .form-control:focus { background: var(--color-panel-soft); color: var(--color-text); border-color: var(--status-in-progress); box-shadow: 0 0 0 0.2rem rgba(59,130,246,0.2); }
-      .btn-outline-secondary { color: var(--color-muted); border-color: var(--color-border); }
+      .btn-outline-secondary { color: var(--color-muted); border-color: var(--color-border); font-family: var(--font-body); font-weight: 500; font-size: 0.75rem; }
       .btn-outline-secondary:hover { color: var(--color-text); background: rgba(255,255,255,0.06); }
+      .ticket-page-title { font-family: var(--font-heading); font-weight: 700; font-size: 2rem; }
+      .ticket-section-title { font-family: var(--font-body); font-weight: 600; font-size: 1.25rem; }
+      .body-text { font-family: var(--font-body); font-weight: 400; font-size: 0.875rem; }
+      .secondary-text { font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; color: var(--color-muted) !important; }
+      .btn, .badge { font-family: var(--font-body); }
+      .btn, .btn-sm { font-weight: 500; font-size: 0.75rem; }
+      .pill { font-family: var(--font-body); font-weight: 500; font-size: 0.75rem; }
     </style>
   </head>
   <body>
     <main class="container py-4 page">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="h4 m-0">#{{ ticket.num }} {{ ticket.title }}</h1>
+        <h1 class="m-0 ticket-page-title"><span class="ticket-id">#{{ ticket.num }}</span> {{ ticket.title }}</h1>
         <a href="{{ url_for('project_detail', slug=project.slug) }}" class="btn btn-sm btn-outline-secondary">Back to project</a>
       </div>
 
@@ -1602,23 +1632,23 @@ TICKET_TEMPLATE = """
         <div class="card-body">
           <div class="d-flex flex-wrap gap-2 mb-2">
             <span class="badge status-badge status-{{ ticket.status }}">{{ ticket.status }}</span>
-            <span class="badge ticket-id" style="background: var(--color-bg-alt); color: var(--color-text); border-color: var(--color-border);">priority: {{ ticket.priority }}</span>
+            <span class="badge ticket-id pill priority-pill">priority: {{ ticket.priority }}</span>
             {% if ticket.tags %}
               {% for tag in ticket.tags %}
-              <span class="badge rounded-pill" style="background: var(--color-bg-alt); border-color: var(--color-border); color: var(--color-muted);">{{ tag }}</span>
+              <span class="badge rounded-pill pill tag-pill-muted">{{ tag }}</span>
               {% endfor %}
             {% endif %}
           </div>
-          <h2 class="h6">Description</h2>
+          <h2 class="ticket-section-title">Description</h2>
           {% if ticket.description %}
-          <p class="mb-0">{{ ticket.description }}</p>
+          <p class="mb-0 body-text">{{ ticket.description }}</p>
           {% else %}
-          <p class="text-muted mb-0">No description.</p>
+          <p class="text-muted mb-0 secondary-text">No description.</p>
           {% endif %}
           {% if ticket.close_note %}
           <hr>
-          <h2 class="h6">Close notes</h2>
-          <p class="mb-0">{{ ticket.close_note }}</p>
+          <h2 class="ticket-section-title">Close notes</h2>
+          <p class="mb-0 body-text">{{ ticket.close_note }}</p>
           {% endif %}
         </div>
       </div>
@@ -1627,27 +1657,27 @@ TICKET_TEMPLATE = """
         <div class="col-12 col-md-6">
           <div class="card h-100 shadow-sm priority-low">
             <div class="card-body">
-              <h2 class="h6">Dependencies</h2>
-              <div class="small text-muted mb-1">blocked by</div>
+              <h2 class="ticket-section-title">Dependencies</h2>
+              <div class="small text-muted mb-1 secondary-text">blocked by</div>
               {% if blocked_by %}
               <ul class="mb-3">
                 {% for dep in blocked_by %}
-                <li><a href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=dep.num) }}">#{{ dep.num }} {{ dep.title }}</a></li>
+                <li class="body-text"><a href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=dep.num) }}"><span class="ticket-id">#{{ dep.num }}</span> {{ dep.title }}</a></li>
                 {% endfor %}
               </ul>
               {% else %}
-              <p class="text-muted small">None.</p>
+              <p class="text-muted small secondary-text">None.</p>
               {% endif %}
 
-              <div class="small text-muted mb-1">blocks</div>
+              <div class="small text-muted mb-1 secondary-text">blocks</div>
               {% if blocks %}
               <ul class="mb-0">
                 {% for dep in blocks %}
-                <li><a href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=dep.num) }}">#{{ dep.num }} {{ dep.title }}</a></li>
+                <li class="body-text"><a href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=dep.num) }}"><span class="ticket-id">#{{ dep.num }}</span> {{ dep.title }}</a></li>
                 {% endfor %}
               </ul>
               {% else %}
-              <p class="text-muted small mb-0">None.</p>
+              <p class="text-muted small mb-0 secondary-text">None.</p>
               {% endif %}
             </div>
           </div>
@@ -1656,18 +1686,18 @@ TICKET_TEMPLATE = """
         <div class="col-12 col-md-6">
           <div class="card h-100 shadow-sm priority-low">
             <div class="card-body">
-              <h2 class="h6">Subtasks</h2>
+              <h2 class="ticket-section-title">Subtasks</h2>
               {% if subtasks %}
               <ul class="list-group list-group-flush">
                 {% for subtask in subtasks %}
                 <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
-                  <span>#{{ subtask.num }} {{ subtask.title }}</span>
-                  <span class="badge status-badge {{ 'status-done' if subtask.status == 'done' else 'status-todo' }}">{{ subtask.status }}</span>
+                  <span class="body-text"><span class="ticket-id">#{{ subtask.num }}</span> {{ subtask.title }}</span>
+                  <span class="badge status-badge pill {{ 'status-done' if subtask.status == 'done' else 'status-todo' }}">{{ subtask.status }}</span>
                 </li>
                 {% endfor %}
               </ul>
               {% else %}
-              <p class="text-muted small mb-0">No subtasks.</p>
+              <p class="text-muted small mb-0 secondary-text">No subtasks.</p>
               {% endif %}
             </div>
           </div>
@@ -1676,18 +1706,18 @@ TICKET_TEMPLATE = """
 
       <div class="card shadow-sm">
         <div class="card-body">
-          <h2 class="h6">History / audit log</h2>
+          <h2 class="ticket-section-title">History / audit log</h2>
           {% if history %}
           <ul class="list-group list-group-flush">
             {% for item in history %}
             <li class="list-group-item px-0">
-              <div class="small text-muted">{{ item.changed_at }}</div>
-              <div>{{ item.message }}</div>
+              <div class="small text-muted ticket-id secondary-text">{{ item.changed_at }}</div>
+              <div class="body-text">{{ item.message }}</div>
             </li>
             {% endfor %}
           </ul>
           {% else %}
-          <p class="text-muted small mb-0">No history yet.</p>
+          <p class="text-muted small mb-0 secondary-text">No history yet.</p>
           {% endif %}
         </div>
       </div>
