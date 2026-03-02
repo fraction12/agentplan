@@ -1952,12 +1952,12 @@ def create_app():
             while True:
                 stats_payload = _project_stats_payload()
                 activity_payload = _activity_feed_payload()
-                yield f"event: project_stats\\ndata: {json.dumps(stats_payload)}\\n\\n"
-                yield f"event: activity_feed\\ndata: {json.dumps(activity_payload)}\\n\\n"
+                yield f"event: project_stats\ndata: {json.dumps(stats_payload)}\n\n"
+                yield f"event: activity_feed\ndata: {json.dumps(activity_payload)}\n\n"
                 if project_slug:
                     board_payload = _project_board_payload(project_slug, status_filter, priority_filter, tag_filter)
                     if board_payload is not None:
-                        yield f"event: project_board\\ndata: {json.dumps(board_payload)}\\n\\n"
+                        yield f"event: project_board\ndata: {json.dumps(board_payload)}\n\n"
                 time.sleep(interval)
 
         return Response(event_stream(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache"})
