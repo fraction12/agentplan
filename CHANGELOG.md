@@ -5,15 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## v0.4.1 - 2026-03-01
+
+### Fixed
+- SSE activity feed was never rendering — escaped newlines (`\\n`) replaced with real newlines
 
 ### Changed
-- Dashboard UI improvements (filters, nav, activity grouping, and project sections).
-
-## [0.2.0] - 2026-02-28
-
-### Added
-- Initial 0.2.0 release notes placeholder for compatibility.
+- Dashboard dropdown filters (status, priority, tags) replace free-text inputs
+- Color legend bar on project detail view
+- Home page split into Active and Completed project sections, archived hidden by default
+- Standardized nav bar across all dashboard pages
+- Human-readable relative timestamps on home page project cards
+- Activity feed grouped by day, bulk-created events collapsed, agent/action filter pills
 
 ## v0.4.0 - 2026-03-01
 
