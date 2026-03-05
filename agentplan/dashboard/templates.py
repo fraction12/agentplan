@@ -1327,6 +1327,28 @@ PROJECT_TEMPLATE = """
       .chain-dot.stopped, .chain-dot.done { background: #64748b; }
       .review-actions { display: grid; gap: 8px; }
       .review-actions-row { display: flex; flex-wrap: wrap; gap: 8px; }
+      .toast-stack {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 120;
+        display: grid;
+        gap: 8px;
+      }
+      .toast {
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--color-border);
+        background: var(--color-panel-soft);
+        color: var(--color-text);
+        max-width: min(460px, 88vw);
+        font-family: var(--font-body);
+        font-size: var(--fs-small);
+      }
+      .toast.error {
+        border-color: rgba(239, 68, 68, 0.45);
+        background: rgba(127, 29, 29, 0.35);
+      }
 
       .ticket-panel-backdrop {
         position: fixed;
@@ -1567,6 +1589,7 @@ PROJECT_TEMPLATE = """
         </header>
         <div id="ticket-panel-content" class="ticket-panel-content"></div>
       </aside>
+      <div id="toast-stack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
     </main>
     <script>
@@ -1691,6 +1714,18 @@ PROJECT_TEMPLATE = """
         const chainStopBtn = document.getElementById("chain-stop-btn");
         const chainStatusDot = document.getElementById("chain-status-dot");
         const chainStatusText = document.getElementById("chain-status-text");
+        const toastStack = document.getElementById("toast-stack");
+
+        function showToast(message, tone = "error") {
+          if (!toastStack) return;
+          const toast = document.createElement("div");
+          toast.className = `toast ${tone}`;
+          toast.textContent = message || "Request failed.";
+          toastStack.appendChild(toast);
+          setTimeout(() => {
+            toast.remove();
+          }, 4500);
+        }
 
         async function callTicketReviewAction(ticketNum, action) {
           const response = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/${encodeURIComponent(ticketNum)}/${encodeURIComponent(action)}`, { method: "POST" });
@@ -1731,14 +1766,17 @@ PROJECT_TEMPLATE = """
 
         async function callChainAction(action) {
           const response = await fetch(`/api/chain/${encodeURIComponent(projectSlug)}/${encodeURIComponent(action)}`, { method: "POST" });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json().catch(() => null);
+          if (!response.ok) throw new Error((payload && payload.error) || `HTTP ${response.status}`);
+          return payload;
         }
 
         chainStartBtn.addEventListener("click", async () => {
           chainStartBtn.disabled = true;
           try {
             await callChainAction("start");
-          } catch (_error) {
+          } catch (error) {
+            showToast(error.message || "Failed to start chain.");
             chainStartBtn.disabled = false;
           }
         });
@@ -1747,7 +1785,8 @@ PROJECT_TEMPLATE = """
           chainStopBtn.disabled = true;
           try {
             await callChainAction("stop");
-          } catch (_error) {
+          } catch (error) {
+            showToast(error.message || "Failed to stop chain.");
             chainStopBtn.disabled = false;
           }
         });
@@ -2090,4 +2129,3 @@ TICKET_TEMPLATE = """
   </body>
 </html>
 """
-

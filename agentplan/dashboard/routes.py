@@ -852,6 +852,17 @@ def create_app():
             project = conn.execute("SELECT id, slug, dir FROM projects WHERE slug=?", (slug,)).fetchone()
             if not project:
                 abort(404)
+            project_dir = (project["dir"] or "").strip()
+            if not project_dir:
+                return (
+                    {
+                        "error": (
+                            f"No directory linked to project '{project['slug']}'. "
+                            "Set it on the project page before starting work."
+                        )
+                    },
+                    400,
+                )
             if project["dir"] and not os.path.isdir(project["dir"]):
                 print(f"Warning: linked project directory does not exist: {project['dir']}")
             state = get_chain_state(conn, project["id"]) or {}

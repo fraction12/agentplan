@@ -1272,7 +1272,8 @@ def test_dashboard_ticket_retry_rejects_invalid_transition():
 def test_dashboard_chain_start_sets_running_state_after_spawn():
     from agentplan.dashboard import create_app
 
-    cli("create", "Web Chain Start")
+    os.makedirs("/tmp/web-chain-start", exist_ok=True)
+    cli("create", "Web Chain Start", "--dir", "/tmp/web-chain-start")
 
     test_app = create_app()
     client = test_app.test_client()
@@ -1294,7 +1295,8 @@ def test_dashboard_chain_start_sets_running_state_after_spawn():
 def test_dashboard_chain_start_spawn_failure_does_not_mark_running():
     from agentplan.dashboard import create_app
 
-    cli("create", "Web Chain Spawn Failure")
+    os.makedirs("/tmp/web-chain-spawn-failure", exist_ok=True)
+    cli("create", "Web Chain Spawn Failure", "--dir", "/tmp/web-chain-spawn-failure")
 
     test_app = create_app()
     client = test_app.test_client()
@@ -1570,7 +1572,8 @@ def test_dashboard_api_stats_returns_json():
 def test_dashboard_chain_start_and_stop_api():
     from agentplan.dashboard import create_app
 
-    cli("create", "Dashboard Chain API")
+    os.makedirs("/tmp/dashboard-chain-api", exist_ok=True)
+    cli("create", "Dashboard Chain API", "--dir", "/tmp/dashboard-chain-api")
 
     test_app = create_app()
     client = test_app.test_client()
