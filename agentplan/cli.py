@@ -661,26 +661,23 @@ def _render_prompt_agent_command(template, prompt, project_slug, project_dir):
     prompt_file_path = prompt_file.name
     prompt_file_quoted = shlex.quote(prompt_file_path)
 
-    prompt_quoted = shlex.quote(prompt)
     command = (template or "").strip()
 
-    # Check if template has placeholders — if so, use file content via $() substitution
-    has_placeholder = any(p in command for p in ["{ticket}", "{prompt}", "{{ticket}}", "{{prompt}}"])
+    # Strip the prompt placeholder from the command — we'll pipe via stdin instead
+    stripped = (
+        command.replace("{{ticket}}", "")
+        .replace("{{prompt}}", "")
+        .replace("{ticket}", "")
+        .replace("{prompt}", "")
+        .replace("{{project}}", str(project_slug))
+        .replace("{{project_dir}}", shlex.quote(project_dir))
+        .replace("{project}", str(project_slug))
+        .replace("{project_dir}", shlex.quote(project_dir))
+        .strip()
+    )
 
-    if has_placeholder:
-        file_sub = f"$(cat {prompt_file_quoted})"
-        rendered = (
-            command.replace("{{ticket}}", file_sub)
-            .replace("{{project}}", str(project_slug))
-            .replace("{{project_dir}}", shlex.quote(project_dir))
-            .replace("{{prompt}}", file_sub)
-            .replace("{ticket}", file_sub)
-            .replace("{project}", str(project_slug))
-            .replace("{project_dir}", shlex.quote(project_dir))
-            .replace("{prompt}", file_sub)
-        )
-    else:
-        rendered = f"cat {prompt_file_quoted} | {command}"
+    # Pipe the prompt file into the agent command via stdin
+    rendered = f"cat {prompt_file_quoted} | {stripped}"
 
     # Clean up temp file after command finishes
     cleanup = f"rm -f {prompt_file_quoted}"
