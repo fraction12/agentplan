@@ -16,6 +16,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agentplan
+import agentplan.db as agentplan_db
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +171,34 @@ def test_init_detect_installed_tools_handles_subprocess_exception():
         tools = agent_cli._detect_installed_tools()
 
     assert tools == ["claude"]
+
+
+# ---------------------------------------------------------------------------
+# Agent role lookup
+# ---------------------------------------------------------------------------
+
+def test_get_agent_by_role_returns_correct_agent():
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    try:
+        agentplan_db.create_role(conn, "writing")
+        agentplan_db.create_agent(conn, "writer-a", "echo a", role_names=["writing"], priority=3)
+        agentplan_db.create_agent(conn, "writer-b", "echo b", role_names=["writing"], priority=1)
+
+        match = agentplan_db.get_agent_by_role(conn, "writing")
+        assert match is not None
+        assert match["name"] == "writer-b"
+    finally:
+        conn.close()
+
+
+def test_get_agent_by_role_returns_none_when_no_match():
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    try:
+        agentplan_db.create_role(conn, "backend")
+        agentplan_db.create_agent(conn, "backend-agent", "echo hi", role_names=["backend"])
+        assert agentplan_db.get_agent_by_role(conn, "writing") is None
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1060,6 +1089,97 @@ def test_context_command_outputs_project_ticket_and_commands():
     assert "agentplan log context-project 1 \"message\"" in out
 
 
+def test_build_context_prompt_includes_required_sections():
+    import agentplan.cli as agent_cli
+
+    project = {"title": "Prompt Project", "slug": "prompt-project", "dir": "/tmp/prompt-project"}
+    tickets = [
+        {"num": 1, "title": "Setup", "status": "pending", "priority": "high"},
+        {"num": 2, "title": "Ship", "status": "in-progress", "priority": "medium"},
+        {"num": 3, "title": "Fix blockers", "status": "blocked", "priority": "low"},
+        {"num": 4, "title": "Review PR", "status": "needs-review", "priority": "none"},
+        {"num": 5, "title": "Retriable failure", "status": "failed", "priority": "none"},
+        {"num": 6, "title": "Completed", "status": "done", "priority": "none"},
+    ]
+    prompt = agent_cli.build_context_prompt(project, tickets, existing_context="Existing content")
+
+    assert "Project title: Prompt Project" in prompt
+    assert "Project slug: prompt-project" in prompt
+    assert "Directory path: /tmp/prompt-project" in prompt
+    assert "Ticket summary counts:" in prompt
+    assert "- pending: 1" in prompt
+    assert "- in-progress: 1" in prompt
+    assert "- blocked: 1" in prompt
+    assert "- needs-review: 1" in prompt
+    assert "- failed: 1" in prompt
+    assert "- done: 1" in prompt
+    assert "Open/in-progress tickets (capped at 10):" in prompt
+    assert "- #1: Setup [status=pending, priority=high]" in prompt
+    assert "- #2: Ship [status=in-progress, priority=medium]" in prompt
+    assert "- #3: Fix blockers [status=blocked, priority=low]" not in prompt
+    assert "Existing .agentplan.md content:" in prompt
+    assert "Existing content" in prompt
+    assert "Investigation commands (run these):" in prompt
+    assert "agentplan ticket list prompt-project --status open" in prompt
+    assert "agentplan ticket list prompt-project --status in-progress" in prompt
+    assert "agentplan ticket list prompt-project --status blocked" in prompt
+    assert "ls -la" in prompt
+    assert "rg --files | head -200" in prompt
+    assert "Inspect project-specific key files before writing." in prompt
+    assert "Required output structure for `.agentplan.md`" in prompt
+    assert "- Project Summary" in prompt
+    assert "- Current Objective" in prompt
+    assert "- Working Directory & Verify Commands" in prompt
+    assert "- Architecture Map" in prompt
+    assert "- Conventions & Guardrails" in prompt
+    assert "- Ticket Snapshot (open/in-progress)" in prompt
+    assert "- Agent Runbook" in prompt
+    assert "- Hands-Off Zones" in prompt
+    assert "- Last Updated + Generation Notes" in prompt
+
+
+def test_build_context_prompt_handles_existing_context_vs_fresh():
+    import agentplan.cli as agent_cli
+
+    project = {"title": "Prompt Project", "slug": "prompt-project", "dir": "/tmp/prompt-project"}
+    tickets = [{"num": 1, "title": "Setup", "status": "pending", "priority": "none"}]
+
+    fresh = agent_cli.build_context_prompt(project, tickets, existing_context=None)
+    assert "Create from scratch." in fresh
+    assert "None found." in fresh
+
+    updated = agent_cli.build_context_prompt(project, tickets, existing_context="Old context")
+    assert "Preserve valid info, refresh stale sections." in updated
+    assert "Old context" in updated
+    assert "If an appended regenerate instruction says to rewrite from scratch, do a full rewrite." in updated
+
+
+def test_build_context_prompt_caps_open_in_progress_ticket_dump():
+    import agentplan.cli as agent_cli
+
+    project = {"title": "Prompt Project", "slug": "prompt-project", "dir": "/tmp/prompt-project"}
+    tickets = []
+    for i in range(1, 13):
+        tickets.append(
+            {
+                "num": i,
+                "title": f"Pending {i}",
+                "status": "pending",
+                "priority": "none",
+            }
+        )
+    tickets.append({"num": 99, "title": "Blocked item", "status": "blocked", "priority": "none"})
+    prompt = agent_cli.build_context_prompt(project, tickets, existing_context=None)
+
+    assert "- pending: 12" in prompt
+    assert "- blocked: 1" in prompt
+    assert "- #1: Pending 1 [status=pending, priority=none]" in prompt
+    assert "- #10: Pending 10 [status=pending, priority=none]" in prompt
+    assert "- #11: Pending 11 [status=pending, priority=none]" not in prompt
+    assert "- #12: Pending 12 [status=pending, priority=none]" not in prompt
+    assert "Blocked item" not in prompt
+
+
 def test_context_command_includes_role_dependency_and_timeout():
     cli("create", "Context Details")
     cli("role", "add", "backend")
@@ -1098,12 +1218,32 @@ def test_context_command_project_mode_no_dir_set():
     assert "No directory linked to this project" in out
 
 
+def test_context_command_project_mode_errors_when_no_writer_agent_configured():
+    os.makedirs("/tmp/project-context-no-writer-cli", exist_ok=True)
+    cli("create", "Project Context No Writer CLI", "--dir", "/tmp/project-context-no-writer-cli")
+
+    out, err, code = cli("context", "project-context-no-writer-cli")
+    assert code == 2
+    assert out == ""
+    assert "No writer-role agent configured." in err
+
+
 def test_context_command_project_mode_file_missing():
     os.makedirs("/tmp/project-context-missing", exist_ok=True)
     cli("create", "Project Context Missing", "--dir", "/tmp/project-context-missing")
-    out, err, code = cli("context", "project-context-missing")
+    cli("role", "add", "writing")
+    cli("agent", "add", "scribe", "--command", "echo {ticket}", "--roles", "writing")
+
+    with patch("agentplan.cli.spawn_terminal", return_value=0) as mock_spawn:
+        out, err, code = cli("context", "project-context-missing")
+
     assert code == 0, err
-    assert "No .agentplan.md found in /tmp/project-context-missing" in out
+    assert "Started context generation with agent 'scribe' in terminal." in out
+    assert mock_spawn.call_count == 1
+    command = mock_spawn.call_args[0][0]
+    # Prompt is now written to a temp file referenced in the command
+    assert "agentplan-project-context-missing-" in command
+    assert "cat" in command  # reads prompt from file
 
 
 def test_context_command_project_mode_file_exists_and_regenerate():
@@ -1111,15 +1251,37 @@ def test_context_command_project_mode_file_exists_and_regenerate():
     context_file = "/tmp/project-context-exists/.agentplan.md"
     Path(context_file).write_text("hello context", encoding="utf-8")
     cli("create", "Project Context Exists", "--dir", "/tmp/project-context-exists")
+    cli("ticket", "add", "project-context-exists", "Ticket one", "--priority", "high")
+    cli("role", "add", "writing")
+    cli("agent", "add", "scribe", "--command", "echo {ticket}", "--roles", "writing")
 
-    out, err, code = cli("context", "project-context-exists")
+    with patch("agentplan.cli.spawn_terminal", return_value=0) as mock_spawn:
+        out, err, code = cli("context", "project-context-exists")
     assert code == 0, err
-    assert "hello context" in out
+    assert "Started context generation with agent 'scribe' in terminal." in out
+    command = mock_spawn.call_args[0][0]
+    # Prompt file should contain existing context and ticket info
+    import glob
+    prompt_files = glob.glob("/tmp/project-context-exists/agentplan-project-context-exists-*.md")
+    assert len(prompt_files) >= 1
+    # First run (non-regenerate) should include existing context in prompt
+    prompt_content = Path(prompt_files[-1]).read_text()
+    assert "Project title: Project Context Exists" in prompt_content
 
-    out2, err2, code2 = cli("context", "project-context-exists", "--regenerate")
+    # Clean up prompt files from first run
+    for f in prompt_files:
+        try: os.remove(f)
+        except: pass
+
+    with patch("agentplan.cli.spawn_terminal", return_value=0) as mock_spawn2:
+        out2, err2, code2 = cli("context", "project-context-exists", "--regenerate")
     assert code2 == 0, err2
-    assert "No .agentplan.md found in /tmp/project-context-exists" in out2
-    assert not os.path.exists(context_file)
+    assert "Started context generation with agent 'scribe' in terminal." in out2
+    # Find the new prompt file
+    prompt_files2 = glob.glob("/tmp/project-context-exists/agentplan-project-context-exists-*.md")
+    assert len(prompt_files2) >= 1
+    prompt_content2 = Path(prompt_files2[-1]).read_text()
+    assert "Regenerate from scratch" in prompt_content2
 
 
 # ---------------------------------------------------------------------------
@@ -1407,6 +1569,65 @@ def test_dashboard_project_directory_api_crud():
     row = conn.execute("SELECT dir FROM projects WHERE slug='web-dir-api'").fetchone()
     conn.close()
     assert row["dir"] is None
+
+
+def test_dashboard_generate_context_returns_400_when_no_writer_agent_configured():
+    from agentplan.dashboard import create_app
+
+    os.makedirs("/tmp/web-context-no-writer", exist_ok=True)
+    cli("create", "Web Context No Writer", "--dir", "/tmp/web-context-no-writer")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/project/web-context-no-writer/generate-context",
+        headers={"Origin": "http://localhost"},
+        json={},
+    )
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert "No writer agent configured" in payload["error"]
+
+
+def test_dashboard_generate_context_returns_400_when_no_directory_linked():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Web Context No Dir")
+    cli("role", "add", "writing")
+    cli("agent", "add", "writer", "--command", "echo {ticket}", "--roles", "writing")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/project/web-context-no-dir/generate-context",
+        headers={"Origin": "http://localhost"},
+        json={},
+    )
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert "No directory linked to project 'web-context-no-dir'" in payload["error"]
+
+
+def test_dashboard_context_status_returns_running_state():
+    from agentplan.dashboard import create_app
+    import agentplan.dashboard.routes as dashboard_routes
+
+    os.makedirs("/tmp/web-context-status", exist_ok=True)
+    Path("/tmp/web-context-status/.agentplan.md").write_text("hello", encoding="utf-8")
+    cli("create", "Web Context Status", "--dir", "/tmp/web-context-status")
+
+    dashboard_routes._CONTEXT_PIDS["web-context-status"] = os.getpid()
+    test_app = create_app()
+    client = test_app.test_client()
+
+    resp = client.get("/api/project/web-context-status/context-status")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["running"] is True
+    assert payload["pid"] == os.getpid()
+    assert payload["last_modified"] is not None
 
 
 def test_dashboard_shows_missing_directory_warnings():
@@ -2892,8 +3113,18 @@ def test_route_terminal_injects_agentplan_md_content_when_present():
     assert code == 0, err
     assert out.strip() == "dash"
     cmd = mock_spawn.call_args.args[0]
-    assert "verify: pytest -q" in cmd
-    assert "[Project Context from .agentplan.md]" in cmd
+    assert "prompt=$(cat " in cmd
+    assert "agentplan-routing-context-project-" in cmd
+    assert "cd /tmp/routing-context &&" in cmd
+    assert "rm -f " in cmd
+
+    import glob
+    prompt_files = glob.glob("/tmp/routing-context/agentplan-routing-context-project-*.md")
+    assert len(prompt_files) >= 1
+    prompt_content = Path(prompt_files[-1]).read_text(encoding="utf-8")
+    assert "routing-context-project 1" in prompt_content
+    assert "verify: pytest -q" in prompt_content
+    assert "[Project Context from .agentplan.md]" in prompt_content
 
 
 def test_route_terminal_instructs_context_creation_when_missing():
@@ -2910,8 +3141,18 @@ def test_route_terminal_instructs_context_creation_when_missing():
 
     assert code == 0, err
     cmd = mock_spawn.call_args.args[0]
-    assert "No .agentplan.md found in project directory" in cmd
-    assert "create .agentplan.md" in cmd
+    assert "prompt=$(cat " in cmd
+    assert "agentplan-routing-context-missing-" in cmd
+    assert "cd /tmp/routing-context-missing &&" in cmd
+    assert "rm -f " in cmd
+
+    import glob
+    prompt_files = glob.glob("/tmp/routing-context-missing/agentplan-routing-context-missing-*.md")
+    assert len(prompt_files) >= 1
+    prompt_content = Path(prompt_files[-1]).read_text(encoding="utf-8")
+    assert "routing-context-missing 1" in prompt_content
+    assert "No .agentplan.md found in project directory" in prompt_content
+    assert "create .agentplan.md" in prompt_content
 
 
 def test_detect_terminal_prefers_iterm2_when_running():
@@ -3203,7 +3444,18 @@ def test_chain_injects_agentplan_md_content_in_spawned_command():
         out, err, code = cli("chain", "chain-context", "--default-agent", "dash")
 
     assert code == 0, err
-    assert "verify: python3 -m pytest" in mock_spawn.call_args.args[0]
+    cmd = mock_spawn.call_args.args[0]
+    assert "prompt=$(cat " in cmd
+    assert "agentplan-chain-context-" in cmd
+    assert "cd /tmp/chain-context &&" in cmd
+    assert "rm -f " in cmd
+
+    import glob
+    prompt_files = glob.glob("/tmp/chain-context/agentplan-chain-context-*.md")
+    assert len(prompt_files) >= 1
+    prompt_content = Path(prompt_files[-1]).read_text(encoding="utf-8")
+    assert "chain-context 1" in prompt_content
+    assert "verify: python3 -m pytest" in prompt_content
 
 
 def test_chain_injects_create_context_instruction_when_file_missing():
@@ -3216,7 +3468,18 @@ def test_chain_injects_create_context_instruction_when_file_missing():
         out, err, code = cli("chain", "chain-context-missing", "--default-agent", "dash")
 
     assert code == 0, err
-    assert "No .agentplan.md found in project directory" in mock_spawn.call_args.args[0]
+    cmd = mock_spawn.call_args.args[0]
+    assert "prompt=$(cat " in cmd
+    assert "agentplan-chain-context-missing-" in cmd
+    assert "cd /tmp/chain-context-missing &&" in cmd
+    assert "rm -f " in cmd
+
+    import glob
+    prompt_files = glob.glob("/tmp/chain-context-missing/agentplan-chain-context-missing-*.md")
+    assert len(prompt_files) >= 1
+    prompt_content = Path(prompt_files[-1]).read_text(encoding="utf-8")
+    assert "chain-context-missing 1" in prompt_content
+    assert "No .agentplan.md found in project directory" in prompt_content
 
 
 # ---------------------------------------------------------------------------

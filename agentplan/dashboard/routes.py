@@ -3,8 +3,10 @@
 
 import html
 import json
+import logging
 import os
 import subprocess
+import threading
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -13,9 +15,11 @@ from urllib.parse import urlparse
 
 from flask import Flask, abort, render_template, request, url_for
 
+from agentplan.cli import build_context_prompt, _render_prompt_agent_command, spawn_terminal
 from agentplan.db import (
     create_agent,
     delete_agent,
+    get_agent_by_role,
     get_chain_state,
     get_connection,
     list_agents,
@@ -31,6 +35,98 @@ from .constants import (
     KANBAN_STATUS_ORDER,
     TAG_TONES,
 )
+
+_CONTEXT_PIDS = {}
+_CONTEXT_LOCK = threading.Lock()
+LOGGER = logging.getLogger(__name__)
+
+
+def _get_context_pid(slug):
+    value = _CONTEXT_PIDS.get(slug)
+    if isinstance(value, dict):
+        return value.get("pid")
+    return value
+
+
+def _set_context_state(slug, pid, running, exit_code=None):
+    with _CONTEXT_LOCK:
+        existing = _CONTEXT_PIDS.get(slug) if isinstance(_CONTEXT_PIDS.get(slug), dict) else {}
+        _CONTEXT_PIDS[slug] = {
+            "pid": pid,
+            "running": bool(running),
+            "exit_code": exit_code,
+            "started_at": existing.get("started_at") if existing else datetime.now().isoformat(timespec="seconds"),
+            "finished_at": None if running else datetime.now().isoformat(timespec="seconds"),
+        }
+
+
+def _get_exit_code_for_pid(pid):
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "exit_code=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    output = (result.stdout or "").strip()
+    if not output:
+        return None
+    try:
+        return int(output.splitlines()[0].strip())
+    except ValueError:
+        return None
+
+
+def _is_zombie_process(pid):
+    status_path = f"/proc/{pid}/status"
+    if not os.path.exists(status_path):
+        return False
+    try:
+        with open(status_path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("State:"):
+                    parts = line.split()
+                    return len(parts) >= 2 and parts[1].upper().startswith("Z")
+    except Exception:
+        return False
+    return False
+
+
+def _pid_is_running(pid):
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        waited_pid, _ = os.waitpid(pid, os.WNOHANG)
+        if waited_pid == pid:
+            return False
+    except ChildProcessError:
+        pass
+    except Exception:
+        pass
+    if _is_zombie_process(pid):
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except Exception:
+        return True
+
+
+def _monitor_context_process(slug, pid):
+    while _pid_is_running(pid):
+        time.sleep(2)
+    exit_code = _get_exit_code_for_pid(pid)
+    if exit_code in (0, None):
+        LOGGER.info("Context generation finished for %s (pid=%s)", slug, pid)
+    else:
+        LOGGER.error("Context generation failed for %s (pid=%s, exit_code=%s)", slug, pid, exit_code)
+    _set_context_state(slug, pid, running=False, exit_code=exit_code)
 
 def _db_path():
     return os.environ.get("AGENTPLAN_DB", os.path.expanduser("~/.agentplan/agentplan.db"))
@@ -922,6 +1018,112 @@ def create_app():
             }
         finally:
             conn.close()
+
+    @app.route("/api/project/<slug>/generate-context", methods=["POST"])
+    @_require_local_origin
+    def api_generate_project_context(slug):
+        payload = request.get_json(silent=True) or {}
+        regenerate = bool(payload.get("regenerate"))
+
+        conn = get_connection(_db_path())
+        try:
+            project = conn.execute("SELECT id, slug, title, dir FROM projects WHERE slug=?", (slug,)).fetchone()
+            if not project:
+                abort(404)
+            project_dir = (project["dir"] or "").strip()
+            if not project_dir:
+                return ({"error": f"No directory linked to project '{project['slug']}'."}, 400)
+
+            writer_agent = get_agent_by_role(conn, "writing")
+            if not writer_agent:
+                return ({"error": "No writer agent configured. Assign a role named 'writing' to an agent."}, 400)
+
+            tickets = conn.execute(
+                "SELECT num, title, status, priority FROM tickets WHERE project_id=? ORDER BY num",
+                (project["id"],),
+            ).fetchall()
+
+            context_path = _context_path_for_project(project)
+            existing_context = None
+            if context_path and os.path.exists(context_path):
+                try:
+                    with open(context_path, "r", encoding="utf-8") as handle:
+                        existing_context = handle.read().strip()
+                except Exception:
+                    existing_context = None
+
+            if regenerate:
+                existing_context = None
+
+            prompt = build_context_prompt(project, tickets, existing_context=existing_context)
+            if regenerate:
+                prompt = (
+                    f"{prompt}\n"
+                    "- Regenerate from scratch. Ignore old context and write a brand new .agentplan.md.\n"
+                )
+
+            command = _render_prompt_agent_command(
+                writer_agent.get("command_template"),
+                prompt,
+                project["slug"],
+                project_dir,
+            )
+
+            terminal_pid = spawn_terminal(command, title=f"agentplan:{writer_agent['name']}")
+            pid = terminal_pid if isinstance(terminal_pid, int) and terminal_pid > 1 else None
+            if pid is None:
+                try:
+                    proc = subprocess.Popen(
+                        command,
+                        shell=True,
+                        executable="/bin/bash",
+                        cwd=project_dir,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        stdin=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                    pid = proc.pid
+                except OSError as exc:
+                    return ({"error": f"failed to start context generation process: {exc}"}, 500)
+
+            _set_context_state(project["slug"], pid, running=True, exit_code=None)
+            if isinstance(pid, int) and pid > 0:
+                watcher = threading.Thread(
+                    target=_monitor_context_process,
+                    args=(project["slug"], pid),
+                    daemon=True,
+                )
+                watcher.start()
+            return {"pid": pid, "status": "started"}
+        finally:
+            conn.close()
+
+    @app.route("/api/project/<slug>/context-status")
+    def api_project_context_status(slug):
+        conn = get_connection(_db_path())
+        try:
+            project = conn.execute("SELECT id, slug, dir FROM projects WHERE slug=?", (slug,)).fetchone()
+            if not project:
+                abort(404)
+        finally:
+            conn.close()
+
+        pid = _get_context_pid(project["slug"])
+        running = _pid_is_running(pid)
+        if isinstance(pid, int) and pid > 0 and not running:
+            exit_code = _get_exit_code_for_pid(pid)
+            _set_context_state(project["slug"], pid, running=False, exit_code=exit_code)
+
+        context_path = _context_path_for_project(project)
+        last_modified = None
+        if context_path and os.path.exists(context_path):
+            try:
+                last_modified = datetime.fromtimestamp(os.path.getmtime(context_path)).isoformat(timespec="seconds")
+            except Exception:
+                last_modified = None
+
+        return {"running": running, "last_modified": last_modified, "pid": pid}
 
     def _update_ticket_state(conn, project_id, ticket_num, new_status):
         ticket = conn.execute(
