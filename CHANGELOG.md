@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.6.2 - 2026-03-05
+
+### Added
+- `agentplan project <slug> --dir ~/path` command to set/update project directory without using notes
+- Dashboard: editable directory field on project detail page (inline edit with Save/Cancel)
+- Dashboard: "Start Work" button shows error toast when no directory is linked
+- Dashboard: warning badge on project cards when linked directory doesn't exist on disk
+- Dashboard: Agents page now shows clock + connection status indicator (matching Home/Activity)
+- Dashboard: Agents table — collapsible edit rows with Edit/Cancel toggle, Delete as text link
+- Dashboard: Detected Tools and Add Agent split into separate cards
+- Tests for directory guards, dashboard directory API, chain start rejection (216 tests, was 209)
+
+### Changed
+- CLI `chain start` now hard-errors (instead of warning) when no project directory is linked
+- Unified CSS variables across all 4 dashboard templates (Home, Activity, Agents, Project)
+- Normalized `.btn` styles across all pages (consistent padding, border-radius, variants)
+- Agents page nav links use `--fs-nav` (0.875rem) matching other pages
+- Activity page status label changed from "live" to "connected" for consistency
+- Project detail: smaller kanban column headers, tighter filter dropdowns, Project Context uses body font
+- Role checkboxes use horizontal flex-wrap layout instead of stacked column
+- Directory inline edit — single field replaces text in place (no duplicate display)
+
 ## v0.6.1 - 2026-03-05
 
 ### Fixed
