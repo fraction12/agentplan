@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.6.1 - 2026-03-05
+
+### Fixed
+- `spawn_terminal()` now returns non-zero when both iTerm2 and Terminal.app fail to launch
+- `monitor_process()` uses `os.waitpid` to properly detect zombie/terminated processes instead of `os.kill(pid, 0)`
+- `cmd_chain()` now rejects re-entry when a chain is already running (CLI parity with dashboard API guard)
+- `/api/chain/start` rolls back DB state on `Popen` failure instead of leaving chain permanently stuck as "running"
+
+### Added
+- Tests for dashboard chain start/stop API, review panel actions, CLI chain re-entry guard, terminal spawn hard-failure
+- Tests for auto-tag AI tool unavailability (`FileNotFoundError`) and malformed/empty model output handling
+- 209 tests (was 200)
+
 ## v0.6.0 - 2026-03-05
 
 ### Added
