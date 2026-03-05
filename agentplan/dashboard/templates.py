@@ -1276,7 +1276,7 @@ PROJECT_TEMPLATE = """
       .project-dir a { color: #93c5fd; text-decoration: none; }
       .project-dir a:hover { text-decoration: underline; }
       .project-dir-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-      .project-dir-empty { color: var(--color-muted); font-style: italic; }
+      .project-dir-empty { color: var(--color-muted); font-style: italic; font-family: var(--font-mono); font-size: var(--fs-body); }
       .btn-sm { padding: 3px 8px; font-size: 0.8rem; border-radius: 6px; }
       .project-dir-input {
         flex: 1;
@@ -1334,8 +1334,9 @@ PROJECT_TEMPLATE = """
       .btn-back.active { color: var(--color-text); font-weight: var(--fw-nav); text-decoration: underline; }
 
       .project-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--color-muted); font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-small); }
+      .project-meta span { font-size: var(--fs-small); color: var(--color-muted); }
       .context-panel { margin: 0 0 16px; border: 1px solid var(--color-border); border-radius: 10px; background: rgba(255,255,255,0.02); }
-      .context-panel summary { padding: 12px; cursor: pointer; font-size: var(--fs-h2); font-family: var(--font-heading); font-weight: var(--fw-heading); list-style: none; display: flex; align-items: center; gap: 8px; }
+      .context-panel summary { padding: 12px; cursor: pointer; font-size: var(--fs-body); font-family: var(--font-body); font-weight: var(--fw-nav); list-style: none; display: flex; align-items: center; gap: 8px; }
       .context-panel summary::before { content: "▸"; transition: transform 0.2s; }
       .context-panel[open] summary::before { transform: rotate(90deg); }
       .context-panel summary::-webkit-details-marker { display: none; }
@@ -1377,7 +1378,7 @@ PROJECT_TEMPLATE = """
         padding: 12px 12px 10px;
         border-bottom: 1px solid var(--color-border);
       }
-      .kanban-column-title { margin: 0; font-size: var(--fs-h2); font-family: var(--font-body); font-weight: var(--fw-h2); text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); }
+      .kanban-column-title { margin: 0; font-size: var(--fs-small); font-family: var(--font-body); font-weight: var(--fw-h2); text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-muted); }
       .kanban-count {
         min-width: 1.65rem;
         height: 1.65rem;
@@ -1495,7 +1496,7 @@ PROJECT_TEMPLATE = """
         padding: 8px 10px;
         font-family: var(--font-body);
         font-weight: var(--fw-body);
-        font-size: var(--fs-body);
+        font-size: var(--fs-small);
       }
       .filter-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
       .btn { border: 1px solid var(--color-border); border-radius: 8px; padding: 7px 10px; text-decoration: none; font-family: var(--font-body); font-weight: var(--fw-button); font-size: var(--fs-button); color: var(--color-muted); background: transparent; cursor: pointer; }
@@ -1517,6 +1518,7 @@ PROJECT_TEMPLATE = """
         color: var(--color-muted);
         font-size: var(--fs-small);
       }
+      #chain-status-text { font-size: var(--fs-small); }
       .chain-dot { width: 8px; height: 8px; border-radius: 999px; background: #64748b; }
       .chain-dot.running { background: #22c55e; }
       .chain-dot.paused { background: #facc15; }
