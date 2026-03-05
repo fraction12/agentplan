@@ -201,6 +201,26 @@ def test_create_project_without_dir_flag_leaves_directory_empty():
     assert row["dir"] is None
 
 
+def test_project_command_sets_and_updates_directory():
+    cli("create", "Project Dir Cmd")
+
+    out_set, err_set, code_set = cli("project", "project-dir-cmd", "--dir", "/tmp/project-dir-cmd-a")
+    assert code_set == 0, err_set
+    assert "Updated project 'project-dir-cmd' directory to: /tmp/project-dir-cmd-a" in out_set
+    assert "Warning: directory does not exist on disk: /tmp/project-dir-cmd-a" in out_set
+
+    os.makedirs("/tmp/project-dir-cmd-b", exist_ok=True)
+    out_update, err_update, code_update = cli("project", "project-dir-cmd", "--dir", "/tmp/project-dir-cmd-b")
+    assert code_update == 0, err_update
+    assert "Updated project 'project-dir-cmd' directory to: /tmp/project-dir-cmd-b" in out_update
+    assert "Warning: directory does not exist on disk" not in out_update
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT dir FROM projects WHERE slug='project-dir-cmd'").fetchone()
+    conn.close()
+    assert row["dir"] == "/tmp/project-dir-cmd-b"
+
+
 def test_list_projects_after_create():
     cli("create", "Alpha Project")
     out, err, code = cli("list")
@@ -1216,6 +1236,19 @@ def test_dashboard_project_detail_shows_no_directory_and_no_context_message():
     assert "No context file yet. The first agent to work on this project will create one." in body
 
 
+def test_dashboard_project_detail_includes_editable_directory_field():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Dir Field")
+
+    client = app.test_client()
+    resp = client.get("/project/web-dir-field")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="project-dir-edit-btn"' in body
+    assert 'id="project-dir-input"' in body
+
+
 def test_dashboard_project_detail_links_to_ticket_detail_view():
     from agentplan.dashboard import app
 
@@ -1311,6 +1344,84 @@ def test_dashboard_chain_start_spawn_failure_does_not_mark_running():
     state = conn.execute("SELECT status FROM chain_state WHERE project_id=1").fetchone()
     conn.close()
     assert state is None
+
+
+def test_dashboard_chain_start_returns_400_when_directory_missing():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Web Chain Missing Dir")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/chain/web-chain-missing-dir/start",
+        headers={"Origin": "http://localhost"},
+    )
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert "No directory linked to project 'web-chain-missing-dir'" in payload["error"]
+
+
+def test_dashboard_project_directory_api_crud():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Web Dir API")
+    os.makedirs("/tmp/web-dir-api-a", exist_ok=True)
+
+    test_app = create_app()
+    client = test_app.test_client()
+
+    set_resp = client.post(
+        "/api/project/web-dir-api/directory",
+        headers={"Origin": "http://localhost"},
+        json={"directory": "/tmp/web-dir-api-a"},
+    )
+    assert set_resp.status_code == 200
+    set_payload = set_resp.get_json()
+    assert set_payload["ok"] is True
+    assert set_payload["directory"] == "/tmp/web-dir-api-a"
+    assert set_payload["exists_on_disk"] is True
+
+    update_resp = client.post(
+        "/api/project/web-dir-api/directory",
+        headers={"Origin": "http://localhost"},
+        json={"directory": "/tmp/web-dir-api-b"},
+    )
+    assert update_resp.status_code == 200
+    update_payload = update_resp.get_json()
+    assert update_payload["directory"] == "/tmp/web-dir-api-b"
+    assert update_payload["exists_on_disk"] is False
+
+    clear_resp = client.post(
+        "/api/project/web-dir-api/directory",
+        headers={"Origin": "http://localhost"},
+        json={"directory": ""},
+    )
+    assert clear_resp.status_code == 200
+    clear_payload = clear_resp.get_json()
+    assert clear_payload["directory"] is None
+    assert clear_payload["exists_on_disk"] is False
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT dir FROM projects WHERE slug='web-dir-api'").fetchone()
+    conn.close()
+    assert row["dir"] is None
+
+
+def test_dashboard_shows_missing_directory_warnings():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Missing Dir Warning", "--dir", "/tmp/does-not-exist-web-warning")
+
+    client = app.test_client()
+    index_resp = client.get("/")
+    assert index_resp.status_code == 200
+    assert "Missing directory" in index_resp.get_data(as_text=True)
+
+    detail_resp = client.get("/project/web-missing-dir-warning")
+    assert detail_resp.status_code == 200
+    assert "Warning: linked directory does not exist on disk." in detail_resp.get_data(as_text=True)
 
 
 # ---------------------------------------------------------------------------
@@ -3056,6 +3167,29 @@ def test_chain_no_warning_when_dir_not_set():
     assert out == ""
     assert code == 2
     assert "No directory linked to project 'chain-no-dir'" in err
+
+
+def test_chain_start_without_directory_returns_hard_error():
+    cli("create", "Chain Hard Error")
+    cli("ticket", "add", "chain-hard-error", "Task")
+
+    out, err, code = cli("chain", "chain-hard-error")
+
+    assert out == ""
+    assert code == 2
+    assert "No directory linked to project 'chain-hard-error'" in err
+    assert "agentplan project chain-hard-error --dir ~/path/to/repo" in err
+
+
+def test_chain_start_with_directory_set_runs_normally():
+    os.makedirs("/tmp/chain-dir-ok", exist_ok=True)
+    cli("create", "Chain Dir OK", "--dir", "/tmp/chain-dir-ok")
+
+    out, err, code = cli("chain", "chain-dir-ok")
+
+    assert code == 0, err
+    assert "Starting chain for project 'chain-dir-ok'" in out
+    assert "No more unblocked tickets. Chain complete." in out
 
 
 def test_chain_injects_agentplan_md_content_in_spawned_command():
