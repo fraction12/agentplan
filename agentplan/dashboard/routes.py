@@ -857,18 +857,20 @@ def create_app():
             state = get_chain_state(conn, project["id"]) or {}
             if (state.get("status") or "").lower() == "running":
                 return ({"error": "chain already running"}, 409)
+            try:
+                subprocess.Popen(
+                    ["agentplan", "chain", slug],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except OSError as exc:
+                return ({"error": f"failed to start chain process: {exc}"}, 500)
             set_chain_state(conn, project["id"], "running")
+            return {"ok": True}
         finally:
             conn.close()
-
-        subprocess.Popen(
-            ["agentplan", "chain", slug],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        return {"ok": True}
 
     @app.route("/api/chain/<slug>/stop", methods=["POST"])
     @_require_local_origin
@@ -1021,4 +1023,3 @@ def create_app():
         )
 
     return app
-
