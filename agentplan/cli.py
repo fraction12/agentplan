@@ -777,6 +777,24 @@ def _terminal_preference(explicit=None):
     return pref if pref in TERMINAL_CHOICES else "auto"
 
 
+def _is_ci_mode():
+    raw = (os.environ.get("AGENTPLAN_CI") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _spawn_headless_subprocess(command, cwd=None):
+    return subprocess.Popen(
+        command,
+        shell=True,
+        executable="/bin/bash",
+        cwd=cwd,
+        stdout=None,
+        stderr=None,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
 def detect_terminal_app(preference=None):
     pref = _terminal_preference(preference)
     if pref == "terminal":
@@ -1255,7 +1273,18 @@ def cmd_chain(args):
         conn.commit()
 
         print(f"→ Ticket #{ticket['num']} via agent '{agent['name']}' (timeout {timeout_sec}s)")
-        pid = spawn_terminal(command, title=f"agentplan:{agent['name']}")
+        if _is_ci_mode():
+            try:
+                proc = _spawn_headless_subprocess(command, cwd=project_dir)
+            except OSError as exc:
+                reason = f"failed to start headless agent command: {exc}"
+                print(f"Paused: {reason}")
+                db_set_chain_state(conn, proj["id"], "paused", current_ticket_id=ticket["id"], pause_reason=reason)
+                break
+            pid = proc.pid
+            print(f"Started headless agent command (pid={pid})")
+        else:
+            pid = spawn_terminal(command, title=f"agentplan:{agent['name']}")
 
         result = _monitor_chain_ticket(conn, proj, ticket, pid, timeout_sec=timeout_sec)
         refreshed = conn.execute("SELECT * FROM tickets WHERE id=?", (ticket["id"],)).fetchone()
@@ -1390,6 +1419,19 @@ def cmd_context(args):
         proj["slug"],
         project_dir,
     )
+    if _is_ci_mode():
+        try:
+            proc = _spawn_headless_subprocess(command, cwd=project_dir)
+        except OSError as exc:
+            conn.close()
+            fail(
+                f"Failed to start context generation: {exc}",
+                suggestions=["Check the agent command template and project directory permissions."],
+            )
+        print(f"Started context generation with agent '{writer_agent['name']}' (headless, pid={proc.pid}).")
+        conn.close()
+        return
+
     spawn_result = spawn_terminal(command, title=f"agentplan:{writer_agent['name']}")
     if spawn_result == 0:
         print(f"Started context generation with agent '{writer_agent['name']}' in terminal.")

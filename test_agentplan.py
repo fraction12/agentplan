@@ -1284,6 +1284,26 @@ def test_context_command_project_mode_file_exists_and_regenerate():
     assert "Regenerate from scratch" in prompt_content2
 
 
+def test_context_command_project_mode_ci_uses_headless_subprocess():
+    os.makedirs("/tmp/project-context-ci", exist_ok=True)
+    cli("create", "Project Context CI", "--dir", "/tmp/project-context-ci")
+    cli("role", "add", "writing")
+    cli("agent", "add", "scribe", "--command", "echo {ticket}", "--roles", "writing")
+
+    class DummyProc:
+        pid = 4242
+
+    with patch.dict(os.environ, {"AGENTPLAN_CI": "1"}, clear=False), \
+         patch("agentplan.cli.spawn_terminal") as mock_spawn, \
+         patch("agentplan.cli.subprocess.Popen", return_value=DummyProc()) as mock_popen:
+        out, err, code = cli("context", "project-context-ci")
+
+    assert code == 0, err
+    assert "headless, pid=4242" in out
+    assert mock_spawn.call_count == 0
+    assert mock_popen.call_count == 1
+
+
 # ---------------------------------------------------------------------------
 # Shell completion
 # ---------------------------------------------------------------------------
@@ -3480,6 +3500,28 @@ def test_chain_injects_create_context_instruction_when_file_missing():
     prompt_content = Path(prompt_files[-1]).read_text(encoding="utf-8")
     assert "chain-context-missing 1" in prompt_content
     assert "No .agentplan.md found in project directory" in prompt_content
+
+
+def test_chain_ci_mode_uses_headless_subprocess_not_terminal():
+    os.makedirs("/tmp/chain-ci-mode", exist_ok=True)
+    cli("create", "Chain CI Mode", "--dir", "/tmp/chain-ci-mode")
+    cli("ticket", "add", "chain-ci-mode", "Task")
+
+    class DummyProc:
+        pid = 2222
+
+    with patch.dict(os.environ, {"AGENTPLAN_CI": "1"}, clear=False), \
+         patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
+         patch("agentplan.cli.spawn_terminal") as mock_spawn, \
+         patch("agentplan.cli.subprocess.Popen", return_value=DummyProc()) as mock_popen, \
+         patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "failed", "timed_out": False}) as mock_monitor:
+        out, err, code = cli("chain", "chain-ci-mode")
+
+    assert code == 0, err
+    assert "Started headless agent command (pid=2222)" in out
+    assert mock_spawn.call_count == 0
+    assert mock_popen.call_count == 1
+    assert mock_monitor.call_args.args[3] == 2222
 
 
 # ---------------------------------------------------------------------------
