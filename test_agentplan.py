@@ -1421,7 +1421,7 @@ def test_dashboard_shows_missing_directory_warnings():
 
     detail_resp = client.get("/project/web-missing-dir-warning")
     assert detail_resp.status_code == 200
-    assert "Warning: linked directory does not exist on disk." in detail_resp.get_data(as_text=True)
+    assert "Linked directory does not exist on disk." in detail_resp.get_data(as_text=True)
 
 
 # ---------------------------------------------------------------------------

@@ -1127,19 +1127,23 @@ PROJECT_TEMPLATE = """
       .project-dir a { color: #93c5fd; text-decoration: none; }
       .project-dir a:hover { text-decoration: underline; }
       .project-dir-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-      .project-dir-edit { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; }
+      .project-dir-empty { color: var(--color-muted); font-style: italic; }
+      .btn-sm { padding: 3px 8px; font-size: 0.8rem; }
       .project-dir-input {
-        min-width: min(640px, 72vw);
+        flex: 1;
+        max-width: min(640px, 72vw);
         background: var(--color-panel-soft);
         border: 1px solid var(--color-border);
         color: var(--color-text);
-        border-radius: 10px;
-        padding: 8px 10px;
+        border-radius: 6px;
+        padding: 4px 8px;
         font-family: var(--font-mono);
         font-size: var(--fs-mono);
       }
-      .project-dir-note {
-        margin: 0 0 10px;
+      .project-dir-input:focus {
+        outline: none;
+        border-color: rgba(59,130,246,0.6);
+      }
         color: var(--color-muted);
         font-size: var(--fs-small);
       }
@@ -1514,23 +1518,20 @@ PROJECT_TEMPLATE = """
       </header>
 
       <h1 class="project-title">{{ project.title }}</h1>
-      <div class="project-dir-row">
-        <div id="project-dir-display" class="project-dir">
-        {% if project.dir %}
+      <div class="project-dir-row" id="project-dir-row">
+        <span id="project-dir-display" class="project-dir">
+        {%- if project.dir -%}
           <a href="file://{{ project.dir }}">{{ project.dir }}</a>
-        {% else %}
-          No directory set
-        {% endif %}
-        </div>
-        <button id="project-dir-edit-btn" class="btn" type="button">Edit</button>
+        {%- else -%}
+          <span class="project-dir-empty">No directory set</span>
+        {%- endif -%}
+        </span>
+        <input id="project-dir-input" class="project-dir-input" name="directory" type="text" value="{{ project.dir or '' }}" placeholder="~/path/to/repo" hidden>
+        <button id="project-dir-edit-btn" class="btn btn-sm" type="button">Edit</button>
+        <button id="project-dir-save-btn" class="btn btn-sm btn-primary" type="button" hidden>Save</button>
+        <button id="project-dir-cancel-btn" class="btn btn-sm" type="button" hidden>Cancel</button>
       </div>
-      <form id="project-dir-edit-form" class="project-dir-edit" hidden>
-        <input id="project-dir-input" class="project-dir-input" name="directory" type="text" value="{{ project.dir or '' }}" placeholder="~/path/to/repo">
-        <button id="project-dir-save-btn" class="btn btn-primary" type="submit">Save</button>
-        <button id="project-dir-cancel-btn" class="btn" type="button">Cancel</button>
-      </form>
-      <div id="project-dir-warning" class="project-dir-warning" {% if not directory_warning %}hidden{% endif %}>Warning: linked directory does not exist on disk.</div>
-      <div id="project-dir-note" class="project-dir-note"></div>
+      <div id="project-dir-warning" class="project-dir-warning" {% if not directory_warning %}hidden{% endif %}>⚠ Linked directory does not exist on disk.</div>
 
       <div id="chain-status" class="chain-status">
         <span id="chain-status-dot" class="chain-dot {{ chain.status if chain and chain.status else 'stopped' }}"></span>
@@ -1771,10 +1772,9 @@ PROJECT_TEMPLATE = """
         const toastStack = document.getElementById("toast-stack");
         const dirDisplay = document.getElementById("project-dir-display");
         const dirEditBtn = document.getElementById("project-dir-edit-btn");
-        const dirForm = document.getElementById("project-dir-edit-form");
         const dirInput = document.getElementById("project-dir-input");
+        const dirSaveBtn = document.getElementById("project-dir-save-btn");
         const dirCancelBtn = document.getElementById("project-dir-cancel-btn");
-        const dirNote = document.getElementById("project-dir-note");
         const dirWarning = document.getElementById("project-dir-warning");
 
         function showToast(message, tone = "error") {
@@ -1792,10 +1792,28 @@ PROJECT_TEMPLATE = """
           if (!dirDisplay) return;
           const value = String(directory || "").trim();
           if (!value) {
-            dirDisplay.textContent = "No directory set";
+            dirDisplay.innerHTML = `<span class="project-dir-empty">No directory set</span>`;
             return;
           }
           dirDisplay.innerHTML = `<a href="file://${esc(value)}">${esc(value)}</a>`;
+        }
+
+        function enterEditMode() {
+          dirDisplay.hidden = true;
+          dirEditBtn.hidden = true;
+          dirInput.hidden = false;
+          dirSaveBtn.hidden = false;
+          dirCancelBtn.hidden = false;
+          dirInput.focus();
+          dirInput.select();
+        }
+
+        function exitEditMode() {
+          dirInput.hidden = true;
+          dirSaveBtn.hidden = true;
+          dirCancelBtn.hidden = true;
+          dirDisplay.hidden = false;
+          dirEditBtn.hidden = false;
         }
 
         async function callTicketReviewAction(ticketNum, action) {
@@ -1868,28 +1886,19 @@ PROJECT_TEMPLATE = """
           chain_pause_reason: {{ chain_pause_reason|tojson }},
         });
 
-        if (dirEditBtn && dirForm && dirInput) {
-          dirEditBtn.addEventListener("click", () => {
-            dirForm.hidden = false;
-            dirEditBtn.hidden = true;
-            dirNote.textContent = "";
-            dirInput.focus();
-            dirInput.select();
-          });
+        if (dirEditBtn) {
+          dirEditBtn.addEventListener("click", enterEditMode);
         }
 
-        if (dirCancelBtn && dirForm && dirEditBtn) {
+        if (dirCancelBtn) {
           dirCancelBtn.addEventListener("click", () => {
-            dirForm.hidden = true;
-            dirEditBtn.hidden = false;
-            dirNote.textContent = "";
             dirInput.value = {{ (project.dir or "")|tojson }};
+            exitEditMode();
           });
         }
 
-        if (dirForm && dirInput) {
-          dirForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
+        if (dirSaveBtn) {
+          dirSaveBtn.addEventListener("click", async () => {
             const directory = (dirInput.value || "").trim();
             try {
               const response = await fetch(`/api/project/${encodeURIComponent(projectSlug)}/directory`, {
@@ -1904,9 +1913,7 @@ PROJECT_TEMPLATE = """
               renderDirectoryDisplay(payload ? payload.directory : directory);
               const missing = Boolean(payload && payload.directory && payload.exists_on_disk === false);
               if (dirWarning) dirWarning.hidden = !missing;
-              dirNote.textContent = "Directory saved.";
-              dirForm.hidden = true;
-              dirEditBtn.hidden = false;
+              exitEditMode();
             } catch (error) {
               showToast(error.message || "Failed to update project directory.");
             }
