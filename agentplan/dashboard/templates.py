@@ -985,11 +985,17 @@ AGENTS_TEMPLATE = """
         border: 1px solid var(--color-border);
         border-radius: 14px;
       }
-      .brand { font-weight: 600; }
+      .brand { font-family: var(--font-body); font-weight: var(--fw-card-title); font-size: var(--fs-card-title); letter-spacing: -0.01em; }
       .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
-      .top-link { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 6px 10px; text-decoration: none; }
+      .topbar-right { display: flex; align-items: center; gap: 12px; color: var(--color-muted); font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-body); justify-self: end; }
+      .clock { font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-body); color: var(--color-text); }
+      .top-link { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 6px 10px; text-decoration: none; font-family: var(--font-body); font-weight: var(--fw-nav); font-size: var(--fs-nav); }
       .top-link:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .top-link.active { color: var(--color-text); text-decoration: underline; }
+      .sse-status { display: inline-flex; align-items: center; gap: 6px; }
+      .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; }
+      .status-dot.connected { background: var(--status-done); box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15); }
+      .status-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15); }
       .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
       .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; padding: 14px; }
       .title { margin: 0 0 10px; font-size: 1rem; }
@@ -1021,7 +1027,10 @@ AGENTS_TEMPLATE = """
           <a class="top-link" href="{{ url_for('activity') }}">Activity</a>
           <a class="top-link active" href="{{ url_for('agents') }}">Agents</a>
         </nav>
-        <div></div>
+        <div class="topbar-right">
+          <span id="agent-clock" class="clock">--:--:--</span>
+          <span class="sse-status"><span id="agent-sse-dot" class="status-dot"></span><span id="agent-sse-label">connecting…</span></span>
+        </div>
       </header>
 
       <section class="grid">
@@ -1087,6 +1096,43 @@ AGENTS_TEMPLATE = """
         </div>
       </section>
     </main>
+    <script>
+      function setClock(ts) {
+        const d = ts ? new Date(ts) : new Date();
+        document.getElementById("agent-clock").textContent = d.toLocaleTimeString();
+      }
+
+      function setConnection(isConnected, label) {
+        const dot = document.getElementById("agent-sse-dot");
+        const text = document.getElementById("agent-sse-label");
+        dot.classList.remove("connected", "disconnected");
+        dot.classList.add(isConnected ? "connected" : "disconnected");
+        text.textContent = label;
+      }
+
+      (function subscribe() {
+        setClock();
+        setInterval(() => setClock(), 1000);
+
+        if (!window.EventSource) {
+          setConnection(false, "SSE unsupported");
+          return;
+        }
+
+        const source = new EventSource("{{ url_for('events') }}");
+        source.addEventListener("open", () => setConnection(true, "connected"));
+        source.addEventListener("project_stats", (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            setClock(payload.server_time || null);
+            setConnection(true, "connected");
+          } catch (_err) {
+            setConnection(false, "parse error");
+          }
+        });
+        source.onerror = () => setConnection(false, "reconnecting…");
+      })();
+    </script>
   </body>
 </html>
 """
