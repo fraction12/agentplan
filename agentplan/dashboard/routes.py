@@ -896,6 +896,31 @@ def create_app():
         finally:
             conn.close()
 
+    @app.route("/api/project/<slug>/directory", methods=["POST"])
+    @_require_local_origin
+    def api_project_directory(slug):
+        payload = request.get_json(silent=True) or {}
+        raw_dir = (payload.get("directory") or "").strip()
+        directory = os.path.expanduser(raw_dir) if raw_dir else None
+
+        conn = get_connection(_db_path())
+        try:
+            project = conn.execute("SELECT id FROM projects WHERE slug=?", (slug,)).fetchone()
+            if not project:
+                abort(404)
+            conn.execute(
+                "UPDATE projects SET dir=?, updated_at=? WHERE id=?",
+                (directory, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"), project["id"]),
+            )
+            conn.commit()
+            return {
+                "ok": True,
+                "directory": directory,
+                "exists_on_disk": bool(directory and os.path.isdir(directory)),
+            }
+        finally:
+            conn.close()
+
     def _update_ticket_state(conn, project_id, ticket_num, new_status):
         ticket = conn.execute(
             "SELECT id, status FROM tickets WHERE project_id=? AND num=?",

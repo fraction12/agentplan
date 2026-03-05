@@ -1106,6 +1106,23 @@ PROJECT_TEMPLATE = """
       .project-dir { margin: 0 0 10px; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-muted); }
       .project-dir a { color: #93c5fd; text-decoration: none; }
       .project-dir a:hover { text-decoration: underline; }
+      .project-dir-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .project-dir-edit { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; }
+      .project-dir-input {
+        min-width: min(640px, 72vw);
+        background: var(--color-panel-soft);
+        border: 1px solid var(--color-border);
+        color: var(--color-text);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-family: var(--font-mono);
+        font-size: var(--fs-mono);
+      }
+      .project-dir-note {
+        margin: 0 0 10px;
+        color: var(--color-muted);
+        font-size: var(--fs-small);
+      }
       .project-code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.08em; }
       .topbar-right { display: flex; align-items: center; gap: 12px; justify-self: end; color: var(--color-muted); font-family: var(--font-body); font-size: var(--fs-body); }
       .sse-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-small); color: var(--color-muted); }
@@ -1472,11 +1489,22 @@ PROJECT_TEMPLATE = """
       </header>
 
       <h1 class="project-title">{{ project.title }}</h1>
-      {% if project.dir %}
-      <div class="project-dir"><a href="file://{{ project.dir }}">{{ project.dir }}</a></div>
-      {% else %}
-      <div class="project-dir">No directory linked</div>
-      {% endif %}
+      <div class="project-dir-row">
+        <div id="project-dir-display" class="project-dir">
+        {% if project.dir %}
+          <a href="file://{{ project.dir }}">{{ project.dir }}</a>
+        {% else %}
+          No directory set
+        {% endif %}
+        </div>
+        <button id="project-dir-edit-btn" class="btn" type="button">Edit</button>
+      </div>
+      <form id="project-dir-edit-form" class="project-dir-edit" hidden>
+        <input id="project-dir-input" class="project-dir-input" name="directory" type="text" value="{{ project.dir or '' }}" placeholder="~/path/to/repo">
+        <button id="project-dir-save-btn" class="btn btn-primary" type="submit">Save</button>
+        <button id="project-dir-cancel-btn" class="btn" type="button">Cancel</button>
+      </form>
+      <div id="project-dir-note" class="project-dir-note"></div>
 
       <div id="chain-status" class="chain-status">
         <span id="chain-status-dot" class="chain-dot {{ chain.status if chain and chain.status else 'stopped' }}"></span>
@@ -1715,6 +1743,12 @@ PROJECT_TEMPLATE = """
         const chainStatusDot = document.getElementById("chain-status-dot");
         const chainStatusText = document.getElementById("chain-status-text");
         const toastStack = document.getElementById("toast-stack");
+        const dirDisplay = document.getElementById("project-dir-display");
+        const dirEditBtn = document.getElementById("project-dir-edit-btn");
+        const dirForm = document.getElementById("project-dir-edit-form");
+        const dirInput = document.getElementById("project-dir-input");
+        const dirCancelBtn = document.getElementById("project-dir-cancel-btn");
+        const dirNote = document.getElementById("project-dir-note");
 
         function showToast(message, tone = "error") {
           if (!toastStack) return;
@@ -1725,6 +1759,16 @@ PROJECT_TEMPLATE = """
           setTimeout(() => {
             toast.remove();
           }, 4500);
+        }
+
+        function renderDirectoryDisplay(directory) {
+          if (!dirDisplay) return;
+          const value = String(directory || "").trim();
+          if (!value) {
+            dirDisplay.textContent = "No directory set";
+            return;
+          }
+          dirDisplay.innerHTML = `<a href="file://${esc(value)}">${esc(value)}</a>`;
         }
 
         async function callTicketReviewAction(ticketNum, action) {
@@ -1796,6 +1840,51 @@ PROJECT_TEMPLATE = """
           chain_current_ticket_num: {{ chain_current_ticket_num|tojson }},
           chain_pause_reason: {{ chain_pause_reason|tojson }},
         });
+
+        if (dirEditBtn && dirForm && dirInput) {
+          dirEditBtn.addEventListener("click", () => {
+            dirForm.hidden = false;
+            dirEditBtn.hidden = true;
+            dirNote.textContent = "";
+            dirInput.focus();
+            dirInput.select();
+          });
+        }
+
+        if (dirCancelBtn && dirForm && dirEditBtn) {
+          dirCancelBtn.addEventListener("click", () => {
+            dirForm.hidden = true;
+            dirEditBtn.hidden = false;
+            dirNote.textContent = "";
+            dirInput.value = {{ (project.dir or "")|tojson }};
+          });
+        }
+
+        if (dirForm && dirInput) {
+          dirForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const directory = (dirInput.value || "").trim();
+            try {
+              const response = await fetch(`/api/project/${encodeURIComponent(projectSlug)}/directory`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ directory }),
+              });
+              const payload = await response.json().catch(() => null);
+              if (!response.ok) {
+                throw new Error((payload && payload.error) || `HTTP ${response.status}`);
+              }
+              renderDirectoryDisplay(payload ? payload.directory : directory);
+              dirNote.textContent = payload && payload.exists_on_disk === false && payload.directory
+                ? "Warning: linked directory does not exist on disk."
+                : "Directory saved.";
+              dirForm.hidden = true;
+              dirEditBtn.hidden = false;
+            } catch (error) {
+              showToast(error.message || "Failed to update project directory.");
+            }
+          });
+        }
 
         function setConnection(isConnected, label) {
           const dot = document.getElementById("project-sse-dot");

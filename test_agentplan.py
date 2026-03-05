@@ -1212,7 +1212,7 @@ def test_dashboard_project_detail_shows_no_directory_and_no_context_message():
     resp = client.get("/project/web-no-context")
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "No directory linked" in body
+    assert "No directory set" in body
     assert "No context file yet. The first agent to work on this project will create one." in body
 
 
