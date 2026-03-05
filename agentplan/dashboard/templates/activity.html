@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% set active_page = 'activity' %}
+
+{% block title %}Live activity · agentplan dashboard{% endblock %}
+{% block body_class %}dashboard-activity{% endblock %}
+
+{% block content %}
+<section class="activity-shell">
+  <div id="agent-filters" class="filters-row"></div>
+  <div id="action-filters" class="filters-row"></div>
+  <p id="presence-line" class="presence-line" hidden></p>
+  <div id="feed" class="feed"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const FEED_LIMIT = 300;
+  const ACTION_OPTIONS = ["all", "created", "started", "done", "blocked", "skipped", "log"];
+  const feedState = { events: [], activeAgent: "all", activeAction: "all" };
+
+  function esc(v) {
+    return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+  }
+
+  function relativeTime(ts) {
+    const d = new Date(ts || "");
+    if (Number.isNaN(d.valueOf())) return "";
+    const diff = Math.max(0, Math.floor((Date.now() - d.valueOf()) / 1000));
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  }
+
+  function dayLabel(ts) {
+    const d = new Date(ts || "");
+    if (Number.isNaN(d.valueOf())) return "Unknown";
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return "Today";
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (d.toDateString() === y.toDateString()) return "Yesterday";
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  function ticketNum(item) {
+    const m = String(item.ticket_label || "").match(/#(\d+)/);
+    return m ? m[1] : "";
+  }
+
+  function renderPresence(presence) {
+    const line = document.getElementById("presence-line");
+    if (!presence || presence.length === 0) {
+      line.hidden = true;
+      line.textContent = "";
+      return;
+    }
+    line.hidden = false;
+    const parts = presence.map((a) => `${esc(a.name)} (${esc(relativeTime(a.last_seen))})`);
+    line.innerHTML = `Active agents ${parts.join(" · ")}`;
+  }
+
+  function renderAgentFilters(events) {
+    const wrap = document.getElementById("agent-filters");
+    const agents = [...new Set((events || []).map((e) => e.agent || "system"))].sort();
+    const options = ["all", ...agents];
+    wrap.innerHTML = "";
+    options.forEach((agent) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `filter-pill${feedState.activeAgent === agent ? " active" : ""}`;
+      btn.textContent = agent === "all" ? "All" : agent;
+      btn.addEventListener("click", () => {
+        feedState.activeAgent = agent;
+        renderAgentFilters(events);
+        renderFeed();
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  function renderActionFilters() {
+    const wrap = document.getElementById("action-filters");
+    wrap.innerHTML = "";
+    ACTION_OPTIONS.forEach((action) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `filter-pill${feedState.activeAction === action ? " active" : ""}`;
+      btn.textContent = action === "all" ? "All" : action;
+      btn.addEventListener("click", () => {
+        feedState.activeAction = action;
+        renderActionFilters();
+        renderFeed();
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  function collapseCreated(rows) {
+    const collapsed = [];
+    for (let i = 0; i < rows.length;) {
+      const start = rows[i];
+      if (start.action_type !== "created" || !start.project_slug) { collapsed.push(start); i += 1; continue; }
+      const startTs = new Date(start.timestamp || "").valueOf();
+      const group = [start];
+      let j = i + 1;
+      while (j < rows.length) {
+        const next = rows[j];
+        const nextTs = new Date(next.timestamp || "").valueOf();
+        if (next.action_type !== "created" || next.project_slug !== start.project_slug || Number.isNaN(nextTs) || Number.isNaN(startTs) || Math.abs(nextTs - startTs) > 60000) break;
+        group.push(next);
+        j += 1;
+      }
+      if (group.length >= 3) {
+        collapsed.push({
+          id: `bulk-${start.id}`,
+          timestamp: start.timestamp,
+          agent: start.agent || "system",
+          action_type: "created",
+          project_slug: start.project_slug,
+          project_title: start.project_title,
+          collapsed_count: group.length,
+          ticket_label: "",
+        });
+        i = j;
+      } else {
+        collapsed.push(...group);
+        i = j;
+      }
+    }
+    return collapsed;
+  }
+
+  function renderRow(item) {
+    const actionType = item.action_type || "other";
+    const agent = esc(item.agent || "system");
+    const project = esc(item.project_slug || "-");
+    const ticket = ticketNum(item);
+    const verbMap = { created: "created", started: "started", done: "completed", blocked: "blocked", skipped: "skipped" };
+    const verb = verbMap[actionType] || "updated";
+
+    let detail = "";
+    if (item.collapsed_count) {
+      detail = `${esc(String(item.collapsed_count))} tickets created in ${project}`;
+    } else if (actionType === "log") {
+      const raw = item.action || "logged update";
+      detail = esc(raw.length > 120 ? raw.slice(0, 117) + "…" : raw);
+    } else {
+      detail = `${verb}${ticket ? ` ${esc("#" + ticket)}` : ""} in ${project}`;
+    }
+
+    const ticketHref = ticket && item.project_slug ? `/project/${encodeURIComponent(item.project_slug)}#ticket-${ticket}` : "";
+    const ticketHtml = !item.collapsed_count && ticket && item.project_slug ? ` <a class="ticket-link" href="${esc(ticketHref)}">${esc("#" + ticket)}</a>` : "";
+    const badgeHtml = item.collapsed_count ? `<span class="count-badge">${esc(String(item.collapsed_count))}</span>` : "";
+    const actionClass = actionType === "log" ? "feed-action log" : "feed-action";
+
+    return `<div class="feed-line"><span class="feed-agent">${agent}</span><span class="${actionClass}">${detail}${ticketHtml}</span>${badgeHtml}<span class="feed-time">${esc(relativeTime(item.timestamp))}</span></div>`;
+  }
+
+  function renderFeed() {
+    const container = document.getElementById("feed");
+    const pinnedBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 28;
+    container.innerHTML = "";
+
+    let rows = feedState.events.slice();
+    rows = rows.filter((item) => feedState.activeAgent === "all" || (item.agent || "system") === feedState.activeAgent);
+    rows = rows.filter((item) => feedState.activeAction === "all" || (item.action_type || "other") === feedState.activeAction);
+    rows = collapseCreated(rows);
+
+    let lastDay = "";
+    rows.forEach((item) => {
+      const day = dayLabel(item.timestamp);
+      if (day !== lastDay) {
+        const header = document.createElement("div");
+        header.className = "feed-day";
+        header.textContent = day;
+        container.appendChild(header);
+        lastDay = day;
+      }
+      const row = document.createElement("article");
+      row.className = `feed-row action-${item.action_type || "other"}`;
+      row.innerHTML = renderRow(item);
+      container.appendChild(row);
+    });
+
+    if (pinnedBottom || feedState.events.length <= 4) container.scrollTop = container.scrollHeight;
+  }
+
+  function applyActivity(payload) {
+    feedState.events = (payload.events || []).slice(-FEED_LIMIT);
+    renderAgentFilters(feedState.events);
+    renderActionFilters();
+    renderPresence(payload.active_agents || []);
+    renderFeed();
+  }
+
+  setClock("live-clock");
+  setInterval(() => setClock("live-clock"), 1000);
+
+  subscribeSSE("{{ url_for('events') }}", {
+    onUnsupported: () => setConnection("sse-dot", "sse-label", false, "SSE unsupported"),
+    onOpen: () => setConnection("sse-dot", "sse-label", true, "connected"),
+    onError: () => setConnection("sse-dot", "sse-label", false, "reconnecting…"),
+    events: {
+      activity_feed: (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          applyActivity(payload);
+          setClock("live-clock", payload.server_time || null);
+          setConnection("sse-dot", "sse-label", true, "connected");
+        } catch (_err) {
+          setConnection("sse-dot", "sse-label", false, "reconnecting…");
+        }
+      },
+    },
+  });
+</script>
+{% endblock %}

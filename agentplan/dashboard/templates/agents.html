@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% set active_page = 'agents' %}
+
+{% block title %}Agent Setup · agentplan dashboard{% endblock %}
+{% block body_class %}dashboard-agents{% endblock %}
+
+{% block topbar_right %}
+<div class="topbar-right">
+  <span id="agent-clock" class="clock">--:--:--</span>
+  <span class="sse-status"><span id="agent-sse-dot" class="status-dot"></span><span id="agent-sse-label">connecting…</span></span>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="grid">
+  <div class="card">
+    <h2 class="title">Agents</h2>
+    {% if agents %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Command</th>
+          <th>Roles</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for agent in agents %}
+        {% set row_key = agent.name|replace(' ', '-')|lower %}
+        <tr>
+          <td class="mono">{{ agent.name }}</td>
+          <td class="mono">{{ agent.command_template }}</td>
+          <td>
+            <div class="roles">
+              {% for role in agent.roles %}
+              <span class="pill">{{ role }}</span>
+              {% endfor %}
+              {% if not agent.roles %}
+              <span class="muted">none</span>
+              {% endif %}
+            </div>
+          </td>
+          <td>
+            <div class="agent-actions">
+              <button class="btn btn-sm" type="button" data-edit-toggle="{{ row_key }}" aria-expanded="false">Edit</button>
+              <form class="delete-form" method="post" action="{{ url_for('delete_agent_route', name=agent.name) }}">
+                <button class="delete-link" type="submit" aria-label="Delete {{ agent.name }}">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        <tr class="edit-row" data-edit-row="{{ row_key }}" hidden>
+          <td colspan="4">
+            <form class="form-grid edit-form" method="post" action="{{ url_for('edit_agent', name=agent.name) }}">
+              <input type="text" name="command_template" value="{{ agent.command_template }}" required>
+              <div class="role-list">
+              {% for role in roles %}
+                <label class="role-item"><input type="checkbox" name="roles" value="{{ role.name }}" {{ 'checked' if role.name in agent.roles else '' }}> {{ role.name }}</label>
+              {% endfor %}
+              </div>
+              <div class="edit-actions">
+                <button class="btn btn-sm btn-primary" type="submit">Save</button>
+                <button class="btn btn-sm" type="button" data-edit-cancel="{{ row_key }}">Cancel</button>
+              </div>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No agents configured.</p>
+    {% endif %}
+  </div>
+
+  <div class="side-stack">
+    <div class="card">
+      <h2 class="title">Detected Tools</h2>
+      <div class="tool-grid">
+      {% for tool in detected_tools %}
+        <div class="tool-row"><span class="mono">{{ tool.name }}</span><span class="{{ '' if tool.found else 'muted' }}">{{ 'found' if tool.found else 'missing' }}</span></div>
+      {% endfor %}
+      </div>
+    </div>
+    <div class="card">
+      <h2 class="title">Add Agent</h2>
+      <form class="form-grid" method="post" action="{{ url_for('add_agent') }}">
+        <input type="text" name="name" placeholder="name" required>
+        <input type="text" name="command_template" placeholder="command template" required>
+        <div class="role-list">
+        {% for role in roles %}
+          <label class="role-item"><input type="checkbox" name="roles" value="{{ role.name }}"> {{ role.name }}</label>
+        {% endfor %}
+        {% if not roles %}<div class="muted">No roles available yet.</div>{% endif %}
+        </div>
+        <button class="btn" type="submit">Add Agent</button>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='agents.js') }}"></script>
+{% endblock %}

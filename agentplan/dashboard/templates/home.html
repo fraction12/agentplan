@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% set active_page = 'home' %}
+
+{% block title %}agentplan mission control{% endblock %}
+{% block body_class %}dashboard-home{% endblock %}
+
+{% block content %}
+<section class="stats-grid" id="stats-grid">
+  <article class="stat-card"><div class="stat-label">Active Projects</div><div id="stat-active-projects" class="stat-value">{{ summary.active_projects }}</div></article>
+  <article class="stat-card"><div class="stat-label">Tickets In Flight</div><div id="stat-tickets-in-flight" class="stat-value">{{ summary.tickets_in_flight }}</div></article>
+  <article class="stat-card"><div class="stat-label">Completed Today</div><div id="stat-completed-today" class="stat-value">{{ summary.completed_today }}</div></article>
+  <article class="stat-card"><div class="stat-label">Active Agents</div><div id="stat-active-agents" class="stat-value">{{ summary.active_agents }}</div></article>
+</section>
+
+{% if projects %}
+<div class="toggle-row">
+  <label class="toggle-label"><input id="show-completed" type="checkbox"> Show completed</label>
+</div>
+
+<section class="project-section" id="active-section">
+  <h2 class="project-section-title">Active Projects</h2>
+  <section class="projects-grid" id="active-projects-grid">
+    {% for project in active_projects %}
+    <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}">
+      <article class="project-card">
+        <div class="project-top">
+          <div>
+            <h2 class="project-title">{{ project.title }}</h2>
+            <div class="project-code">{{ project.slug }}</div>
+          </div>
+          <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
+            <svg viewBox="0 0 36 36">
+              <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
+              <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
+            </svg>
+            <span class="progress-ring-label project-progress-percent">{{ project.progress_pct }}%</span>
+          </div>
+        </div>
+        <div class="project-meta">
+          <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
+          <div class="dot-breakdown project-breakdown">
+            {% for status in ["pending", "in-progress", "blocked", "needs-review", "failed", "done"] %}
+            <span class="dot-item"><span class="dot {{ status }}"></span><span class="dot-value" data-status="{{ status }}">{{ project.breakdown.get(status, 0) }}</span></span>
+            {% endfor %}
+          </div>
+          <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
+          {% if project.missing_directory %}
+          <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
+          {% endif %}
+        </div>
+      </article>
+    </a>
+    {% endfor %}
+  </section>
+</section>
+
+<section class="project-section" id="completed-section">
+  <h2 class="project-section-title">Completed</h2>
+  <section class="projects-grid completed" id="completed-projects-grid">
+    {% for project in completed_projects %}
+    <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}">
+      <article class="project-card">
+        <div class="project-top">
+          <div>
+            <h2 class="project-title">{{ project.title }}</h2>
+            <div class="project-code">{{ project.slug }}</div>
+          </div>
+          <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
+            <svg viewBox="0 0 36 36">
+              <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
+              <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
+            </svg>
+            <span class="progress-ring-label project-progress-percent">{{ project.progress_pct }}%</span>
+          </div>
+        </div>
+        <div class="project-meta">
+          <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
+          <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
+          {% if project.missing_directory %}
+          <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
+          {% endif %}
+        </div>
+      </article>
+    </a>
+    {% endfor %}
+  </section>
+</section>
+{% else %}
+<div class="empty">No projects found.</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const statusOrder = ["pending", "in-progress", "blocked", "needs-review", "failed", "done"];
+
+  function renderSummary(summary) {
+    document.getElementById("stat-active-projects").textContent = summary.active_projects ?? 0;
+    document.getElementById("stat-tickets-in-flight").textContent = summary.tickets_in_flight ?? 0;
+    document.getElementById("stat-completed-today").textContent = summary.completed_today ?? 0;
+    document.getElementById("stat-active-agents").textContent = summary.active_agents ?? 0;
+  }
+
+  function esc(v) {
+    return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+  }
+
+  function formatRelative(ts) {
+    if (!ts) return "n/a";
+    const d = new Date(ts);
+    if (Number.isNaN(d.valueOf())) return esc(ts);
+    const now = new Date();
+    const diffSec = Math.floor((now - d) / 1000);
+    if (diffSec < 60) return "just now";
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} min ago`;
+    if (diffSec < 6 * 3600) return `${Math.floor(diffSec / 3600)} hours ago`;
+    const sameDay = now.toDateString() === d.toDateString();
+    if (sameDay) return `Today at ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (y.toDateString() === d.toDateString()) return `Yesterday at ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
+  function applyRelativeTimes() {
+    document.querySelectorAll(".project-updated-at[data-timestamp]").forEach((node) => {
+      node.textContent = formatRelative(node.dataset.timestamp || "");
+    });
+  }
+
+  function projectCard(project, isCompleted) {
+    const breakdown = project.breakdown || {};
+    const breakdownHtml = isCompleted ? '' : `<div class="dot-breakdown project-breakdown">${statusOrder.map((status) => `<span class="dot-item"><span class="dot ${status}"></span><span class="dot-value" data-status="${status}">${breakdown[status] || 0}</span></span>`).join("")}</div>`;
+    const warningHtml = project.missing_directory ? `<div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>` : "";
+    return `<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}"><article class="project-card"><div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a>`;
+  }
+
+  function renderProjects(projects) {
+    const showCompleted = document.getElementById("show-completed")?.checked;
+    const visible = projects || [];
+    const active = visible.filter((p) => p.status !== "completed");
+    const completed = visible.filter((p) => p.status === "completed");
+
+    const activeGrid = document.getElementById("active-projects-grid");
+    const completedGrid = document.getElementById("completed-projects-grid");
+    if (activeGrid) activeGrid.innerHTML = active.map((p) => projectCard(p, false)).join("");
+    const completedSection = document.getElementById("completed-section");
+    if (completedSection) completedSection.style.display = showCompleted ? "" : "none";
+    if (completedGrid) completedGrid.innerHTML = completed.map((p) => projectCard(p, true)).join("");
+  }
+
+  setClock("live-clock");
+  setInterval(() => setClock("live-clock"), 1000);
+  applyRelativeTimes();
+
+  const completedToggle = document.getElementById("show-completed");
+  if (completedToggle) completedToggle.addEventListener("change", () => renderProjects(window.__latestProjects || []));
+
+  subscribeSSE("{{ url_for('events') }}", {
+    onUnsupported: () => setConnection("sse-dot", "sse-label", false, "SSE unsupported"),
+    onOpen: () => setConnection("sse-dot", "sse-label", true, "connected"),
+    onError: () => setConnection("sse-dot", "sse-label", false, "reconnecting…"),
+    events: {
+      project_stats: (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          renderSummary(payload.summary || {});
+          window.__latestProjects = payload.projects || [];
+          renderProjects(window.__latestProjects);
+          setClock("live-clock", payload.server_time || null);
+          setConnection("sse-dot", "sse-label", true, "connected");
+        } catch (_err) {
+          setConnection("sse-dot", "sse-label", false, "parse error");
+        }
+      },
+    },
+  });
+</script>
+{% endblock %}
