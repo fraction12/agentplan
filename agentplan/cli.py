@@ -43,6 +43,7 @@ from agentplan.db import (
     update_role as db_update_role,
     create_agent as db_create_agent,
     get_agent as db_get_agent,
+    get_agent_by_role as db_get_agent_by_role,
     list_agents as db_list_agents,
     delete_agent as db_delete_agent,
     update_agent as db_update_agent,
@@ -591,11 +592,7 @@ def _project_prompt_context(project):
 
 
 def _writer_agent_from_registry(conn):
-    for agent in db_list_agents(conn):
-        roles = [str(role).strip().lower() for role in (agent.get("roles") or [])]
-        if any("writing" in role for role in roles):
-            return agent
-    return None
+    return db_get_agent_by_role(conn, "writing")
 
 
 def _render_prompt_agent_command(template, prompt, project_slug, project_dir):

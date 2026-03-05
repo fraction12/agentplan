@@ -527,6 +527,24 @@ def list_agents(conn):
     return agents
 
 
+def get_agent_by_role(conn, role_name):
+    row = conn.execute(
+        """
+        SELECT a.id
+        FROM agents a
+        JOIN agent_roles ar ON ar.agent_id = a.id
+        JOIN roles r ON r.id = ar.role_id
+        WHERE LOWER(r.name) = LOWER(?)
+        ORDER BY a.priority ASC, a.id ASC
+        LIMIT 1
+        """,
+        (str(role_name),),
+    ).fetchone()
+    if not row:
+        return None
+    return get_agent(conn, row["id"])
+
+
 def delete_agent(conn, name_or_id):
     agent = get_agent(conn, name_or_id)
     if not agent:

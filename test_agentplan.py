@@ -16,6 +16,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agentplan
+import agentplan.db as agentplan_db
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +171,34 @@ def test_init_detect_installed_tools_handles_subprocess_exception():
         tools = agent_cli._detect_installed_tools()
 
     assert tools == ["claude"]
+
+
+# ---------------------------------------------------------------------------
+# Agent role lookup
+# ---------------------------------------------------------------------------
+
+def test_get_agent_by_role_returns_correct_agent():
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    try:
+        agentplan_db.create_role(conn, "writing")
+        agentplan_db.create_agent(conn, "writer-a", "echo a", role_names=["writing"], priority=3)
+        agentplan_db.create_agent(conn, "writer-b", "echo b", role_names=["writing"], priority=1)
+
+        match = agentplan_db.get_agent_by_role(conn, "writing")
+        assert match is not None
+        assert match["name"] == "writer-b"
+    finally:
+        conn.close()
+
+
+def test_get_agent_by_role_returns_none_when_no_match():
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    try:
+        agentplan_db.create_role(conn, "backend")
+        agentplan_db.create_agent(conn, "backend-agent", "echo hi", role_names=["backend"])
+        assert agentplan_db.get_agent_by_role(conn, "writing") is None
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
