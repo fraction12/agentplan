@@ -1089,6 +1089,46 @@ def test_context_command_outputs_project_ticket_and_commands():
     assert "agentplan log context-project 1 \"message\"" in out
 
 
+def test_build_context_prompt_includes_required_sections():
+    import agentplan.cli as agent_cli
+
+    project = {"title": "Prompt Project", "slug": "prompt-project", "dir": "/tmp/prompt-project"}
+    tickets = [
+        {"num": 1, "title": "Setup", "status": "pending", "priority": "high"},
+        {"num": 2, "title": "Ship", "status": "in-progress", "priority": "medium"},
+    ]
+    prompt = agent_cli.build_context_prompt(project, tickets, existing_context="Existing content")
+
+    assert "Project title: Prompt Project" in prompt
+    assert "Project slug: prompt-project" in prompt
+    assert "Directory path: /tmp/prompt-project" in prompt
+    assert "- #1: Setup [status=pending, priority=high]" in prompt
+    assert "- #2: Ship [status=in-progress, priority=medium]" in prompt
+    assert "Existing .agentplan.md content:" in prompt
+    assert "Existing content" in prompt
+    assert "project overview" in prompt
+    assert "directory structure" in prompt
+    assert "key files" in prompt
+    assert "conventions" in prompt
+    assert "whats in flight" in prompt
+    assert "hands-off zones" in prompt
+
+
+def test_build_context_prompt_handles_existing_context_vs_fresh():
+    import agentplan.cli as agent_cli
+
+    project = {"title": "Prompt Project", "slug": "prompt-project", "dir": "/tmp/prompt-project"}
+    tickets = [{"num": 1, "title": "Setup", "status": "pending", "priority": "none"}]
+
+    fresh = agent_cli.build_context_prompt(project, tickets, existing_context=None)
+    assert "There is no existing context" in fresh
+    assert "None found." in fresh
+
+    updated = agent_cli.build_context_prompt(project, tickets, existing_context="Old context")
+    assert "Update and refresh the existing .agentplan.md" in updated
+    assert "Old context" in updated
+
+
 def test_context_command_includes_role_dependency_and_timeout():
     cli("create", "Context Details")
     cli("role", "add", "backend")

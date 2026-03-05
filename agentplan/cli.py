@@ -595,6 +595,60 @@ def _writer_agent_from_registry(conn):
     return db_get_agent_by_role(conn, "writing")
 
 
+def build_context_prompt(project, tickets, existing_context=None):
+    project_title = (project.get("title") if hasattr(project, "get") else project["title"]) if project else ""
+    project_slug = (project.get("slug") if hasattr(project, "get") else project["slug"]) if project else ""
+    project_dir = (project.get("dir") if hasattr(project, "get") else project["dir"]) if project else ""
+
+    ticket_lines = []
+    for t in tickets or []:
+        num = t.get("num") if hasattr(t, "get") else t["num"]
+        title = t.get("title") if hasattr(t, "get") else t["title"]
+        status = t.get("status") if hasattr(t, "get") else t["status"]
+        priority = t.get("priority") if hasattr(t, "get") else t["priority"]
+        ticket_lines.append(
+            f"- #{num}: {title} [status={status}, priority={_priority_label(priority)}]"
+        )
+    if not ticket_lines:
+        ticket_lines = ["- (no tickets yet)"]
+
+    context_section = "None found."
+    mode_instruction = "Create .agentplan.md from scratch."
+    if existing_context is None:
+        mode_instruction = (
+            "Create .agentplan.md from scratch. There is no existing context; write a complete fresh version."
+        )
+    else:
+        context_section = existing_context
+        mode_instruction = (
+            "Update and refresh the existing .agentplan.md using the latest codebase and ticket state."
+        )
+
+    return "\n".join(
+        [
+            "You are generating project context for agentplan.",
+            f"Project title: {project_title}",
+            f"Project slug: {project_slug}",
+            f"Directory path: {project_dir}",
+            "",
+            "Tickets:",
+            *ticket_lines,
+            "",
+            "Existing .agentplan.md content:",
+            context_section,
+            "",
+            "Instructions:",
+            "- Scan the codebase in the linked directory.",
+            "- Understand the project structure and key files.",
+            "- Write a comprehensive `.agentplan.md` in the project root.",
+            "- Cover: project overview, directory structure, key files, conventions, whats in flight, hands-off zones.",
+            f"- {mode_instruction}",
+            "- If existing context is present, preserve what is still correct and refresh stale sections.",
+            "- Return after saving `.agentplan.md`.",
+        ]
+    )
+
+
 def _render_prompt_agent_command(template, prompt, project_slug, project_dir):
     prompt_quoted = shlex.quote(prompt)
     command = (template or "").strip()
@@ -1238,50 +1292,9 @@ def cmd_context(args):
         "SELECT num, title, status, priority FROM tickets WHERE project_id=? ORDER BY num",
         (proj["id"],),
     ).fetchall()
-    ticket_lines = []
-    for t in tickets:
-        ticket_lines.append(
-            f"- #{t['num']}: {t['title']} [status={t['status']}, priority={_priority_label(t['priority'])}]"
-        )
-    if not ticket_lines:
-        ticket_lines = ["- (no tickets yet)"]
-
-    context_section = "None found."
-    mode_instructions = (
-        "Create .agentplan.md from scratch. Ignore any previous context and write a complete fresh version."
-    )
-    if existing_context:
-        context_section = existing_context
-        mode_instructions = (
-            "Update and refresh the existing .agentplan.md based on the current codebase and tickets."
-        )
+    prompt = build_context_prompt(proj, tickets, existing_context=existing_context)
     if getattr(args, "regenerate", False):
-        mode_instructions = (
-            "Regenerate from scratch. Ignore old context and write a brand new .agentplan.md."
-        )
-
-    prompt = "\n".join(
-        [
-            "You are generating project context for agentplan.",
-            f"Project title: {proj['title']}",
-            f"Project slug: {proj['slug']}",
-            f"Directory path: {project_dir}",
-            "",
-            "Tickets:",
-            *ticket_lines,
-            "",
-            "Existing .agentplan.md content:",
-            context_section,
-            "",
-            "Instructions:",
-            "- Scan this codebase in the linked directory.",
-            "- Understand project structure, key files, conventions, and current work in flight.",
-            "- Write or update `.agentplan.md` in the project root.",
-            "- Include: project overview, directory structure, key files, conventions, what's in flight, hands-off zones.",
-            f"- {mode_instructions}",
-            "- Return after saving the file.",
-        ]
-    )
+        prompt = f"{prompt}\n- Regenerate from scratch. Ignore old context and write a brand new .agentplan.md.\n"
     command = _render_prompt_agent_command(
         writer_agent.get("command_template"),
         prompt,
