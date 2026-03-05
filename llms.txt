@@ -1,14 +1,17 @@
 # agentplan
 
-> A shared to-do list for AI agents. Zero dependencies, pure Python.
+> A shared to-do list for AI agents. Zero dependencies, pure Python. v0.5.0.
 
-agentplan is a CLI task queue that gives AI agents a persistent, dependency-aware ticket system. Any agent that can run shell commands can use it — no SDK, no framework, no runtime required.
+agentplan is a CLI task queue that gives AI agents a persistent, dependency-aware ticket system with role-based routing, event hooks, and a dashboard control plane. Any agent that can run shell commands can use it — no SDK, no framework, no runtime required.
 
 ## When to use agentplan
 
 Use agentplan when you need to:
 - Coordinate multiple AI agents working on the same project
+- Route tickets to the right agent based on roles (coding, research, writing, etc.)
 - Break complex work into tickets with dependencies that auto-unblock
+- Set up event hooks that fire when tickets complete (webhooks, commands, agent chains)
+- Handle crashed agents with claim timeouts and automatic reaping
 - Track which agent did what (attribution on every ticket)
 - Run autonomous build loops where agents claim and complete work
 - Give an agent a structured backlog instead of free-form instructions
@@ -22,6 +25,9 @@ pip install agentplan
 ## Quick start (copy-paste this)
 
 ```bash
+# Auto-detect installed AI tools
+agentplan init
+
 # Create a project with tickets
 agentplan create "Build my app" \
   --ticket "Set up database schema" \
@@ -31,12 +37,19 @@ agentplan create "Build my app" \
 # Add dependencies — tests need API
 agentplan depend build-my-app 3 --on 2
 
-# Get the next unblocked ticket
-agentplan next build-my-app
-# → [1] Set up database schema
+# Tag tickets with roles for routing
+agentplan ticket edit build-my-app 1 --tag role:coding
+agentplan ticket edit build-my-app 2 --tag role:coding
+
+# Route a ticket to the right agent
+agentplan route build-my-app 1
+# → codex (matched role:coding)
+
+# Claim with a timeout (agent has 30 min)
+agentplan claim build-my-app --agent codex --timeout 30
 
 # Mark it done
-agentplan ticket done build-my-app 1 --agent my-agent --note "Schema created"
+agentplan ticket done build-my-app 1 --agent codex
 
 # Check status
 agentplan status build-my-app
@@ -47,7 +60,7 @@ agentplan status build-my-app
 ```
 1. ticket = agentplan next <project>        # What should I work on?
 2. [do the work]                             # Agent executes the task
-3. agentplan ticket done <project> <id>      # Mark complete
+3. agentplan ticket done <project> <id>      # Mark complete (hooks fire)
 4. agentplan ticket add <project> "..."      # Add follow-up work if needed
 5. repeat until queue is empty
 ```
@@ -56,15 +69,74 @@ agentplan status build-my-app
 
 | Command | What it does |
 |---------|-------------|
+| `agentplan init` | Auto-detect installed AI tools and register agents |
 | `agentplan create <title>` | Create a project |
 | `agentplan ticket add <project> <title>` | Add a ticket (supports --priority, --tag, --desc, --due) |
-| `agentplan next <project>` | Get next unblocked ticket (respects priority + deps) |
+| `agentplan next <project>` | Get next unblocked ticket (auto-reaps stale claims first) |
 | `agentplan ticket done <project> <id>` | Mark ticket done (supports --agent, --note) |
+| `agentplan ticket block <project> <id>` | Mark ticket blocked (--reason) |
+| `agentplan ticket fail <project> <id>` | Mark ticket failed (--reason) |
 | `agentplan depend <project> <id> --on <id>` | Add dependency |
 | `agentplan status <project>` | Show project progress |
+| `agentplan claim <project>` | Atomically claim next ticket (--timeout for expiry) |
+| `agentplan reap <project>` | Reclaim expired/stale claims |
+| `agentplan role add <name>` | Create a role (coding, research, etc.) |
+| `agentplan agent add <name>` | Register an agent with command template and roles |
+| `agentplan route <project> <id>` | Route a ticket to the matching agent |
+| `agentplan hook add <project>` | Add on-complete hook (command, webhook, or chain) |
 | `agentplan search "<query>"` | Search tickets across all projects |
-| `agentplan claim <project>` | Atomically claim next ticket (parallel-safe) |
-| `agentplan dashboard` | Launch web UI (requires flask) |
+| `agentplan dashboard` | Launch web UI with control plane |
+
+## Roles & Routing
+
+```bash
+# Define roles
+agentplan role add coding --description "Code implementation"
+agentplan role add research --description "Research tasks"
+
+# Register agents with command templates and roles
+agentplan agent add codex --command 'codex exec {ticket}' --roles coding --priority 1
+agentplan agent add claude --command 'claude -m {ticket}' --roles research,writing --priority 2
+
+# Tag tickets → agentplan routes to the right agent
+agentplan ticket edit myproject 1 --tag role:coding
+agentplan route myproject 1
+# → codex
+```
+
+## Event Hooks
+
+```bash
+# Fire a command when any ticket completes
+agentplan hook add myproject --event on-complete --type command --target 'echo {ticket} done!'
+
+# Fire a webhook
+agentplan hook add myproject --event on-complete --type webhook --target 'https://hooks.slack.com/...'
+
+# Chain to next agent
+agentplan hook add myproject --event on-complete --type chain --target 'agentplan claim myproject --agent next'
+```
+
+## Stale Claim Handling
+
+```bash
+# Claim with timeout
+agentplan claim myproject --agent builder --timeout 30
+
+# Manually reap expired claims
+agentplan reap myproject
+
+# Auto-reap happens on every `next` call
+agentplan next myproject
+```
+
+## Ticket States
+
+```
+pending → in-progress → done | blocked | failed | needs-review
+blocked → pending | in-progress
+failed → pending | in-progress
+```
 
 ## Output formats
 
@@ -74,17 +146,21 @@ agentplan status build-my-app
 
 ## Features
 
-- Dependency graph with auto-unblock
+- Dependency graph with auto-unblock and cycle detection
+- Role-based routing with agent priorities
+- Agent registry with command templates
+- Event hooks (commands, webhooks, chains)
+- Stale claim handling with timeouts and auto-reap
+- Validated state machine (blocked, failed, needs-review)
+- Auto-detection of installed AI tools
+- Dashboard control plane (Start/Stop, Kanban, Agents page, review panel)
 - Priority levels (high/medium/low) with smart ordering
-- Tags for filtering (--tag backend,urgent)
-- Subtasks within tickets
-- Due dates with overdue prioritization
-- Audit log tracking all state transitions
-- Agent attribution (--agent flag on start/done)
+- Tags for filtering and role routing
+- Subtasks, due dates, audit logs, agent attribution
 - Parallel-safe claims (SQLite BEGIN IMMEDIATE)
-- Built-in web dashboard with live SSE updates
 - Shell completions (bash/zsh/fish)
 - Zero runtime dependencies (Flask optional for dashboard)
+- 186 tests
 
 ## Configuration
 

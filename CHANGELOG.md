@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.0 - 2026-03-04
+
+### Added
+- **Roles system** — first-class role objects (coding, research, writing, etc.) with full CRUD operations
+- **Agent registry** — register agents with command templates, assigned roles, and priority ordering
+- **Auto-detection** — `agentplan init` scans for installed AI tools (Claude, Codex, Aider, Cursor, OpenClaw) and auto-registers them
+- **Ticket routing** — `agentplan route` matches ticket role tags to registered agents; priority-based selection when multiple agents handle the same role
+- **Event hooks** — on-complete hooks supporting commands, webhooks, and agent chains; hooks fire post-commit for data integrity
+- **Stale claim handling** — `--timeout` flag on `claim`, `agentplan reap` command, auto-reap on `next`
+- **Expanded state machine** — new ticket states: `blocked`, `failed`, `needs-review` with validated transitions; invalid transitions rejected with error messages
+- **Dashboard control plane** — Start Work / Stop buttons for chain controller, real-time progress view, 6-column full-width Kanban board
+- **Dashboard Agents page** — configure agents, assign roles, edit command templates, auto-detected tools panel
+- **Dashboard review panel** — Mark Done / Retry / Skip actions for failed and needs-review tickets
+- **Agent chaining** — sequential chain controller: route → spawn → monitor → repeat
+- **Terminal spawning** — `route --terminal` opens agent in a visible terminal window
+- **Auto-tagging** — classify untagged tickets into roles using a configured AI tool
+- **Agent command template validation** — requires real placeholder patterns (`{ticket}`, `{{ticket}}`, etc.)
+- **Agent priority routing** — lower number = higher priority; `ORDER BY priority ASC`
+- 186 tests (was 104)
+
+### Changed
+- **Dashboard refactored into package** — split monolithic `dashboard.py` into `dashboard/__init__.py`, `routes.py`, `templates.py`, `sse.py`
+- Dashboard status constants now derive from single source of truth in `db.py`
+- Kanban grid expanded from 4 to 6 columns (full-width layout)
+- Dashboard binds to `127.0.0.1` by default (was `0.0.0.0`); use `--host` to expose
+- README rewritten for v0.5 with roles, routing, hooks, stale claims, and state machine documentation
+- Marketing site updated with v0.5 features, comparison table, and terminal demo
+- `llms.txt` and `llms-full.txt` updated with complete v0.5 command reference
+
+### Security
+- Hook command execution switched from `shell=True` to `shell=False` with `shlex.split()` — eliminates command injection
+- Dashboard CSRF protection — Origin/Referer header checking on all state-mutating endpoints
+- Dashboard stop command no longer uses `shell=True` pipeline
+- Chain controller guards against duplicate runners (409 Conflict on double-start)
+
+### Fixed
+- `claimed_at` and `claim_timeout` properly enforced in claim/reap logic
+- Reclaim history records correct state (`pending`, not `reclaimed`)
+- Dashboard project stats and Kanban grouping include all ticket states
+- Dashboard state transitions validated (same rules as CLI)
+- Dead imports cleaned across cli.py, db.py, dashboard/routes.py
+- Connection handling standardized (context managers over manual close)
+- `--timeout` rejects negative/zero values
+- Mixed-case role tags route correctly (case-insensitive matching)
+
 ## v0.4.3 - 2026-03-01
 
 ### Changed

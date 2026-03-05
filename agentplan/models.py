@@ -16,6 +16,7 @@ class Project:
     title: str
     status: str
     notes: Optional[str]
+    timeout_sec: Optional[int]
     created_at: str
     updated_at: str
 
@@ -27,6 +28,7 @@ class Project:
             title=str(row["title"]),
             status=str(row["status"]),
             notes=row["notes"],
+            timeout_sec=row["timeout_sec"] if "timeout_sec" in row else None,
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),
         )
@@ -47,6 +49,9 @@ class Ticket:
     started_by: Optional[str]
     done_by: Optional[str]
     due_date: Optional[str]
+    claimed_at: Optional[str]
+    claim_timeout: Optional[int]
+    timeout_sec: Optional[int]
     created_at: str
     completed_at: Optional[str]
     close_note: Optional[str] = None
@@ -67,6 +72,9 @@ class Ticket:
             started_by=row["started_by"],
             done_by=row["done_by"],
             due_date=row["due_date"],
+            claimed_at=row["claimed_at"] if "claimed_at" in row else None,
+            claim_timeout=row["claim_timeout"] if "claim_timeout" in row else None,
+            timeout_sec=row["timeout_sec"] if "timeout_sec" in row else None,
             created_at=str(row["created_at"]),
             completed_at=row["completed_at"],
             close_note=row["close_note"] if "close_note" in row else None,
@@ -115,4 +123,21 @@ class HistoryEntry:
         )
 
 
-__all__ = ["Project", "Ticket", "Subtask", "HistoryEntry", "RowLike"]
+@dataclass(frozen=True)
+class Role:
+    id: int
+    name: str
+    description: Optional[str]
+    created_at: str
+
+    @classmethod
+    def from_row(cls, row: RowLike) -> "Role":
+        return cls(
+            id=int(row["id"]),
+            name=str(row["name"]),
+            description=row["description"],
+            created_at=str(row["created_at"]),
+        )
+
+
+__all__ = ["Project", "Ticket", "Subtask", "HistoryEntry", "Role", "RowLike"]

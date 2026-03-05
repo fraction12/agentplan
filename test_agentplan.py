@@ -102,6 +102,77 @@ def test_invalid_arguments_are_human_friendly():
 
 
 # ---------------------------------------------------------------------------
+# Init auto-detection
+# ---------------------------------------------------------------------------
+
+def test_init_creates_agents_for_detected_tools():
+    def fake_run(cmd, capture_output=True, text=True):
+        tool = cmd[-1]
+        return type("Result", (), {"returncode": 0 if tool == "claude" else 1})()
+
+    with patch("agentplan.cli.subprocess.run", side_effect=fake_run):
+        out, err, code = cli("init")
+
+    assert code == 0, err
+    assert "Auto-detected agents: claude" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT name, command_template FROM agents WHERE name='claude'").fetchone()
+    conn.close()
+    assert row is not None
+    assert row["command_template"] == "claude -p {ticket}"
+
+
+def test_init_detects_multiple_tools():
+    detected = {"claude", "codex", "openclaw"}
+
+    def fake_run(cmd, capture_output=True, text=True):
+        tool = cmd[-1]
+        return type("Result", (), {"returncode": 0 if tool in detected else 1})()
+
+    with patch("agentplan.cli.subprocess.run", side_effect=fake_run):
+        out, err, code = cli("init")
+
+    assert code == 0, err
+    assert "Auto-detected agents:" in out
+    assert "claude" in out and "codex" in out and "openclaw" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute("SELECT name FROM agents ORDER BY name").fetchall()
+    conn.close()
+    assert [r["name"] for r in rows] == ["claude", "codex", "openclaw"]
+
+
+def test_init_skips_undetected_tools():
+    with patch("agentplan.cli.subprocess.run", return_value=type("Result", (), {"returncode": 1})()):
+        out, err, code = cli("init")
+
+    assert code == 0, err
+    assert "Initialized agentplan database" in out
+    assert "Auto-detected agents:" not in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute("SELECT name FROM agents").fetchall()
+    conn.close()
+    assert rows == []
+
+
+def test_init_detect_installed_tools_handles_subprocess_exception():
+    import agentplan.cli as agent_cli
+
+    def fake_run(cmd, capture_output=True, text=True):
+        tool = cmd[-1]
+        if tool == "codex":
+            raise RuntimeError("boom")
+        return type("Result", (), {"returncode": 0 if tool == "claude" else 1})()
+
+    with patch("agentplan.cli.subprocess.run", side_effect=fake_run):
+        tools = agent_cli._detect_installed_tools()
+
+    assert tools == ["claude"]
+
+
+# ---------------------------------------------------------------------------
 # Project lifecycle
 # ---------------------------------------------------------------------------
 
@@ -265,6 +336,88 @@ def test_claim_concurrency_only_claims_each_ticket_once():
     conn.close()
     assert [r["status"] for r in rows] == ["in-progress", "in-progress"]
     assert {r["started_by"] for r in rows} == {"dash-a", "dash-b"}
+
+
+def test_claim_sets_timeout_when_provided():
+    cli("create", "Claim Timeout Project")
+    cli("ticket", "add", "claim-timeout-project", "Ticket A")
+    out, err, code = cli("claim", "claim-timeout-project", "--agent", "dash", "--timeout", "45")
+    assert code == 0, err
+    assert "claimed ticket #1" in out.lower()
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute(
+        "SELECT status, started_by, claim_timeout FROM tickets WHERE project_id=1 AND num=1"
+    ).fetchone()
+    conn.close()
+    assert row["status"] == "in-progress"
+    assert row["started_by"] == "dash"
+    assert row["claim_timeout"] == 45
+
+
+@pytest.mark.parametrize("timeout", ["-5", "0"])
+def test_claim_rejects_non_positive_timeout(timeout):
+    cli("create", "Claim Invalid Timeout Project")
+    cli("ticket", "add", "claim-invalid-timeout-project", "Ticket A")
+    out, err, code = cli("claim", "claim-invalid-timeout-project", "--agent", "dash", "--timeout", timeout)
+    assert code == 2
+    assert out == ""
+    assert "--timeout must be a positive integer" in err
+
+
+def test_claim_rejects_non_integer_timeout_values():
+    cli("create", "Claim Invalid Timeout Type Project")
+    cli("ticket", "add", "claim-invalid-timeout-type-project", "Ticket A")
+
+    out_abc, err_abc, code_abc = cli(
+        "claim", "claim-invalid-timeout-type-project", "--agent", "dash", "--timeout", "abc"
+    )
+    assert code_abc == 2
+    assert out_abc == ""
+    assert "Invalid arguments:" in err_abc
+    assert "argument --timeout: invalid int value: 'abc'" in err_abc
+
+    out_float, err_float, code_float = cli(
+        "claim", "claim-invalid-timeout-type-project", "--agent", "dash", "--timeout", "1.5"
+    )
+    assert code_float == 2
+    assert out_float == ""
+    assert "Invalid arguments:" in err_float
+    assert "argument --timeout: invalid int value: '1.5'" in err_float
+
+
+def test_claim_reclaims_expired_in_progress_ticket():
+    cli("create", "Claim Reclaim Project")
+    cli("ticket", "add", "claim-reclaim-project", "Ticket A")
+    cli("claim", "claim-reclaim-project", "--agent", "dash-a", "--timeout", "30")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    conn.execute(
+        """
+        UPDATE tickets
+        SET claimed_at=datetime('now', '-120 seconds')
+        WHERE project_id=1 AND num=1
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    out, err, code = cli("claim", "claim-reclaim-project", "--agent", "dash-b")
+    assert code == 0, err
+    assert "claimed ticket #1" in out.lower()
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    ticket = conn.execute(
+        "SELECT status, started_by FROM tickets WHERE project_id=1 AND num=1"
+    ).fetchone()
+    history = conn.execute(
+        "SELECT old_state, new_state FROM ticket_history WHERE ticket_id=1 ORDER BY id"
+    ).fetchall()
+    conn.close()
+
+    assert ticket["status"] == "in-progress"
+    assert ticket["started_by"] == "dash-b"
+    assert ("in-progress", "pending") in [(h["old_state"], h["new_state"]) for h in history]
 
 
 def test_ticket_done_with_agent_stores_done_by_and_shows_in_status():
@@ -452,7 +605,7 @@ def test_ticket_edit_requires_edit_fields():
     assert code == 2
     assert out == ""
     assert "No updates provided." in err
-    assert "Use at least one of: `--title`, `--desc`, `--priority`, `--tag`, `--due`." in err
+    assert "Use at least one of: `--title`, `--desc`, `--priority`, `--tag`, `--due`, `--timeout`." in err
 
 
 def test_next_orders_by_priority():
@@ -847,6 +1000,51 @@ def test_history_command_shows_ticket_audit_trail():
     assert "in-progress -> done" in out
 
 
+def test_context_command_outputs_project_ticket_and_commands():
+    cli("create", "Context Project")
+    cli("ticket", "add", "context-project", "Generate context block", "--desc", "Include all needed fields.")
+
+    out, err, code = cli("context", "context-project", "1")
+    assert code == 0, err
+    assert "=== AGENTPLAN CONTEXT BLOCK ===" in out
+    assert "Project: context-project (Context Project) [active]" in out
+    assert "Ticket: #1 — Generate context block" in out
+    assert "agentplan ticket start context-project 1 --agent <name>" in out
+    assert "agentplan ticket done context-project 1 --agent <name>" in out
+    assert "agentplan log context-project 1 \"message\"" in out
+
+
+def test_context_command_includes_role_dependency_and_timeout():
+    cli("create", "Context Details")
+    cli("role", "add", "backend")
+    cli("ticket", "add", "context-details", "Foundation task")
+    cli("ticket", "done", "context-details", "1")
+    cli("ticket", "add", "context-details", "Dependent task", "--depends", "1", "--tag", "role:backend")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    conn.execute("UPDATE tickets SET claim_timeout=90 WHERE project_id=1 AND num=2")
+    conn.commit()
+    conn.close()
+
+    out, err, code = cli("context", "context-details", "2", "--agent", "dash")
+    assert code == 0, err
+    assert "Role: backend" in out
+    assert "#1: Foundation task [done]" in out
+    assert "Claim timeout: 90 seconds" in out
+    assert "agentplan ticket start context-details 2 --agent dash" in out
+
+
+def test_context_command_uses_project_notes_for_working_dir():
+    cli("create", "Workdir Context")
+    cli("note", "workdir-context", "working_dir: /tmp/my-agent-workspace")
+    cli("ticket", "add", "workdir-context", "Do work")
+
+    out, err, code = cli("context", "workdir-context", "1")
+    assert code == 0, err
+    assert "Working dir: /tmp/my-agent-workspace" in out
+    assert "DB: /tmp/test_agentplan.db" in out
+
+
 # ---------------------------------------------------------------------------
 # Shell completion
 # ---------------------------------------------------------------------------
@@ -969,6 +1167,21 @@ def test_dashboard_ticket_detail_includes_dependencies_subtasks_history_and_clos
     assert "Close notes" in body
     assert "Shipped" in body
     assert "Back to project" in body
+
+
+def test_dashboard_ticket_retry_rejects_invalid_transition():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Invalid Retry")
+    cli("ticket", "add", "web-invalid-retry", "Already done")
+    cli("ticket", "done", "web-invalid-retry", "1")
+
+    client = app.test_client()
+    resp = client.post("/api/ticket/web-invalid-retry/1/retry")
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert "Cannot transition from terminal state" in payload["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -1158,6 +1371,47 @@ def test_dashboard_activity_page_returns_html():
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "<html" in body.lower() or "<!doctype" in body.lower()
+
+
+def test_dashboard_agents_page_supports_crud_and_detected_tools():
+    from agentplan.dashboard import create_app
+
+    cli("role", "add", "backend")
+
+    test_app = create_app()
+    client = test_app.test_client()
+
+    add_initial = client.post(
+        "/agents/add",
+        data={"name": "dash", "command_template": "codex exec {ticket}", "roles": ["backend"]},
+    )
+    assert add_initial.status_code == 200
+
+    get_resp = client.get("/agents")
+    assert get_resp.status_code == 200
+    get_body = get_resp.get_data(as_text=True)
+    assert "Configured Agents" in get_body
+    assert "Detected Tools" in get_body
+    assert "dash" in get_body
+
+    edit_resp = client.post(
+        "/agents/dash/edit",
+        data={"command_template": "codex exec updated", "roles": ["backend"]},
+    )
+    assert edit_resp.status_code == 200
+    assert "codex exec updated" in edit_resp.get_data(as_text=True)
+
+    add_resp = client.post(
+        "/agents/add",
+        data={"name": "claude", "command_template": "claude -p {ticket}", "roles": ["backend"]},
+    )
+    assert add_resp.status_code == 200
+    assert "claude" in add_resp.get_data(as_text=True)
+
+    delete_resp = client.post("/agents/claude/delete")
+    assert delete_resp.status_code == 200
+    deleted_body = delete_resp.get_data(as_text=True)
+    assert "claude -p {ticket}" not in deleted_body
 
 
 def test_dashboard_events_sse_content_type():
@@ -1437,3 +1691,1276 @@ def test_dashboard_stop_when_not_running():
     assert code == 0
     assert "No dashboard running" in out
     assert "Traceback" not in err
+
+
+# ---------------------------------------------------------------------------
+# Ticket 30: Role/claim-timeout/state-transition coverage
+# ---------------------------------------------------------------------------
+
+def test_role_add_list_remove_round_trip():
+    out, err, code = cli("role", "add", "backend", "--description", "Backend engineer")
+    assert code == 0, err
+    assert "Added role 'backend'." in out
+
+    out, err, code = cli("role", "list")
+    assert code == 0, err
+    assert "backend" in out
+    assert "Backend engineer" in out
+
+    out, err, code = cli("role", "remove", "backend")
+    assert code == 0, err
+    assert "Removed role 'backend'." in out
+
+    out, err, code = cli("role", "list")
+    assert code == 0, err
+    assert "No roles found." in out
+
+
+def test_role_add_duplicate_name_fails_gracefully():
+    out1, err1, code1 = cli("role", "add", "qa")
+    assert code1 == 0, err1
+    assert "Added role 'qa'." in out1
+
+    out2, err2, code2 = cli("role", "add", "qa")
+    assert code2 == 2
+    assert out2 == ""
+    assert "Could not add role 'qa'" in err2
+    assert "UNIQUE constraint failed" in err2
+
+
+def test_ticket_add_rejects_undefined_prefixed_role_tag():
+    cli("create", "Role Validation Project")
+    cli("role", "add", "backend")
+
+    out, err, code = cli("ticket", "add", "role-validation-project", "Implement API", "--tag", "role:frontend")
+    assert code == 2
+    assert out == ""
+    assert "role 'frontend' is not registered" in err.lower()
+
+
+def test_ticket_add_accepts_registered_prefixed_role_tag():
+    cli("create", "Registered Role Tag Project")
+    cli("role", "add", "backend")
+
+    out, err, code = cli("ticket", "add", "registered-role-tag-project", "Implement API", "--tag", "role:backend")
+    assert code == 0, err
+    assert "Added ticket #1" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute(
+        "SELECT tags FROM tickets WHERE project_id=1 AND num=1"
+    ).fetchone()
+    conn.close()
+    assert row["tags"] == "role:backend"
+
+
+def test_ticket_add_accepts_plain_non_role_tag():
+    cli("create", "Plain Tag Project")
+
+    out, err, code = cli("ticket", "add", "plain-tag-project", "Triage Bug", "--tag", "urgent")
+    assert code == 0, err
+    assert "Added ticket #1" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute(
+        "SELECT tags FROM tickets WHERE project_id=1 AND num=1"
+    ).fetchone()
+    conn.close()
+    assert row["tags"] == "urgent"
+
+
+def test_ticket_edit_rejects_undefined_prefixed_role_tag():
+    cli("create", "Role Edit Validation Project")
+    cli("role", "add", "backend")
+    cli("ticket", "add", "role-edit-validation-project", "Implement API")
+
+    out, err, code = cli("ticket", "edit", "role-edit-validation-project", "1", "--tag", "role:frontend")
+    assert code == 2
+    assert out == ""
+    assert "role 'frontend' is not registered" in err.lower()
+
+
+def test_ticket_add_accepts_mixed_case_role_tag():
+    cli("create", "Mixed Case Role Add Project")
+    cli("role", "add", "backend")
+
+    out, err, code = cli("ticket", "add", "mixed-case-role-add-project", "Implement API", "--tag", "role:BackEnd")
+    assert code == 0, err
+    assert "Added ticket #1" in out
+
+
+def test_ticket_edit_accepts_mixed_case_role_tag():
+    cli("create", "Mixed Case Role Edit Project")
+    cli("role", "add", "backend")
+    cli("ticket", "add", "mixed-case-role-edit-project", "Implement API")
+
+    out, err, code = cli("ticket", "edit", "mixed-case-role-edit-project", "1", "--tag", "role:BackEnd")
+    assert code == 0, err
+    assert "updated ticket #1" in out.lower()
+
+
+def test_ticket_add_accepts_uppercase_role_tag():
+    cli("create", "Uppercase Role Add Project")
+    cli("role", "add", "backend")
+
+    out, err, code = cli("ticket", "add", "uppercase-role-add-project", "Implement API", "--tag", "role:BACKEND")
+    assert code == 0, err
+    assert "Added ticket #1" in out
+
+
+def test_claim_sets_claimed_at_timestamp():
+    cli("create", "Claimed At Project")
+    cli("ticket", "add", "claimed-at-project", "Ticket A")
+
+    out, err, code = cli("claim", "claimed-at-project", "--agent", "dash")
+    assert code == 0, err
+    assert "claimed ticket #1" in out.lower()
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute(
+        "SELECT status, started_by, claimed_at FROM tickets WHERE project_id=1 AND num=1"
+    ).fetchone()
+    conn.close()
+
+    assert row["status"] == "in-progress"
+    assert row["started_by"] == "dash"
+    assert row["claimed_at"] is not None
+
+
+def test_claim_timeout_expiry_makes_ticket_reclaimable_by_next_claim():
+    cli("create", "Claim Expiry Project")
+    cli("ticket", "add", "claim-expiry-project", "Ticket A")
+    cli("claim", "claim-expiry-project", "--agent", "dash-a", "--timeout", "1")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    conn.execute(
+        """
+        UPDATE tickets
+        SET claimed_at=datetime('now', '-10 seconds')
+        WHERE project_id=1 AND num=1
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    out, err, code = cli("claim", "claim-expiry-project", "--agent", "dash-b")
+    assert code == 0, err
+    assert "claimed ticket #1" in out.lower()
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status, started_by FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["status"] == "in-progress"
+    assert row["started_by"] == "dash-b"
+
+
+def test_reap_command_if_available_reclaims_expired_tickets():
+    cli("create", "Reap Project")
+    cli("ticket", "add", "reap-project", "Ticket A")
+    cli("claim", "reap-project", "--agent", "dash", "--timeout", "1")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    conn.execute(
+        """
+        UPDATE tickets
+        SET claimed_at=datetime('now', '-10 seconds')
+        WHERE project_id=1 AND num=1
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    out, err, code = cli("reap", "reap-project")
+    assert code == 0, err
+    assert "reclaimed" in out.lower()
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute(
+        "SELECT status, claimed_at, claim_timeout FROM tickets WHERE project_id=1 AND num=1"
+    ).fetchone()
+    conn.close()
+    assert row["status"] == "pending"
+    assert row["claimed_at"] is None
+    assert row["claim_timeout"] is None
+
+
+def test_reap_command_reports_when_no_expired_claims():
+    cli("create", "Reap None Project")
+    cli("ticket", "add", "reap-none-project", "Ticket A")
+
+    out, err, code = cli("reap", "reap-none-project")
+    assert code == 0, err
+    assert "no expired claims" in out.lower()
+
+
+def test_ticket_failed_and_needs_review_states_show_in_status_and_can_move_to_in_progress():
+    cli("create", "Failure Review Project")
+    cli("ticket", "add", "failure-review-project", "Fails")
+    cli("ticket", "add", "failure-review-project", "Needs review")
+
+    cli("ticket", "start", "failure-review-project", "1", "--agent", "dash")
+    cli("ticket", "start", "failure-review-project", "2", "--agent", "dash")
+
+    out1, err1, code1 = cli("ticket", "fail", "failure-review-project", "1", "--reason", "test failure")
+    assert code1 == 0, err1
+    assert "→ failed" in out1
+
+    out2, err2, code2 = cli("ticket", "review", "failure-review-project", "2", "--reason", "needs QA")
+    assert code2 == 0, err2
+    assert "→ needs-review" in out2
+
+    status_out, status_err, status_code = cli("status", "failure-review-project")
+    assert status_code == 0, status_err
+    assert "failed" in status_out
+    assert "needs-review" in status_out
+
+    out3, err3, code3 = cli("ticket", "start", "failure-review-project", "1", "--agent", "dash")
+    assert code3 == 0, err3
+    assert "→ in-progress" in out3
+
+    out4, err4, code4 = cli("ticket", "start", "failure-review-project", "2", "--agent", "dash")
+    assert code4 == 0, err4
+    assert "→ in-progress" in out4
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute("SELECT num, status FROM tickets WHERE project_id=1 ORDER BY num").fetchall()
+    conn.close()
+    assert [r["status"] for r in rows] == ["in-progress", "in-progress"]
+
+# ---------------------------------------------------------------------------
+# Ticket 5: Event hooks
+# ---------------------------------------------------------------------------
+
+def test_hook_add_list_remove_round_trip():
+    cli("create", "Hook Project")
+
+    out_add, err_add, code_add = cli(
+        "hook", "add", "hook-project",
+        "--event", "on-complete",
+        "--type", "webhook",
+        "--target", "https://example.com/hook",
+    )
+    assert code_add == 0, err_add
+    assert "Added hook #" in out_add
+
+    out_list, err_list, code_list = cli("hook", "list", "hook-project")
+    assert code_list == 0, err_list
+    assert "on-complete" in out_list
+    assert "webhook" in out_list
+    assert "https://example.com/hook" in out_list
+
+    out_remove, err_remove, code_remove = cli("hook", "remove", "hook-project", "1")
+    assert code_remove == 0, err_remove
+    assert "Removed hook #1" in out_remove
+
+    out_list2, err_list2, code_list2 = cli("hook", "list", "hook-project")
+    assert code_list2 == 0, err_list2
+    assert "No hooks found." in out_list2
+
+
+def test_ticket_done_fires_webhook_hook():
+    cli("create", "Webhook Hook Project")
+    cli("ticket", "add", "webhook-hook-project", "Ship it")
+    cli(
+        "hook", "add", "webhook-hook-project",
+        "--type", "webhook",
+        "--target", "https://example.com/webhook",
+    )
+
+    with patch("agentplan.cli.urllib.request.urlopen") as mock_urlopen:
+        out, err, code = cli("ticket", "done", "webhook-hook-project", "1", "--agent", "dash")
+
+    assert code == 0, err
+    assert "Ticket #1" in out
+    assert mock_urlopen.call_count == 1
+    req = mock_urlopen.call_args[0][0]
+    payload = json.loads(req.data.decode("utf-8"))
+    assert payload == {
+        "ticket_id": 1,
+        "ticket_title": "Ship it",
+        "project": "webhook-hook-project",
+        "status": "done",
+        "agent": "dash",
+    }
+
+
+def test_ticket_done_hooks_fire_after_commit():
+    cli("create", "Post Commit Hook Project")
+    cli("ticket", "add", "post-commit-hook-project", "Ship it")
+    cli(
+        "hook", "add", "post-commit-hook-project",
+        "--type", "webhook",
+        "--target", "https://example.com/webhook",
+    )
+
+    seen_statuses = []
+
+    def _mock_urlopen(req, timeout=5):
+        payload = json.loads(req.data.decode("utf-8"))
+        conn = agentplan.get_connection("/tmp/test_agentplan.db")
+        row = conn.execute(
+            """
+            SELECT t.status
+            FROM tickets t
+            JOIN projects p ON p.id = t.project_id
+            WHERE p.slug=? AND t.num=?
+            """,
+            (payload["project"], payload["ticket_id"]),
+        ).fetchone()
+        conn.close()
+        seen_statuses.append(row["status"] if row else None)
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        return _Resp()
+
+    with patch("agentplan.cli.urllib.request.urlopen", side_effect=_mock_urlopen) as mock_urlopen:
+        out, err, code = cli("ticket", "done", "post-commit-hook-project", "1", "--agent", "dash")
+
+    assert code == 0, err
+    assert "Ticket #1" in out
+    assert mock_urlopen.call_count == 1
+    assert seen_statuses == ["done"]
+
+
+def test_ticket_done_fires_command_hook_with_env_vars():
+    cli("create", "Command Hook Project")
+    cli("ticket", "add", "command-hook-project", "Deploy")
+    cli(
+        "hook", "add", "command-hook-project",
+        "--type", "command",
+        "--target", "echo hello",
+    )
+
+    with patch("agentplan.cli.subprocess.run") as mock_run:
+        out, err, code = cli("ticket", "done", "command-hook-project", "1", "--agent", "dash")
+
+    assert code == 0, err
+    assert "Ticket #1" in out
+    assert mock_run.call_count == 1
+    kwargs = mock_run.call_args.kwargs
+    env = kwargs["env"]
+    assert env["AGENTPLAN_TICKET_ID"] == "1"
+    assert env["AGENTPLAN_TITLE"] == "Deploy"
+    assert env["AGENTPLAN_PROJECT"] == "command-hook-project"
+    assert env["AGENTPLAN_STATUS"] == "done"
+    assert env["AGENTPLAN_AGENT"] == "dash"
+
+
+def test_hook_add_allows_command_target_with_shell_tokens_when_shell_is_disabled():
+    cli("create", "Command Hook Validation Project")
+    out, err, code = cli(
+        "hook", "add", "command-hook-validation-project",
+        "--type", "command",
+        "--target", "echo ok; rm -rf /",
+    )
+    assert code == 0, err
+    assert "Added hook #" in out
+
+
+def test_hook_add_accepts_chain_type_with_empty_target():
+    cli("create", "Chain Hook Add Project")
+
+    out, err, code = cli(
+        "hook", "add", "chain-hook-add-project",
+        "--type", "chain",
+        "--event", "on-complete",
+        "--target", "",
+    )
+
+    assert code == 0, err
+    assert "Added hook #" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute(
+        """
+        SELECT h.hook_type, h.event, h.target
+        FROM hooks h
+        JOIN projects p ON p.id = h.project_id
+        WHERE p.slug=?
+        """,
+        ("chain-hook-add-project",),
+    ).fetchone()
+    conn.close()
+
+    assert row is not None
+    assert row["hook_type"] == "chain"
+    assert row["event"] == "on-complete"
+    assert row["target"] == ""
+
+
+def test_ticket_done_fires_chain_hook_and_spawns_next_ticket_command():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Chain Hook Trigger Project")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
+    cli("ticket", "add", "chain-hook-trigger-project", "First")
+    cli("ticket", "add", "chain-hook-trigger-project", "Second")
+    cli(
+        "hook", "add", "chain-hook-trigger-project",
+        "--type", "chain",
+        "--event", "on-complete",
+        "--target", "",
+    )
+
+    with patch("agentplan.cli.spawn_terminal", return_value=4321) as mock_spawn:
+        out, err, code = cli("ticket", "done", "chain-hook-trigger-project", "1", "--agent", "dash")
+
+    assert code == 0, err
+    assert "Ticket #1" in out
+    mock_spawn.assert_called_once_with("echo run chain-hook-trigger-project 2", title="agentplan:dash")
+
+
+def test_ticket_done_executes_persisted_command_hook_without_shell():
+    cli("create", "Unsafe Persisted Command Hook Project")
+    cli("ticket", "add", "unsafe-persisted-command-hook-project", "Deploy")
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    proj = conn.execute(
+        "SELECT id FROM projects WHERE slug=?",
+        ("unsafe-persisted-command-hook-project",),
+    ).fetchone()
+    conn.execute(
+        "INSERT INTO hooks (project_id, event, hook_type, target, created_at) VALUES (?,?,?,?,?)",
+        (proj["id"], "on-complete", "command", "echo hi && whoami", "2026-01-01T00:00:00"),
+    )
+    conn.commit()
+    conn.close()
+
+    with patch("agentplan.cli.subprocess.run") as mock_run:
+        out, err, code = cli("ticket", "done", "unsafe-persisted-command-hook-project", "1")
+
+    assert code == 0
+    assert "Ticket #1" in out
+    assert err == ""
+    assert mock_run.call_count >= 1
+
+
+def test_ticket_done_hook_failures_do_not_fail_command():
+    cli("create", "Hook Error Project")
+    cli("ticket", "add", "hook-error-project", "Deploy")
+    cli(
+        "hook", "add", "hook-error-project",
+        "--type", "webhook",
+        "--target", "https://example.com/fail",
+    )
+
+    with patch("agentplan.cli.urllib.request.urlopen", side_effect=RuntimeError("boom")):
+        out, err, code = cli("ticket", "done", "hook-error-project", "1")
+
+    assert code == 0
+    assert "Ticket #1" in out
+    assert "Warning: hook #1 failed" in err
+
+
+# ---------------------------------------------------------------------------
+# Ticket 51: Regression test — dashboard breakdown uses 'pending' key (not 'todo')
+# ---------------------------------------------------------------------------
+
+def test_dashboard_stats_breakdown_uses_pending_key():
+    """_fetch_projects_with_stats must store pending count under 'pending', not 'todo'."""
+    from agentplan.dashboard import _fetch_projects_with_stats
+    from agentplan.db import get_connection, init_db
+
+    cli("create", "Breakdown Key Project")
+    cli("ticket", "add", "breakdown-key-project", "Pending ticket A")
+    cli("ticket", "add", "breakdown-key-project", "Pending ticket B")
+
+    conn = get_connection()
+    stats = _fetch_projects_with_stats(conn)
+    conn.close()
+
+    proj_stats = next((p for p in stats if p["slug"] == "breakdown-key-project"), None)
+    assert proj_stats is not None, "Project not found in stats"
+    breakdown = proj_stats["breakdown"]
+
+    # Core assertion: key must be 'pending', not 'todo' (regression from #47/#49)
+    assert "pending" in breakdown, "breakdown must have a 'pending' key"
+    assert breakdown["pending"] == 2, f"Expected 2 pending tickets, got {breakdown['pending']}"
+    assert "todo" not in breakdown, "breakdown must NOT have a legacy 'todo' key"
+
+
+def test_dashboard_stats_breakdown_api_endpoint_pending_key():
+    """GET /api/stats JSON must contain 'pending' key in project breakdown."""
+    from agentplan.dashboard import create_app
+
+    cli("create", "API Breakdown Project")
+    cli("ticket", "add", "api-breakdown-project", "Open ticket")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.get("/api/stats")
+    assert resp.status_code == 200
+    data = json.loads(resp.get_data(as_text=True))
+
+    proj = next((p for p in data["projects"] if p["slug"] == "api-breakdown-project"), None)
+    assert proj is not None
+    breakdown = proj["breakdown"]
+    assert "pending" in breakdown, "API breakdown must contain 'pending' key"
+    assert breakdown["pending"] >= 1
+    assert "todo" not in breakdown, "API breakdown must NOT have legacy 'todo' key"
+
+
+# ---------------------------------------------------------------------------
+# Ticket 52: Regression test — priority filter uses string labels (not numeric)
+# ---------------------------------------------------------------------------
+
+def test_dashboard_priority_filter_string_labels():
+    """Project board priority filter must work with string labels 'high/medium/low/none'."""
+    from agentplan.dashboard import _ticket_matches
+
+    high_ticket = {"priority": "high", "status": "pending", "tags": ""}
+    medium_ticket = {"priority": "medium", "status": "pending", "tags": ""}
+    low_ticket = {"priority": "low", "status": "pending", "tags": ""}
+    none_ticket = {"priority": "none", "status": "pending", "tags": ""}
+
+    # String label filters must match
+    assert _ticket_matches(high_ticket, "", "high", "") is True
+    assert _ticket_matches(medium_ticket, "", "medium", "") is True
+    assert _ticket_matches(low_ticket, "", "low", "") is True
+    assert _ticket_matches(none_ticket, "", "none", "") is True
+
+    # Non-matching priority must not match
+    assert _ticket_matches(high_ticket, "", "low", "") is False
+    assert _ticket_matches(low_ticket, "", "high", "") is False
+
+    # Numeric values (old bug) must NOT accidentally match string priorities
+    assert _ticket_matches(high_ticket, "", "1", "") is False
+    assert _ticket_matches(medium_ticket, "", "3", "") is False
+
+
+def test_dashboard_priority_filter_via_api():
+    """GET /project/<slug>?priority=high should return only high-priority tickets."""
+    from agentplan.dashboard import create_app
+
+    cli("create", "Priority Filter Project")
+    cli("ticket", "add", "priority-filter-project", "High task", "--priority", "high")
+    cli("ticket", "add", "priority-filter-project", "Low task", "--priority", "low")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.get("/project/priority-filter-project?priority=high")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "High task" in body
+    # Low task should not appear when filtering by high
+    assert "Low task" not in body
+
+
+# ---------------------------------------------------------------------------
+# Ticket 57: Agent registry command coverage
+# ---------------------------------------------------------------------------
+
+def _run_agent_cmd(func, **kwargs):
+    import agentplan.cli as agent_cli
+
+    out, err = StringIO(), StringIO()
+    with patch("sys.stdout", out), patch("sys.stderr", err):
+        try:
+            func(type("Args", (), kwargs)())
+            code = 0
+        except agent_cli.CliError as e:
+            print(f"Error: {e.message}", file=err)
+            for suggestion in e.suggestions:
+                print(f"Suggestion: {suggestion}", file=err)
+            code = e.exit_code
+    return out.getvalue(), err.getvalue(), code
+
+
+def test_agent_add_basic():
+    import agentplan.cli as agent_cli
+
+    cli("role", "add", "backend")
+    out, err, code = _run_agent_cmd(
+        agent_cli.cmd_agent_add,
+        name="dash",
+        command="claude -p {ticket}",
+        roles="backend",
+    )
+    assert code == 0, err
+    assert "Added agent 'dash' with roles: backend" in out
+
+
+def test_agent_add_duplicate_name():
+    import agentplan.cli as agent_cli
+
+    out1, err1, code1 = _run_agent_cmd(
+        agent_cli.cmd_agent_add,
+        name="dash",
+        command="claude -p {ticket}",
+        roles=None,
+    )
+    assert code1 == 0, err1
+    assert "Added agent 'dash'" in out1
+
+    with pytest.raises(Exception) as exc:
+        agent_cli.cmd_agent_add(type("Args", (), {"name": "dash", "command": "codex {ticket}", "roles": None})())
+    assert "already exists" in str(exc.value).lower()
+
+
+def test_agent_add_invalid_role():
+    import agentplan.cli as agent_cli
+
+    out, err, code = _run_agent_cmd(
+        agent_cli.cmd_agent_add,
+        name="dash",
+        command="claude -p {ticket}",
+        roles="missing-role",
+    )
+    assert code == 2
+    assert out == ""
+    assert "Role 'missing-role' not found" in err
+
+
+def test_agent_list():
+    import agentplan.cli as agent_cli
+
+    cli("role", "add", "backend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="claude -p {ticket}", roles="backend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="nova", command="codex exec {ticket}", roles=None)
+
+    out, err, code = _run_agent_cmd(agent_cli.cmd_agent_list)
+    assert code == 0, err
+    assert "name" in out and "roles" in out and "command_template" in out
+    assert "dash" in out and "backend" in out and "claude -p {ticket}" in out
+    assert "nova" in out and "(none)" in out and "codex exec {ticket}" in out
+
+
+def test_agent_update():
+    import agentplan.cli as agent_cli
+
+    cli("role", "add", "backend")
+    cli("role", "add", "frontend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="claude -p {ticket}", roles="backend")
+
+    out, err, code = _run_agent_cmd(
+        agent_cli.cmd_agent_update,
+        name="dash",
+        new_name="dash-v2",
+        command="codex exec {ticket}",
+        roles="frontend",
+    )
+    assert code == 0, err
+    assert "Updated agent 'dash-v2'." in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT name, command_template FROM agents WHERE name='dash-v2'").fetchone()
+    conn.close()
+    assert row is not None
+    assert row["command_template"] == "codex exec {ticket}"
+
+
+def test_agent_update_rename_to_existing_conflict():
+    import agentplan.cli as agent_cli
+
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="claude -p {ticket}", roles=None)
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="nova", command="codex exec {ticket}", roles=None)
+
+    out, err, code = _run_agent_cmd(
+        agent_cli.cmd_agent_update,
+        name="dash",
+        new_name="nova",
+        command=None,
+        roles=None,
+    )
+    assert code == 2
+    assert out == ""
+    assert "already exists" in err.lower()
+
+
+def test_agent_remove():
+    import agentplan.cli as agent_cli
+
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="claude -p {ticket}", roles=None)
+
+    out, err, code = _run_agent_cmd(agent_cli.cmd_agent_remove, name="dash")
+    assert code == 0, err
+    assert "Removed agent 'dash'." in out
+
+    out2, err2, code2 = _run_agent_cmd(agent_cli.cmd_agent_list)
+    assert code2 == 0, err2
+    assert "No agents registered." in out2
+
+
+def test_agent_role_persistence():
+    import agentplan.cli as agent_cli
+
+    cli("role", "add", "backend")
+    cli("role", "add", "qa")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="claude -p {ticket}", roles="backend,qa")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute(
+        """
+        SELECT r.name
+        FROM roles r
+        JOIN agent_roles ar ON ar.role_id = r.id
+        JOIN agents a ON a.id = ar.agent_id
+        WHERE a.name = 'dash'
+        ORDER BY r.name
+        """
+    ).fetchall()
+    conn.close()
+
+    assert [r["name"] for r in rows] == ["backend", "qa"]
+
+
+def test_agent_add_without_role():
+    import agentplan.cli as agent_cli
+
+    out, err, code = _run_agent_cmd(
+        agent_cli.cmd_agent_add,
+        name="solo",
+        command="claude -p {ticket}",
+        roles=None,
+    )
+    assert code == 0, err
+    assert "Added agent 'solo' with roles: (none)" in out
+
+    list_out, list_err, list_code = _run_agent_cmd(agent_cli.cmd_agent_list)
+    assert list_code == 0, list_err
+    assert "solo" in list_out
+    assert "(none)" in list_out
+
+
+# ---------------------------------------------------------------------------
+# Ticket 16: Route command coverage
+# ---------------------------------------------------------------------------
+
+
+def test_route_matches_agent_by_role():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Routing Project")
+    cli("role", "add", "backend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="claude -p {ticket}", roles="backend")
+    cli("ticket", "add", "routing-project", "Backend task", "--tag", "role:backend")
+
+    out, err, code = cli("route", "routing-project", "1")
+    assert code == 0, err
+    assert out.strip() == "dash"
+
+
+def test_agent_add_requires_ticket_placeholder_validation():
+    import agentplan.cli as agent_cli
+
+    out, err, code = _run_agent_cmd(
+        agent_cli.cmd_agent_add,
+        name="broken",
+        command="claude -p prompt-only",
+        roles=None,
+        priority=0,
+    )
+    assert code == 2
+    assert "must include '{{ticket}}' placeholder" in err
+
+
+def test_route_prefers_agent_with_lower_priority():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Routing Priority Project")
+    cli("role", "add", "backend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="slow", command="echo slow {ticket}", roles="backend", priority=10)
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="fast", command="echo fast {ticket}", roles="backend", priority=-5)
+    cli("ticket", "add", "routing-priority-project", "Backend task", "--tag", "role:backend")
+
+    out, err, code = cli("route", "routing-priority-project", "1")
+    assert code == 0, err
+    assert out.strip() == "fast"
+
+
+@pytest.mark.parametrize("role_tag", ["role:BackEnd", "role:BACKEND"])
+def test_route_matches_agent_by_role_case_insensitive(role_tag):
+    import agentplan.cli as agent_cli
+
+    cli("create", "Routing Case Project")
+    cli("role", "add", "backend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="claude -p {ticket}", roles="backend")
+    cli("ticket", "add", "routing-case-project", "Backend task", "--tag", role_tag)
+
+    out, err, code = cli("route", "routing-case-project", "1")
+    assert code == 0, err
+    assert out.strip() == "dash"
+
+
+def test_route_ticket_db_matches_mixed_case_role_tag_directly():
+    import agentplan.cli as agent_cli
+    from agentplan.db import route_ticket
+
+    cli("create", "Routing DB Case Project")
+    cli("role", "add", "backend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="claude -p {ticket}", roles="backend")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    try:
+        ticket = {"tags": "role:BackEnd"}
+        agent = route_ticket(conn, ticket)
+    finally:
+        conn.close()
+
+    assert agent is not None
+    assert agent["name"] == "dash"
+
+
+def test_route_falls_back_to_default():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Routing Fallback Project")
+    cli("role", "add", "backend")
+    cli("role", "add", "frontend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="claude -p {ticket}", roles="backend")
+    cli("ticket", "add", "routing-fallback-project", "Frontend task", "--tag", "role:frontend")
+
+    out, err, code = cli("route", "routing-fallback-project", "1", "--default-agent", "dash")
+    assert code == 0, err
+    assert out.strip() == "dash"
+
+
+def test_route_no_match_no_default():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Routing No Match Project")
+    cli("role", "add", "backend")
+    cli("role", "add", "frontend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="claude -p {ticket}", roles="backend")
+    cli("ticket", "add", "routing-no-match-project", "Frontend task", "--tag", "role:frontend")
+
+    out, err, code = cli("route", "routing-no-match-project", "1")
+    assert code == 0, err
+    assert out.strip() == "No agent found for ticket #1"
+
+
+def test_render_agent_command_replaces_all_placeholder_variants():
+    import agentplan.cli as agent_cli
+
+    rendered = agent_cli._render_agent_command(
+        "run {ticket} {{ticket}} {project} {{project}} {ticket_id} {{ticket_id}}",
+        {"num": 7},
+        {"slug": "demo"},
+    )
+
+    assert rendered == "run demo 7 demo 7 demo demo 7 7"
+
+
+def test_route_terminal_spawns_rendered_agent_command():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Routing Terminal Project")
+    cli("role", "add", "backend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo {ticket} {{project}} {{ticket_id}}", roles="backend")
+    cli("ticket", "add", "routing-terminal-project", "Backend task", "--tag", "role:backend")
+
+    with patch("agentplan.cli.spawn_terminal") as mock_spawn:
+        out, err, code = cli("route", "routing-terminal-project", "1", "--terminal")
+
+    assert code == 0, err
+    assert out.strip() == "dash"
+    mock_spawn.assert_called_once_with("echo routing-terminal-project 1 routing-terminal-project 1", title="agentplan:dash")
+
+
+def test_detect_terminal_prefers_iterm2_when_running():
+    import agentplan.cli as agent_cli
+
+    with patch("agentplan.cli.subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            type("Result", (), {"returncode": 0, "stdout": "123\n", "stderr": ""})(),
+        ]
+        assert agent_cli.detect_terminal_app("auto") == "iterm2"
+
+
+def test_detect_terminal_falls_back_to_terminal_when_iterm2_missing():
+    import agentplan.cli as agent_cli
+
+    with patch("agentplan.cli.os.path.exists", return_value=False), patch("agentplan.cli.subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            type("Result", (), {"returncode": 1, "stdout": "", "stderr": ""})(),
+            type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+        ]
+        assert agent_cli.detect_terminal_app("auto") == "terminal"
+
+
+def test_spawn_terminal_iterm2_applescript_contains_shell_escaped_command():
+    import agentplan.cli as agent_cli
+
+    with patch("agentplan.cli.detect_terminal_app", return_value="iterm2"), patch("agentplan.cli.subprocess.run") as mock_run:
+        mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        agent_cli.spawn_terminal('echo "hello"; rm -rf /', title="Demo")
+
+    argv = mock_run.call_args.args[0]
+    script = argv[2]
+    assert argv[:2] == ["osascript", "-e"]
+    assert "tell application \"iTerm2\"" in script
+    assert "bash -lc" in script
+    assert '\\"hello\\"; rm -rf /' in script
+
+
+def test_spawn_terminal_falls_back_to_terminal_when_iterm2_osascript_fails():
+    import agentplan.cli as agent_cli
+
+    with patch("agentplan.cli.detect_terminal_app", return_value="iterm2"), patch("agentplan.cli.subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            type("Result", (), {"returncode": 1, "stdout": "", "stderr": "boom"})(),
+            type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+        ]
+        agent_cli.spawn_terminal("echo hello")
+
+    assert mock_run.call_count == 2
+    first_script = mock_run.call_args_list[0].args[0][2]
+    second_script = mock_run.call_args_list[1].args[0][2]
+    assert "tell application \"iTerm2\"" in first_script
+    assert "tell application \"Terminal\"" in second_script
+
+
+def test_monitor_process_exits_when_pid_ends():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Monitor Ends Project")
+    cli("ticket", "add", "monitor-ends-project", "Watch process")
+
+    calls = {"n": 0}
+
+    def fake_kill(pid, sig):
+        calls["n"] += 1
+        if calls["n"] >= 3:
+            raise ProcessLookupError()
+
+    with patch("agentplan.cli.os.kill", side_effect=fake_kill), \
+         patch("agentplan.cli.time.sleep", return_value=None), \
+         patch("agentplan.cli._get_exit_code_for_pid", return_value=0):
+        result = agent_cli.monitor_process(12345, "monitor-ends-project", 1, timeout_sec=30)
+
+    assert result["pid"] == 12345
+    assert result["timed_out"] is False
+    assert result["exit_code"] == 0
+
+
+def test_monitor_process_detects_timeout():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Monitor Timeout Project")
+    cli("ticket", "add", "monitor-timeout-project", "Watch process")
+
+    monotonic_values = iter([0, 1, 6, 12])
+
+    with patch("agentplan.cli.os.kill", return_value=None), \
+         patch("agentplan.cli.time.sleep", return_value=None), \
+         patch("agentplan.cli.time.monotonic", side_effect=lambda: next(monotonic_values)):
+        result = agent_cli.monitor_process(2222, "monitor-timeout-project", 1, timeout_sec=10)
+
+    assert result["timed_out"] is True
+    assert result["exit_code"] is None
+
+
+def test_monitor_process_reads_ticket_status_on_process_exit():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Monitor Status Project")
+    cli("ticket", "add", "monitor-status-project", "Watch process")
+    cli("ticket", "start", "monitor-status-project", "1")
+    cli("ticket", "review", "monitor-status-project", "1", "--reason", "awaiting checks")
+
+    with patch("agentplan.cli.os.kill", side_effect=ProcessLookupError()), \
+         patch("agentplan.cli._get_exit_code_for_pid", return_value=None):
+        result = agent_cli.monitor_process(3333, "monitor-status-project", 1, timeout_sec=30)
+
+    assert result["timed_out"] is False
+    assert result["ticket_status"] == "needs-review"
+
+
+def test_monitor_process_command_parses_args_and_prints_json():
+    cli("create", "Monitor CLI Project")
+    cli("ticket", "add", "monitor-cli-project", "Watch process")
+
+    with patch("agentplan.cli.monitor_process", return_value={"pid": 9, "exit_code": 0, "ticket_status": "done", "timed_out": False}) as mock_monitor:
+        out, err, code = cli("monitor-process", "monitor-cli-project", "1", "9", "--timeout", "42")
+
+    assert code == 0, err
+    payload = json.loads(out)
+    assert payload["pid"] == 9
+    assert payload["ticket_status"] == "done"
+    mock_monitor.assert_called_once_with(9, "monitor-cli-project", 1, timeout_sec=42)
+
+
+def test_ticket_add_and_edit_timeout_sec():
+    cli("create", "Timeout Edit Project")
+    out_add, err_add, code_add = cli("ticket", "add", "timeout-edit-project", "Watchdog", "--timeout", "45")
+    assert code_add == 0, err_add
+
+    out_edit, err_edit, code_edit = cli("ticket", "edit", "timeout-edit-project", "1", "--timeout", "90")
+    assert code_edit == 0, err_edit
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT timeout_sec FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["timeout_sec"] == 90
+
+
+def test_chain_marks_ticket_failed_and_pauses_on_timeout():
+    cli("create", "Chain Timeout Project")
+    cli("ticket", "add", "chain-timeout-project", "Run long", "--timeout", "7")
+    with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
+         patch("agentplan.cli.spawn_terminal", return_value=1234), \
+         patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "in-progress", "timed_out": True}):
+        out, err, code = cli("chain", "chain-timeout-project", "--default-agent", "dash")
+
+    assert code == 0, err
+    assert "timed out (7s)" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    ticket = conn.execute("SELECT status, close_note FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    state = conn.execute("SELECT status, pause_reason FROM chain_state WHERE project_id=1").fetchone()
+    conn.close()
+
+    assert ticket["status"] == "failed"
+    assert ticket["close_note"] == "timeout: no progress for 7s"
+    assert state["status"] == "paused"
+    assert state["pause_reason"] == "timeout: no progress for 7s"
+
+
+def test_log_heartbeat_resets_chain_deadline():
+    cli("create", "Heartbeat Project", "--timeout", "30")
+    cli("ticket", "add", "heartbeat-project", "Keep alive")
+    cli("ticket", "start", "heartbeat-project", "1")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    conn.execute(
+        "INSERT INTO chain_state (project_id, status, current_ticket_id, heartbeat_at, deadline_at, updated_at) VALUES (?,?,?,?,?,?)",
+        (1, "running", 1, "2026-01-01T00:00:00", "2026-01-01T00:00:10", "2026-01-01T00:00:00"),
+    )
+    conn.commit()
+    conn.close()
+
+    out, err, code = cli("log", "heartbeat-project", "1", "still working")
+    assert code == 0, err
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    state = conn.execute("SELECT heartbeat_at, deadline_at FROM chain_state WHERE project_id=1").fetchone()
+    conn.close()
+
+    assert state["heartbeat_at"] is not None
+    assert state["deadline_at"] is not None
+    assert state["deadline_at"] > state["heartbeat_at"]
+
+
+def test_project_default_timeout_applies_to_chain_when_ticket_timeout_missing():
+    cli("create", "Project Default Timeout", "--timeout", "9")
+    cli("ticket", "add", "project-default-timeout", "No per-ticket timeout")
+    with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
+         patch("agentplan.cli.spawn_terminal", return_value=999), \
+         patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "in-progress", "timed_out": True}):
+        out, err, code = cli("chain", "project-default-timeout", "--default-agent", "dash")
+
+    assert code == 0, err
+    assert "timed out (9s)" in out
+
+
+# ---------------------------------------------------------------------------
+# Ticket 18: Auto-tag command
+# ---------------------------------------------------------------------------
+
+def test_auto_tag_untagged_ticket_gets_role_tagged():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Auto Tag Project")
+    cli("role", "add", "coding")
+    cli("role", "add", "research")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="dummy --prompt {prompt} --ticket {ticket}", roles="coding")
+    cli("ticket", "add", "auto-tag-project", "Build parser", "--desc", "Implement CLI parsing")
+
+    with patch("agentplan.cli.subprocess.run") as mock_run:
+        mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": "coding\n", "stderr": ""})()
+        out, err, code = cli("auto-tag", "auto-tag-project")
+
+    assert code == 0, err
+    assert "Tagged ticket #1 -> role:coding" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    ticket = conn.execute("SELECT tags FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    hist = conn.execute("SELECT new_state FROM ticket_history WHERE ticket_id=1 ORDER BY id DESC LIMIT 1").fetchone()
+    conn.close()
+    assert ticket["tags"] == "role:coding"
+    assert hist["new_state"] == "auto-tag:coding"
+
+
+def test_auto_tag_dry_run_does_not_mutate():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Auto Tag Dry")
+    cli("role", "add", "coding")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="dummy --prompt {prompt} --ticket {ticket}", roles="coding")
+    cli("ticket", "add", "auto-tag-dry", "Build parser")
+
+    with patch("agentplan.cli.subprocess.run") as mock_run:
+        mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": "coding", "stderr": ""})()
+        out, err, code = cli("auto-tag", "auto-tag-dry", "--dry-run")
+
+    assert code == 0, err
+    assert "[dry-run] ticket #1 -> role:coding" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    ticket = conn.execute("SELECT tags FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert ticket["tags"] == ""
+
+
+def test_auto_tag_unknown_role_response_is_skipped():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Auto Tag Unknown")
+    cli("role", "add", "coding")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="dummy --prompt {prompt} --ticket {ticket}", roles="coding")
+    cli("ticket", "add", "auto-tag-unknown", "Build parser")
+
+    with patch("agentplan.cli.subprocess.run") as mock_run:
+        mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": "nonexistent", "stderr": ""})()
+        out, err, code = cli("auto-tag", "auto-tag-unknown")
+
+    assert code == 0
+    assert "unknown role" in err.lower()
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    ticket = conn.execute("SELECT tags FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert ticket["tags"] == ""
+
+
+def test_auto_tag_already_tagged_tickets_are_skipped():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Auto Tag Skip Tagged")
+    cli("role", "add", "coding")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="dummy --prompt {prompt} --ticket {ticket}", roles="coding")
+    cli("ticket", "add", "auto-tag-skip-tagged", "Build parser", "--tag", "role:coding")
+
+    with patch("agentplan.cli.subprocess.run") as mock_run:
+        out, err, code = cli("auto-tag", "auto-tag-skip-tagged")
+
+    assert code == 0, err
+    assert "already has role tag" in out
+    assert mock_run.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Ticket 23: Chain orchestration
+# ---------------------------------------------------------------------------
+
+def test_chain_processes_done_then_moves_to_next_ticket():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Chain Move Project")
+    cli("role", "add", "backend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run-{ticket_id}", roles="backend")
+    cli("ticket", "add", "chain-move-project", "First", "--tag", "role:backend")
+    cli("ticket", "add", "chain-move-project", "Second", "--tag", "role:backend")
+
+    call = {"n": 0}
+
+    def fake_monitor(pid, project_slug, ticket_num, timeout_sec=3600):
+        call["n"] += 1
+        conn = agentplan.get_connection("/tmp/test_agentplan.db")
+        if call["n"] == 1:
+            conn.execute("UPDATE tickets SET status='done' WHERE project_id=1 AND num=1")
+            conn.commit()
+            conn.close()
+            return {"pid": pid, "ticket_status": "done", "timed_out": False, "exit_code": 0}
+        conn.execute("UPDATE tickets SET status='failed' WHERE project_id=1 AND num=2")
+        conn.commit()
+        conn.close()
+        return {"pid": pid, "ticket_status": "failed", "timed_out": False, "exit_code": 1}
+
+    with patch("agentplan.cli.spawn_terminal", return_value=123) as mock_spawn, \
+         patch("agentplan.cli._monitor_chain_ticket", side_effect=lambda conn, project, ticket, pid, timeout_sec=3600: fake_monitor(pid, project["slug"], ticket["num"], timeout_sec)):
+        out, err, code = cli("chain", "chain-move-project")
+
+    assert code == 0, err
+    assert mock_spawn.call_count == 2
+    assert "Ticket #1 done; continuing" in out
+
+
+def test_chain_pauses_on_failed_ticket():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Chain Fail Project")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
+    cli("ticket", "add", "chain-fail-project", "Only task")
+
+    with patch("agentplan.cli.spawn_terminal", return_value=10), \
+         patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "failed", "timed_out": False}):
+        out, err, code = cli("chain", "chain-fail-project", "--default-agent", "dash")
+
+    assert code == 0, err
+    assert "Paused: ticket #1 ended as failed" in out
+
+
+def test_chain_pauses_on_needs_review_ticket():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Chain Review Project")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
+    cli("ticket", "add", "chain-review-project", "Only task")
+
+    with patch("agentplan.cli.spawn_terminal", return_value=11), \
+         patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "needs-review", "timed_out": False}):
+        out, err, code = cli("chain", "chain-review-project", "--default-agent", "dash")
+
+    assert code == 0, err
+    assert "Paused: ticket #1 ended as needs-review" in out
+
+
+def test_chain_stops_when_no_more_tickets():
+    cli("create", "Chain Empty Project")
+
+    out, err, code = cli("chain", "chain-empty-project")
+    assert code == 0, err
+    assert "No more unblocked tickets. Chain complete." in out
+
+
+def test_chain_state_persisted_in_db_and_status_command():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Chain State Project")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
+    cli("ticket", "add", "chain-state-project", "Only task")
+
+    with patch("agentplan.cli.spawn_terminal", return_value=12), \
+         patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "failed", "timed_out": False}):
+        _, _, _ = cli("chain", "chain-state-project", "--default-agent", "dash")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status, pause_reason FROM chain_state WHERE project_id=1").fetchone()
+    conn.close()
+    assert row is not None
+    assert row["status"] == "paused"
+    assert "failed" in (row["pause_reason"] or "")
+
+    out, err, code = cli("chain", "chain-state-project", "--status")
+    assert code == 0, err
+    assert "Chain status: paused" in out
+
+
+def test_chain_max_tickets_limits_processing():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Chain Max Project")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
+    cli("ticket", "add", "chain-max-project", "T1")
+    cli("ticket", "add", "chain-max-project", "T2")
+
+    def fake_monitor(pid, project_slug, ticket_num, timeout_sec=3600):
+        conn = agentplan.get_connection("/tmp/test_agentplan.db")
+        conn.execute("UPDATE tickets SET status='done' WHERE project_id=1 AND num=?", (ticket_num,))
+        conn.commit()
+        conn.close()
+        return {"pid": pid, "ticket_status": "done", "timed_out": False, "exit_code": 0}
+
+    with patch("agentplan.cli.spawn_terminal", return_value=13) as mock_spawn, \
+         patch("agentplan.cli._monitor_chain_ticket", side_effect=lambda conn, project, ticket, pid, timeout_sec=3600: fake_monitor(pid, project["slug"], ticket["num"], timeout_sec)):
+        out, err, code = cli("chain", "chain-max-project", "--default-agent", "dash", "--max-tickets", "1")
+
+    assert code == 0, err
+    assert mock_spawn.call_count == 1
+    assert "Reached --max-tickets=1" in out

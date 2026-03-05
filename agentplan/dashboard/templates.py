@@ -1,33 +1,20 @@
-#!/usr/bin/env python3
-"""Read-only web dashboard for agentplan projects and tickets."""
+"""Dashboard templates and display constants."""
 
-import json
-import os
-import threading
-import time
-import webbrowser
-from collections import defaultdict
-from datetime import datetime
+from agentplan.db import VALID_TICKET_STATES
 
-from flask import Flask, Response, abort, render_template_string, request, stream_with_context, url_for
-
-from agentplan.db import get_connection
-
-STATUS_ORDER = ["pending", "in-progress", "blocked", "done", "skipped"]
-STATUS_LABELS = {
-    "pending": "todo",
-    "in-progress": "in-progress",
-    "blocked": "blocked",
-    "done": "done",
-    "skipped": "skipped",
-}
-KANBAN_STATUS_ORDER = ["pending", "in-progress", "blocked", "done"]
+_STATUS_PREFERRED = ["pending", "in-progress", "blocked", "needs-review", "failed", "done", "skipped"]
+STATUS_ORDER = [state for state in _STATUS_PREFERRED if state in VALID_TICKET_STATES]
+STATUS_LABELS = {state: ("todo" if state == "pending" else state) for state in STATUS_ORDER}
+KANBAN_STATUS_ORDER = [state for state in STATUS_ORDER if state != "skipped"]
 KANBAN_STATUS_LABELS = {
     "pending": "Todo",
     "in-progress": "In Progress",
     "blocked": "Blocked",
+    "needs-review": "Needs Review",
+    "failed": "Failed",
     "done": "Done",
 }
+
 TAG_TONES = ("blue", "purple", "teal", "amber", "rose")
 
 INDEX_TEMPLATE = """
@@ -74,7 +61,10 @@ INDEX_TEMPLATE = """
         --status-done: #22c55e;
         --status-in-progress: #3b82f6;
         --status-blocked: #f59e0b;
-        --status-todo: #94a3b8;
+        --status-pending: #94a3b8;
+        --status-needs-review: #facc15;
+        --status-failed: #ef4444;
+        --status-todo: var(--status-pending);
         --status-skipped: #64748b;
       }
 
@@ -276,9 +266,11 @@ INDEX_TEMPLATE = """
         height: 8px;
         border-radius: 50%;
       }
-      .dot.todo { background: var(--status-todo); }
+      .dot.pending { background: var(--status-pending); }
       .dot.in-progress { background: var(--status-in-progress); }
       .dot.blocked { background: var(--status-blocked); }
+      .dot.needs-review { background: var(--status-needs-review); }
+      .dot.failed { background: var(--status-failed); }
       .dot.done { background: var(--status-done); }
       .dot.skipped { background: var(--status-skipped); }
 
@@ -302,6 +294,7 @@ INDEX_TEMPLATE = """
         <nav class="topbar-nav">
           <a class="top-link active" href="{{ url_for('index') }}">Home</a>
           <a class="top-link" href="{{ url_for('activity') }}">Activity</a>
+          <a class="top-link" href="{{ url_for('agents') }}">Agents</a>
         </nav>
         <div class="topbar-right">
           <span id="live-clock" class="clock">--:--:--</span>
@@ -343,7 +336,7 @@ INDEX_TEMPLATE = """
               <div class="project-meta">
                 <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
                 <div class="dot-breakdown project-breakdown">
-                  {% for status in ["todo", "in-progress", "blocked", "done", "skipped"] %}
+                  {% for status in ["pending", "in-progress", "blocked", "needs-review", "failed", "done"] %}
                   <span class="dot-item"><span class="dot {{ status }}"></span><span class="dot-value" data-status="{{ status }}">{{ project.breakdown.get(status, 0) }}</span></span>
                   {% endfor %}
                 </div>
@@ -389,7 +382,7 @@ INDEX_TEMPLATE = """
     </main>
 
     <script>
-      const statusOrder = ["todo", "in-progress", "blocked", "done", "skipped"];
+      const statusOrder = ["pending", "in-progress", "blocked", "needs-review", "failed", "done"];
 
       function setClock(ts) {
         const d = ts ? new Date(ts) : new Date();
@@ -543,7 +536,10 @@ ACTIVITY_TEMPLATE = """
         --status-done: #22c55e;
         --status-in-progress: #3b82f6;
         --status-blocked: #f59e0b;
-        --status-todo: #94a3b8;
+        --status-pending: #94a3b8;
+        --status-needs-review: #facc15;
+        --status-failed: #ef4444;
+        --status-todo: var(--status-pending);
         --status-skipped: #64748b;
       }
       * { box-sizing: border-box; }
@@ -660,6 +656,7 @@ ACTIVITY_TEMPLATE = """
         <nav class="topbar-nav">
           <a href="{{ url_for('index') }}" class="top-link">Home</a>
           <a href="{{ url_for('activity') }}" class="top-link active">Activity</a>
+          <a href="{{ url_for('agents') }}" class="top-link">Agents</a>
         </nav>
         <div class="topbar-right">
           <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
@@ -895,6 +892,146 @@ ACTIVITY_TEMPLATE = """
 </html>
 """
 
+AGENTS_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Agent Setup · agentplan dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --font-body: 'Inter', ui-sans-serif, sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --color-bg: #0a0e1a;
+        --color-panel: #151b2b;
+        --color-panel-soft: #1b2236;
+        --color-text: #e2e8f0;
+        --color-muted: #8892a8;
+        --color-border: rgba(255,255,255,0.08);
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
+      .page { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+      .topbar {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        margin-bottom: 16px;
+        padding: 14px 16px;
+        background: rgba(255,255,255,0.02);
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+      }
+      .brand { font-weight: 600; }
+      .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
+      .top-link { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 6px 10px; text-decoration: none; }
+      .top-link:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .top-link.active { color: var(--color-text); text-decoration: underline; }
+      .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+      .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; padding: 14px; }
+      .title { margin: 0 0 10px; font-size: 1rem; }
+      .table { width: 100%; border-collapse: collapse; }
+      .table th, .table td { padding: 8px 6px; border-bottom: 1px solid var(--color-border); vertical-align: top; text-align: left; }
+      .table th { color: var(--color-muted); font-size: 0.8rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+      .mono { font-family: var(--font-mono); font-size: 0.8rem; }
+      .muted { color: var(--color-muted); }
+      .roles { display: flex; flex-wrap: wrap; gap: 6px; }
+      .pill { border: 1px solid var(--color-border); border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; background: var(--color-panel-soft); }
+      .form-grid { display: grid; gap: 8px; }
+      input[type="text"] { width: 100%; background: var(--color-panel-soft); border: 1px solid var(--color-border); color: var(--color-text); border-radius: 10px; padding: 8px; }
+      .role-list { max-height: 130px; overflow: auto; border: 1px solid var(--color-border); border-radius: 10px; padding: 8px; background: rgba(255,255,255,0.02); }
+      .role-item { display: block; margin-bottom: 6px; font-size: 0.85rem; }
+      .btn { border: 1px solid var(--color-border); border-radius: 10px; padding: 6px 10px; background: transparent; color: var(--color-muted); cursor: pointer; }
+      .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .btn-danger { border-color: rgba(239,68,68,0.4); color: #fca5a5; }
+      .tool-grid { display: grid; gap: 8px; }
+      .tool-row { display: flex; justify-content: space-between; border: 1px solid var(--color-border); border-radius: 10px; padding: 8px; background: rgba(255,255,255,0.02); }
+      @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="topbar">
+        <div class="brand">agentplan</div>
+        <nav class="topbar-nav">
+          <a class="top-link" href="{{ url_for('index') }}">Home</a>
+          <a class="top-link" href="{{ url_for('activity') }}">Activity</a>
+          <a class="top-link active" href="{{ url_for('agents') }}">Agents</a>
+        </nav>
+        <div></div>
+      </header>
+
+      <section class="grid">
+        <div class="card">
+          <h2 class="title">Configured Agents</h2>
+          {% if agents %}
+          <table class="table">
+            <thead><tr><th>Name</th><th>Command Template</th><th>Roles</th><th>Actions</th></tr></thead>
+            <tbody>
+              {% for agent in agents %}
+              <tr>
+                <td class="mono">{{ agent.name }}</td>
+                <td class="mono">{{ agent.command_template }}</td>
+                <td>
+                  <div class="roles">
+                    {% for role in agent.roles %}<span class="pill">{{ role }}</span>{% endfor %}
+                    {% if not agent.roles %}<span class="muted">(none)</span>{% endif %}
+                  </div>
+                </td>
+                <td>
+                  <form class="form-grid" method="post" action="{{ url_for('edit_agent', name=agent.name) }}">
+                    <input type="text" name="command_template" value="{{ agent.command_template }}" required>
+                    <div class="role-list">
+                    {% for role in roles %}
+                      <label class="role-item"><input type="checkbox" name="roles" value="{{ role.name }}" {{ 'checked' if role.name in agent.roles else '' }}> {{ role.name }}</label>
+                    {% endfor %}
+                    </div>
+                    <button class="btn" type="submit">Save</button>
+                  </form>
+                  <form method="post" action="{{ url_for('delete_agent_route', name=agent.name) }}" style="margin-top:6px;">
+                    <button class="btn btn-danger" type="submit">Delete</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="muted">No agents configured.</p>
+          {% endif %}
+        </div>
+
+        <div class="card">
+          <h2 class="title">Detected Tools</h2>
+          <div class="tool-grid">
+          {% for tool in detected_tools %}
+            <div class="tool-row"><span class="mono">{{ tool.name }}</span><span class="{{ '' if tool.found else 'muted' }}">{{ 'found' if tool.found else 'missing' }}</span></div>
+          {% endfor %}
+          </div>
+
+          <h2 class="title" style="margin-top:16px;">Add Agent</h2>
+          <form class="form-grid" method="post" action="{{ url_for('add_agent') }}">
+            <input type="text" name="name" placeholder="name" required>
+            <input type="text" name="command_template" placeholder="command template" required>
+            <div class="role-list">
+            {% for role in roles %}
+              <label class="role-item"><input type="checkbox" name="roles" value="{{ role.name }}"> {{ role.name }}</label>
+            {% endfor %}
+            {% if not roles %}<div class="muted">No roles available yet.</div>{% endif %}
+            </div>
+            <button class="btn" type="submit">Add Agent</button>
+          </form>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
+"""
+
 PROJECT_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -938,11 +1075,19 @@ PROJECT_TEMPLATE = """
         --color-medium: #f97316;
         --color-low: #8892a8;
         --color-due-overdue: #f87171;
+        --status-done: #22c55e;
+        --status-in-progress: #3b82f6;
+        --status-blocked: #f59e0b;
+        --status-pending: #94a3b8;
+        --status-needs-review: #facc15;
+        --status-failed: #ef4444;
+        --status-todo: var(--status-pending);
+        --status-skipped: #64748b;
       }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
       h1, h2, h3, h4, h5, h6 { letter-spacing: -0.01em; font-family: var(--font-body); } h1 { font-family: var(--font-heading); }
-      .page { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+      .page { max-width: 100%; margin: 0 auto; padding: 2rem 3rem; }
       .topbar {
         display: grid;
         grid-template-columns: 1fr auto 1fr;
@@ -1003,12 +1148,14 @@ PROJECT_TEMPLATE = """
       }
       .legend-item { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-small); color: var(--color-muted); }
       .legend-dot { width: 8px; height: 8px; border-radius: 999px; }
-      .legend-dot.todo { background: #94a3b8; }
-      .legend-dot.in-progress { background: #3b82f6; }
-      .legend-dot.blocked { background: #f59e0b; }
-      .legend-dot.done { background: #22c55e; }
-      .legend-dot.skipped { background: #64748b; }
-      .kanban-grid { display: grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap: 14px; align-items: start; }
+      .legend-dot.pending { background: var(--status-pending); }
+      .legend-dot.in-progress { background: var(--status-in-progress); }
+      .legend-dot.blocked { background: var(--status-blocked); }
+      .legend-dot.needs-review { background: var(--status-needs-review); }
+      .legend-dot.failed { background: var(--status-failed); }
+      .legend-dot.done { background: var(--status-done); }
+      .legend-dot.skipped { background: var(--status-skipped); }
+      .kanban-grid { display: grid; grid-template-columns: repeat(6, minmax(180px, 1fr)); gap: 14px; align-items: start; }
       .kanban-column {
         background: rgba(255, 255, 255, 0.015);
         border: 1px solid var(--color-border);
@@ -1148,6 +1295,27 @@ PROJECT_TEMPLATE = """
       .btn { border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-family: var(--font-body); font-weight: var(--fw-button); font-size: var(--fs-button); color: var(--color-muted); background: transparent; cursor: pointer; }
       .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .btn-primary { background: rgba(59,130,246,0.18); color: #dbeafe; border-color: rgba(59,130,246,0.35); }
+      .btn-chain-start { background: rgba(34, 197, 94, 0.2); color: #dcfce7; border-color: rgba(34, 197, 94, 0.45); }
+      .btn-chain-stop { background: rgba(239, 68, 68, 0.16); color: #fecaca; border-color: rgba(239, 68, 68, 0.35); }
+      .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+      .chain-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 12px;
+        padding: 10px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--color-muted);
+        font-size: var(--fs-small);
+      }
+      .chain-dot { width: 8px; height: 8px; border-radius: 999px; background: #64748b; }
+      .chain-dot.running { background: #22c55e; }
+      .chain-dot.paused { background: #facc15; }
+      .chain-dot.stopped, .chain-dot.done { background: #64748b; }
+      .review-actions { display: grid; gap: 8px; }
+      .review-actions-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
       .ticket-panel-backdrop {
         position: fixed;
@@ -1260,8 +1428,11 @@ PROJECT_TEMPLATE = """
         <nav class="topbar-nav">
           <a href="{{ url_for('index') }}" class="btn-back">Home</a>
           <a href="{{ url_for('activity') }}" class="btn-back">Activity</a>
+          <a href="{{ url_for('agents') }}" class="btn-back">Agents</a>
         </nav>
         <div class="topbar-right">
+          <button id="chain-start-btn" class="btn btn-chain-start" type="button">▶ Start Work</button>
+          <button id="chain-stop-btn" class="btn btn-chain-stop" type="button">■ Stop</button>
           <span id="project-clock" class="clock"></span>
           <span class="sse-status"><span id="project-sse-dot" class="status-dot disconnected" aria-hidden="true"></span><span id="project-sse-label">connecting…</span></span>
         </div>
@@ -1269,7 +1440,10 @@ PROJECT_TEMPLATE = """
 
       <h1 class="project-title">{{ project.title }}</h1>
 
-      
+      <div id="chain-status" class="chain-status">
+        <span id="chain-status-dot" class="chain-dot {{ chain.status if chain and chain.status else 'stopped' }}"></span>
+        <span id="chain-status-text">{{ chain_text }}</span>
+      </div>
 
       <div class="project-meta">
         <span>{{ done_count }}/{{ total_count }} done</span>
@@ -1280,14 +1454,14 @@ PROJECT_TEMPLATE = """
       <form method="get" class="filters" aria-label="filters">
         <select name="status" aria-label="Status filter">
           <option value="" {{ "selected" if not filters.status else "" }}>All statuses</option>
-          {% for status in ["todo", "in-progress", "blocked", "done", "skipped"] %}
+          {% for status in ["pending", "in-progress", "blocked", "needs-review", "failed", "done"] %}
           <option value="{{ status }}" {{ "selected" if filters.status == status else "" }}>{{ status }}</option>
           {% endfor %}
         </select>
         <select name="priority" aria-label="Priority filter">
           <option value="" {{ "selected" if not filters.priority else "" }}>All priorities</option>
-          {% for priority in ["1", "2", "3", "4", "5"] %}
-          <option value="{{ priority }}" {{ "selected" if filters.priority == priority else "" }}>Priority {{ priority }}</option>
+          {% for priority in ["high", "medium", "low", "none"] %}
+          <option value="{{ priority }}" {{ "selected" if filters.priority == priority else "" }}>{{ priority | capitalize }}</option>
           {% endfor %}
         </select>
         <select name="tag" aria-label="Tag filter">
@@ -1412,6 +1586,7 @@ PROJECT_TEMPLATE = """
         function renderPanel(data) {
           panelId.textContent = `#${data.num}`;
           panelTitle.textContent = data.title || "Ticket details";
+          const showReviewActions = data.status === "failed" || data.status === "needs-review";
           panelContent.innerHTML = `
             <section class="panel-block">
               <h3>Description</h3>
@@ -1428,6 +1603,7 @@ PROJECT_TEMPLATE = """
                 <div><div class="panel-muted panel-subtitle">blocks</div>${renderList(data.blocks, "No blocked tickets.")}</div>
               </div>
             </section>
+            ${showReviewActions ? `<section class="panel-block review-actions"><h3>Review Actions</h3><div class="review-actions-row"><button class="btn btn-chain-start" type="button" data-review-action="done" data-ticket-num="${esc(data.num)}">✓ Mark Done</button><button class="btn btn-primary" type="button" data-review-action="retry" data-ticket-num="${esc(data.num)}">↺ Retry</button><button class="btn btn-chain-stop" type="button" data-review-action="skip" data-ticket-num="${esc(data.num)}">⊘ Skip</button></div></section>` : ""}
             <section class="panel-block">
               <h3>Audit Timeline</h3>
               ${renderHistory(data.audit_history)}
@@ -1484,8 +1660,78 @@ PROJECT_TEMPLATE = """
           if (event.key === "Escape" && panel.classList.contains("is-open")) closePanel();
         });
 
-        const statusOrder = ["pending", "in-progress", "blocked", "done"];
+        const statusOrder = ["pending", "in-progress", "blocked", "needs-review", "failed", "done"];
         const filters = {{ filters|tojson }};
+        const chainStartBtn = document.getElementById("chain-start-btn");
+        const chainStopBtn = document.getElementById("chain-stop-btn");
+        const chainStatusDot = document.getElementById("chain-status-dot");
+        const chainStatusText = document.getElementById("chain-status-text");
+
+        async function callTicketReviewAction(ticketNum, action) {
+          const response = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/${encodeURIComponent(ticketNum)}/${encodeURIComponent(action)}`, { method: "POST" });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          await loadTicket(ticketNum);
+        }
+
+        panelContent.addEventListener("click", async (event) => {
+          const button = event.target.closest("button[data-review-action][data-ticket-num]");
+          if (!button) return;
+          button.disabled = true;
+          try {
+            await callTicketReviewAction(button.dataset.ticketNum, button.dataset.reviewAction);
+          } catch (error) {
+            button.disabled = false;
+          }
+        });
+
+        function chainSummary(chainStatus, chainTicketNum, pauseReason) {
+          const status = (chainStatus || "stopped").toLowerCase();
+          if (status === "running") return `Chain: running — ticket #${chainTicketNum || "?"}`;
+          if (status === "paused") return `Chain: paused — ${pauseReason || "waiting"}`;
+          if (status === "done") return "Chain: idle";
+          if (status === "stopped") return pauseReason ? `Chain: idle — ${pauseReason}` : "Chain: idle";
+          return "Chain: idle";
+        }
+
+        function applyChainState(payload) {
+          const chainStatus = (payload && payload.chain_status) || "stopped";
+          const chainTicketNum = payload && payload.chain_current_ticket_num;
+          const pauseReason = payload && payload.chain_pause_reason;
+          const normalized = String(chainStatus).toLowerCase();
+          chainStatusDot.className = `chain-dot ${esc(normalized)}`;
+          chainStatusText.textContent = chainSummary(normalized, chainTicketNum, pauseReason);
+          chainStartBtn.disabled = normalized === "running";
+          chainStopBtn.disabled = normalized !== "running";
+        }
+
+        async function callChainAction(action) {
+          const response = await fetch(`/api/chain/${encodeURIComponent(projectSlug)}/${encodeURIComponent(action)}`, { method: "POST" });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        }
+
+        chainStartBtn.addEventListener("click", async () => {
+          chainStartBtn.disabled = true;
+          try {
+            await callChainAction("start");
+          } catch (_error) {
+            chainStartBtn.disabled = false;
+          }
+        });
+
+        chainStopBtn.addEventListener("click", async () => {
+          chainStopBtn.disabled = true;
+          try {
+            await callChainAction("stop");
+          } catch (_error) {
+            chainStopBtn.disabled = false;
+          }
+        });
+
+        applyChainState({
+          chain_status: {{ (chain.status if chain else 'stopped')|tojson }},
+          chain_current_ticket_num: {{ chain_current_ticket_num|tojson }},
+          chain_pause_reason: {{ chain_pause_reason|tojson }},
+        });
 
         function setConnection(isConnected, label) {
           const dot = document.getElementById("project-sse-dot");
@@ -1618,6 +1864,7 @@ PROJECT_TEMPLATE = """
           try {
             const payload = JSON.parse(event.data);
             applyBoardUpdate(payload);
+            applyChainState(payload);
             setConnection(true, "connected");
           } catch (_err) {
             setConnection(false, "parse error");
@@ -1819,664 +2066,3 @@ TICKET_TEMPLATE = """
 </html>
 """
 
-
-def _db_path():
-    return os.environ.get("AGENTPLAN_DB", os.path.expanduser("~/.agentplan/agentplan.db"))
-
-
-def _fetch_projects_with_stats(conn):
-    projects = conn.execute(
-        "SELECT id, slug, title, status, updated_at FROM projects ORDER BY updated_at DESC, id DESC LIMIT 100"
-    ).fetchall()
-    rows = conn.execute("SELECT project_id, status, COUNT(*) AS c FROM tickets GROUP BY project_id, status").fetchall()
-
-    counts = defaultdict(lambda: defaultdict(int))
-    for row in rows:
-        counts[row["project_id"]][row["status"]] = row["c"]
-
-    out = []
-    for p in projects:
-        project_counts = counts[p["id"]]
-        breakdown = {
-            "todo": int(project_counts.get("pending", 0)),
-            "in-progress": int(project_counts.get("in-progress", 0)),
-            "blocked": int(project_counts.get("blocked", 0)),
-            "done": int(project_counts.get("done", 0)),
-            "skipped": int(project_counts.get("skipped", 0)),
-        }
-        total = sum(breakdown.values())
-        done = breakdown["done"] + breakdown["skipped"]
-        in_flight = breakdown["todo"] + breakdown["in-progress"] + breakdown["blocked"]
-        progress = int(round((done / total) * 100)) if total else 0
-        out.append(
-            {
-                "id": p["id"],
-                "slug": p["slug"],
-                "title": p["title"],
-                "status": p["status"],
-                "updated_at": p["updated_at"],
-                "breakdown": breakdown,
-                "ticket_count": total,
-                "done_count": done,
-                "in_flight_count": in_flight,
-                "progress_pct": progress,
-            }
-        )
-    return out
-
-
-def _ticket_matches(ticket, status_filter, priority_filter, tag_filter):
-    if status_filter:
-        normalized_status = "pending" if status_filter == "todo" else status_filter
-        if ticket["status"] != normalized_status:
-            return False
-    if priority_filter:
-        ticket_priority = str(ticket.get("priority") or "").strip().lower()
-        if ticket_priority != priority_filter:
-            return False
-    if tag_filter:
-        tags = {t.strip().lower() for t in (ticket["tags"] or "").split(",") if t.strip()}
-        if tag_filter not in tags:
-            return False
-    return True
-
-
-def _normalize_ticket(row):
-    tags = [t.strip() for t in (row["tags"] or "").split(",") if t.strip()]
-    try:
-        dependencies = json.loads(row["depends_on"] or "[]")
-    except (TypeError, ValueError, json.JSONDecodeError):
-        dependencies = []
-
-    assignee = (row["started_by"] or row["done_by"] or "").strip()
-    initials = "".join(part[0] for part in assignee.split()[:2]).upper() if assignee else ""
-    if assignee and not initials:
-        initials = assignee[:2].upper()
-
-    due_date = (row["due_date"] or "").strip()
-    is_overdue = False
-    if due_date:
-        try:
-            due_dt = datetime.strptime(due_date, "%Y-%m-%d").date()
-            is_overdue = due_dt < datetime.now().date() and row["status"] not in ("done", "skipped")
-        except ValueError:
-            is_overdue = False
-
-    tag_tones = {tag: TAG_TONES[sum(ord(ch) for ch in tag) % len(TAG_TONES)] for tag in tags}
-
-    return {
-        "id": row["id"],
-        "num": row["num"],
-        "title": row["title"],
-        "description": row["description"] or "",
-        "status": row["status"],
-        "priority": str(row["priority"]).strip() if row["priority"] is not None else "",
-        "tags": tags,
-        "tag_tones": tag_tones,
-        "dependencies": dependencies,
-        "assignee": assignee,
-        "assignee_initials": initials,
-        "due_date": due_date,
-        "is_overdue": is_overdue,
-    }
-
-
-def _project_stats_payload():
-    conn = get_connection(_db_path())
-    try:
-        projects = _fetch_projects_with_stats(conn)
-
-        completed_today = conn.execute(
-            """
-            SELECT COUNT(*) AS c
-            FROM tickets
-            WHERE status IN ('done', 'skipped')
-              AND completed_at IS NOT NULL
-              AND date(completed_at) = date('now', 'localtime')
-            """
-        ).fetchone()["c"]
-
-        active_agents = conn.execute(
-            """
-            SELECT COUNT(DISTINCT agent) AS c
-            FROM (
-                SELECT TRIM(started_by) AS agent FROM tickets WHERE started_by IS NOT NULL AND TRIM(started_by) != ''
-                UNION
-                SELECT TRIM(done_by) AS agent FROM tickets WHERE done_by IS NOT NULL AND TRIM(done_by) != ''
-            )
-            """
-        ).fetchone()["c"]
-    finally:
-        conn.close()
-
-    summary = {
-        "active_projects": sum(1 for p in projects if p["status"] != "completed"),
-        "tickets_in_flight": sum(p["in_flight_count"] for p in projects),
-        "completed_today": int(completed_today or 0),
-        "active_agents": int(active_agents or 0),
-    }
-
-    return {
-        "projects": projects,
-        "summary": summary,
-        "server_time": datetime.now().isoformat(timespec="seconds"),
-    }
-
-
-
-
-
-def _extract_agent(entry):
-    text = (entry or "").strip()
-    if not text:
-        return "system"
-    if "(by " in text:
-        marker = text.split("(by ", 1)[1]
-        return marker.split(")", 1)[0].strip() or "system"
-    tokens = text.replace("✓", "").replace("🎉", "").strip().split()
-    if len(tokens) >= 2 and tokens[1].lower() in {"started", "completed", "closed", "claimed", "reopened", "blocked", "unblocked", "abandoned"}:
-        return tokens[0]
-    return "system"
-
-
-
-def _status_action_meta(new_state):
-    mapping = {
-        "done": ("done", "✅", "marked done"),
-        "skipped": ("done", "⏭️", "skipped"),
-        "in-progress": ("started", "🚀", "started"),
-        "blocked": ("blocked", "⛔", "blocked"),
-        "pending": ("other", "🔄", "moved to todo"),
-    }
-    return mapping.get((new_state or "").strip().lower(), ("other", "📝", f"changed to {(new_state or 'updated').strip()}"))
-
-
-def _log_action_meta(entry):
-    raw = (entry or "").strip()
-    lowered = raw.lower()
-    if "create" in lowered:
-        return "created", "🆕", "created"
-    if "block" in lowered:
-        return "blocked", "⛔", "blocked"
-    if "done" in lowered or "completed" in lowered or "closed" in lowered:
-        return "done", "✅", "completed"
-    if "start" in lowered or "claimed" in lowered:
-        return "started", "🚀", "started"
-    if "skip" in lowered:
-        return "skipped", "⏭️", "skipped"
-    return "log", "📝", raw or "logged update"
-
-
-def _activity_feed_payload(limit=300):
-    conn = get_connection(_db_path())
-    try:
-        log_rows = conn.execute(
-            """
-            SELECT l.id AS event_id, l.created_at AS timestamp, l.entry, p.slug AS project_slug, p.title AS project_title, t.num AS ticket_num
-            FROM log l
-            JOIN projects p ON p.id = l.project_id
-            LEFT JOIN tickets t ON t.id = l.ticket_id
-            ORDER BY l.created_at DESC, l.id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-
-        history_rows = conn.execute(
-            """
-            SELECT h.id AS event_id, h.changed_at AS timestamp, h.old_state, h.new_state,
-                   t.num AS ticket_num, t.started_by, t.done_by,
-                   p.slug AS project_slug, p.title AS project_title
-            FROM ticket_history h
-            JOIN tickets t ON t.id = h.ticket_id
-            JOIN projects p ON p.id = t.project_id
-            ORDER BY h.changed_at DESC, h.id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    events = []
-    for row in log_rows:
-        action_type, emoji, action = _log_action_meta(row["entry"])
-        events.append(
-            {
-                "id": f"log:{row['event_id']}",
-                "timestamp": row["timestamp"],
-                "agent": _extract_agent(row["entry"]),
-                "action": action,
-                "action_type": action_type,
-                "emoji": emoji,
-                "ticket_label": f"#{row['ticket_num']}" if row["ticket_num"] else "#-",
-                "project_slug": row["project_slug"],
-                "project_title": row["project_title"],
-            }
-        )
-
-    for row in history_rows:
-        action_type, emoji, action = _status_action_meta(row["new_state"])
-        agent = "system"
-        if row["new_state"] in ("done", "skipped") and (row["done_by"] or "").strip():
-            agent = row["done_by"].strip()
-        elif row["new_state"] == "in-progress" and (row["started_by"] or "").strip():
-            agent = row["started_by"].strip()
-        events.append(
-            {
-                "id": f"history:{row['event_id']}",
-                "timestamp": row["timestamp"],
-                "agent": agent,
-                "action": action,
-                "action_type": action_type,
-                "emoji": emoji,
-                "ticket_label": f"#{row['ticket_num']}" if row["ticket_num"] else "#-",
-                "project_slug": row["project_slug"],
-                "project_title": row["project_title"],
-            }
-        )
-
-    events.sort(key=lambda item: (item.get("timestamp") or "", item["id"]))
-    if len(events) > limit:
-        events = events[-limit:]
-
-    projects = sorted({item["project_slug"] for item in events if item.get("project_slug")})
-
-    now_dt = datetime.now()
-    latest_by_agent = {}
-    for item in reversed(events):
-        agent = (item.get("agent") or "").strip()
-        if not agent or agent == "system" or agent in latest_by_agent:
-            continue
-        try:
-            ts = datetime.fromisoformat(item["timestamp"])
-        except (TypeError, ValueError):
-            continue
-        if (now_dt - ts).total_seconds() <= 3600:
-            latest_by_agent[agent] = item["timestamp"]
-
-    active_agents = [
-        {"name": name, "last_seen": ts}
-        for name, ts in sorted(latest_by_agent.items(), key=lambda pair: pair[1], reverse=True)
-    ]
-
-    return {
-        "events": events,
-        "projects": projects,
-        "active_agents": active_agents,
-        "server_time": datetime.now().isoformat(timespec="seconds"),
-    }
-
-def _ticket_detail_payload(conn, project_id, ticket_num):
-    row = conn.execute(
-        """
-        SELECT id, num, title, description, status, priority, tags, depends_on, close_note, started_by, done_by, due_date
-        FROM tickets
-        WHERE project_id=? AND num=?
-        """,
-        (project_id, ticket_num),
-    ).fetchone()
-    if not row:
-        return None
-
-    ticket = _normalize_ticket(row)
-    ticket["close_note"] = row["close_note"] or ""
-
-    subtasks = [dict(r) for r in conn.execute(
-        "SELECT num, title, status FROM subtasks WHERE ticket_id=? ORDER BY num",
-        (ticket["id"],),
-    ).fetchall()]
-
-    dep_nums = ticket["dependencies"]
-    blocked_by = []
-    if dep_nums:
-        placeholders = ",".join("?" for _ in dep_nums)
-        blocked_rows = conn.execute(
-            f"SELECT num, title FROM tickets WHERE project_id=? AND num IN ({placeholders}) ORDER BY num",
-            (project_id, *dep_nums),
-        ).fetchall()
-        blocked_by = [dict(r) for r in blocked_rows]
-
-    project_ticket_rows = conn.execute(
-        "SELECT num, title, depends_on FROM tickets WHERE project_id=? AND id!=? ORDER BY num",
-        (project_id, ticket["id"]),
-    ).fetchall()
-    blocks = []
-    for r in project_ticket_rows:
-        try:
-            ticket_deps = json.loads(r["depends_on"] or "[]")
-        except (TypeError, ValueError, json.JSONDecodeError):
-            ticket_deps = []
-        if ticket["num"] in ticket_deps:
-            blocks.append({"num": r["num"], "title": r["title"]})
-
-    history_rows = conn.execute(
-        "SELECT changed_at, old_state, new_state FROM ticket_history WHERE ticket_id=? ORDER BY id DESC",
-        (ticket["id"],),
-    ).fetchall()
-    log_rows = conn.execute(
-        "SELECT created_at, entry FROM log WHERE ticket_id=? ORDER BY id DESC",
-        (ticket["id"],),
-    ).fetchall()
-
-    audit_history = []
-    for r in history_rows:
-        old_state = r["old_state"] or "(none)"
-        new_state = r["new_state"] or ""
-        audit_history.append(
-            {
-                "timestamp": r["changed_at"],
-                "agent": "system",
-                "message": f"state transition: {old_state} → {new_state}",
-                "transition": {"old_state": old_state, "new_state": new_state},
-            }
-        )
-    for r in log_rows:
-        entry = r["entry"] or ""
-        audit_history.append(
-            {
-                "timestamp": r["created_at"],
-                "agent": _extract_agent(entry),
-                "message": entry,
-                "transition": None,
-            }
-        )
-    audit_history.sort(key=lambda item: item["timestamp"], reverse=True)
-
-    return {
-        "id": ticket["id"],
-        "num": ticket["num"],
-        "title": ticket["title"],
-        "status": ticket["status"],
-        "priority": ticket["priority"],
-        "description": ticket["description"],
-        "subtasks": subtasks,
-        "blocked_by": blocked_by,
-        "blocks": blocks,
-        "audit_history": audit_history,
-        "close_note": ticket["close_note"],
-    }
-
-
-
-
-def _project_board_payload(slug, status_filter="", priority_filter="", tag_filter=""):
-    status_filter = (status_filter or "").strip().lower()
-    priority_filter = (priority_filter or "").strip().lower()
-    tag_filter = (tag_filter or "").strip().lower()
-
-    conn = get_connection(_db_path())
-    try:
-        project = conn.execute("SELECT id, slug, title FROM projects WHERE slug=?", (slug,)).fetchone()
-        if not project:
-            return None
-
-        rows = conn.execute(
-            """
-            SELECT id, num, title, description, status, priority, tags, depends_on, started_by, done_by, due_date
-            FROM tickets
-            WHERE project_id=?
-            ORDER BY num
-            LIMIT 1000
-            """,
-            (project["id"],),
-        ).fetchall()
-
-        ticket_ids = [row["id"] for row in rows]
-        subtask_progress = {}
-        if ticket_ids:
-            placeholders = ",".join("?" for _ in ticket_ids)
-            progress_rows = conn.execute(
-                f"""
-                SELECT ticket_id, COUNT(*) AS total, SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done
-                FROM subtasks
-                WHERE ticket_id IN ({placeholders})
-                GROUP BY ticket_id
-                """,
-                ticket_ids,
-            ).fetchall()
-            subtask_progress = {
-                r["ticket_id"]: {"done": int(r["done"] or 0), "total": int(r["total"] or 0)} for r in progress_rows
-            }
-    finally:
-        conn.close()
-
-    ticket_status_map = {row["num"]: row["status"] for row in rows}
-
-    grouped = {s: [] for s in KANBAN_STATUS_ORDER}
-    for row in rows:
-        ticket = _normalize_ticket(row)
-        subtask = subtask_progress.get(ticket["id"], {"done": 0, "total": 0})
-        ticket["subtask_done"] = subtask["done"]
-        ticket["subtask_total"] = subtask["total"]
-        ticket["subtask_pct"] = int(round((subtask["done"] / subtask["total"]) * 100)) if subtask["total"] else 0
-        ticket["active_agent"] = bool(ticket["assignee"] and ticket["status"] == "in-progress")
-
-        is_blocked = (
-            ticket["status"] == "pending"
-            and bool(ticket["dependencies"])
-            and any(ticket_status_map.get(dep_num) not in ("done", "skipped") for dep_num in ticket["dependencies"])
-        )
-        group_key = "blocked" if is_blocked else ticket["status"]
-        if group_key == "skipped":
-            group_key = "done"
-        if group_key not in grouped:
-            continue
-        if _ticket_matches(ticket, status_filter, priority_filter, tag_filter):
-            grouped[group_key].append(ticket)
-
-    return {
-        "project": {"slug": project["slug"], "title": project["title"]},
-        "grouped": grouped,
-        "server_time": datetime.now().isoformat(timespec="seconds"),
-    }
-
-def create_app():
-    app = Flask(__name__)
-
-    @app.route("/")
-    def index():
-        payload = _project_stats_payload()
-        projects = payload["projects"]
-        active_projects = [p for p in projects if p["status"] != "completed" and p["status"] != "archived"]
-        completed_projects = [p for p in projects if p["status"] == "completed"]
-        return render_template_string(
-            INDEX_TEMPLATE,
-            projects=projects,
-            active_projects=active_projects,
-            completed_projects=completed_projects,
-            summary=payload["summary"],
-        )
-
-    @app.route("/api/stats")
-    def api_stats():
-        return _project_stats_payload()
-
-    @app.route("/events")
-    @app.route("/stream")
-    def events():
-        try:
-            interval = max(1, min(int(request.args.get("interval", "2")), 30))
-        except (ValueError, TypeError):
-            interval = 2
-        project_slug = (request.args.get("project") or "").strip()
-        status_filter = request.args.get("status", "")
-        priority_filter = request.args.get("priority", "")
-        tag_filter = request.args.get("tag", "")
-
-        @stream_with_context
-        def event_stream():
-            while True:
-                stats_payload = _project_stats_payload()
-                activity_payload = _activity_feed_payload()
-                yield f"event: project_stats\ndata: {json.dumps(stats_payload)}\n\n"
-                yield f"event: activity_feed\ndata: {json.dumps(activity_payload)}\n\n"
-                if project_slug:
-                    board_payload = _project_board_payload(project_slug, status_filter, priority_filter, tag_filter)
-                    if board_payload is not None:
-                        yield f"event: project_board\ndata: {json.dumps(board_payload)}\n\n"
-                time.sleep(interval)
-
-        return Response(event_stream(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache"})
-
-    @app.route("/activity")
-    def activity():
-        return render_template_string(ACTIVITY_TEMPLATE)
-
-    @app.route("/project/<slug>")
-    def project_detail(slug):
-        status_filter = request.args.get("status", "").strip().lower()
-        priority_filter = request.args.get("priority", "").strip().lower()
-        tag_filter = request.args.get("tag", "").strip().lower()
-
-        conn = get_connection(_db_path())
-        try:
-            project = conn.execute("SELECT id, slug, title, status FROM projects WHERE slug=?", (slug,)).fetchone()
-            if not project:
-                abort(404)
-            rows = conn.execute(
-                """
-                SELECT id, num, title, description, status, priority, tags, depends_on, started_by, done_by, due_date
-                FROM tickets
-                WHERE project_id=?
-                ORDER BY num
-                LIMIT 1000
-                """,
-                (project["id"],),
-            ).fetchall()
-
-            available_tags = sorted(
-                {
-                    tag.strip()
-                    for row in rows
-                    for tag in (row["tags"] or "").split(",")
-                    if tag.strip()
-                },
-                key=lambda value: value.lower(),
-            )
-
-            ticket_ids = [row["id"] for row in rows]
-            subtask_progress = {}
-            if ticket_ids:
-                placeholders = ",".join("?" for _ in ticket_ids)
-                progress_rows = conn.execute(
-                    f"""
-                    SELECT ticket_id, COUNT(*) AS total, SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done
-                    FROM subtasks
-                    WHERE ticket_id IN ({placeholders})
-                    GROUP BY ticket_id
-                    """,
-                    ticket_ids,
-                ).fetchall()
-                subtask_progress = {
-                    r["ticket_id"]: {"done": int(r["done"] or 0), "total": int(r["total"] or 0)} for r in progress_rows
-                }
-        finally:
-            conn.close()
-
-        ticket_status_map = {row["num"]: row["status"] for row in rows}
-
-        grouped = {s: [] for s in KANBAN_STATUS_ORDER}
-        done_count = 0
-        for row in rows:
-            ticket = _normalize_ticket(row)
-            if ticket["status"] in ("done", "skipped"):
-                done_count += 1
-
-            subtask = subtask_progress.get(ticket["id"], {"done": 0, "total": 0})
-            ticket["subtask_done"] = subtask["done"]
-            ticket["subtask_total"] = subtask["total"]
-            ticket["subtask_pct"] = int(round((subtask["done"] / subtask["total"]) * 100)) if subtask["total"] else 0
-            ticket["active_agent"] = bool(ticket["assignee"] and ticket["status"] == "in-progress")
-
-            is_blocked = (
-                ticket["status"] == "pending"
-                and bool(ticket["dependencies"])
-                and any(ticket_status_map.get(dep_num) not in ("done", "skipped") for dep_num in ticket["dependencies"])
-            )
-            group_key = "blocked" if is_blocked else ticket["status"]
-            if group_key == "skipped":
-                group_key = "done"
-            if group_key not in grouped:
-                continue
-            if _ticket_matches(ticket, status_filter, priority_filter, tag_filter):
-                grouped[group_key].append(ticket)
-
-        return render_template_string(
-            PROJECT_TEMPLATE,
-            project=project,
-            grouped=grouped,
-            status_order=KANBAN_STATUS_ORDER,
-            status_labels=KANBAN_STATUS_LABELS,
-            done_count=done_count,
-            total_count=len(rows),
-            filters={"status": status_filter, "priority": priority_filter, "tag": tag_filter},
-            available_tags=available_tags,
-        )
-
-    @app.route("/api/ticket/<slug>/<int:ticket_num>")
-    def api_ticket_detail(slug, ticket_num):
-        conn = get_connection(_db_path())
-        try:
-            project = conn.execute("SELECT id, slug, title, status FROM projects WHERE slug=?", (slug,)).fetchone()
-            if not project:
-                abort(404)
-            payload = _ticket_detail_payload(conn, project["id"], ticket_num)
-            if not payload:
-                abort(404)
-            payload["project"] = {"slug": project["slug"], "title": project["title"]}
-            return payload
-        finally:
-            conn.close()
-
-    @app.route("/project/<slug>/ticket/<int:ticket_num>")
-    def ticket_detail(slug, ticket_num):
-        conn = get_connection(_db_path())
-        try:
-            project = conn.execute("SELECT id, slug, title, status FROM projects WHERE slug=?", (slug,)).fetchone()
-            if not project:
-                abort(404)
-            payload = _ticket_detail_payload(conn, project["id"], ticket_num)
-            if not payload:
-                abort(404)
-        finally:
-            conn.close()
-
-        history = [
-            {"changed_at": item["timestamp"], "message": item["message"]}
-            for item in payload["audit_history"]
-        ]
-
-        return render_template_string(
-            TICKET_TEMPLATE,
-            project=project,
-            ticket=payload,
-            subtasks=payload["subtasks"],
-            blocked_by=payload["blocked_by"],
-            blocks=payload["blocks"],
-            history=history,
-        )
-
-    return app
-
-
-app = create_app()
-
-
-def run_dashboard(host="0.0.0.0", port=5001, open_browser=False):
-    if open_browser:
-        def _open():
-            webbrowser.open(f"http://localhost:{port}")
-        threading.Timer(0.6, _open).start()
-    app.run(host=host, port=port, threaded=True)
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run agentplan dashboard")
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=5001)
-    parser.add_argument("--open", action="store_true", dest="open_browser", help="Open dashboard in default browser")
-    args = parser.parse_args()
-    run_dashboard(host=args.host, port=args.port, open_browser=args.open_browser)

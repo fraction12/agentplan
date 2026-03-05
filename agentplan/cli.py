@@ -2,17 +2,25 @@
 """agentplan — Project management CLI for AI agents."""
 
 import argparse
-import difflib
 import json
+import logging
 import os
 import re
+import shlex
+import shutil
+import sqlite3
+import subprocess
 import sys
-from datetime import datetime
-
-from agentplan.models import HistoryEntry, Project, Subtask, Ticket
+import threading
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timedelta
 
 from agentplan.db import (
     check_auto_complete,
+    create_role as db_create_role,
+    delete_role as db_delete_role,
     ensure as _ensure,
     get_connection,
     get_db_path,
@@ -20,6 +28,8 @@ from agentplan.db import (
     has_cycle,
     init_db,
     list_project_slugs,
+    get_unblocked as db_get_unblocked,
+    list_roles as db_list_roles,
     next_subtask_num as _next_subtask_num,
     next_ticket_num as _next_ticket_num,
     now as _now,
@@ -29,9 +39,21 @@ from agentplan.db import (
     resolve_subtask as db_resolve_subtask,
     resolve_ticket as db_resolve_ticket,
     unique_slug,
+    validate_transition,
+    update_role as db_update_role,
+    create_agent as db_create_agent,
+    get_agent as db_get_agent,
+    list_agents as db_list_agents,
+    delete_agent as db_delete_agent,
+    update_agent as db_update_agent,
+    get_role as db_get_role,
+    route_ticket as db_route_ticket,
+    get_chain_state as db_get_chain_state,
+    set_chain_state as db_set_chain_state,
+    is_valid_iso_local_timestamp,
 )
 
-__version__ = "0.4.3"
+__version__ = "0.5.0"
 
 # ---------------------------------------------------------------------------
 # Input validation limits
@@ -45,6 +67,47 @@ MAX_TAG_LEN = 500
 MAX_SLUG_LEN = 60  # already enforced via slugify
 
 
+AUTO_DETECT_TOOL_COMMANDS = {
+    "claude": "claude -p {ticket}",
+    "codex": "codex exec {ticket}",
+    "aider": "aider --message {ticket}",
+    "cursor": "cursor --apply-changes {ticket}",
+    "openclaw": "openclaw -s {ticket}",
+}
+
+TERMINAL_CHOICES = {"auto", "iterm2", "terminal"}
+LOGGER = logging.getLogger(__name__)
+
+
+def _detect_installed_tools():
+    installed = []
+    for tool in AUTO_DETECT_TOOL_COMMANDS:
+        try:
+            result = subprocess.run(
+                ["which", tool],
+                capture_output=True,
+                text=True,
+            )
+        except Exception:
+            continue
+        if result.returncode == 0:
+            installed.append(tool)
+    return installed
+
+
+def _create_default_agents(conn, tools):
+    created = []
+    for tool in tools:
+        command_template = AUTO_DETECT_TOOL_COMMANDS.get(tool)
+        if not command_template:
+            continue
+        if db_get_agent(conn, tool):
+            continue
+        db_create_agent(conn, tool, command_template)
+        created.append(tool)
+    return created
+
+
 def _validate_len(value, max_len, field_name):
     """Raise CliError if value exceeds max_len."""
     if value and len(value) > max_len:
@@ -52,6 +115,26 @@ def _validate_len(value, max_len, field_name):
             f"{field_name} is too long ({len(value)} chars; max {max_len}).",
             suggestions=[f"Keep {field_name.lower()} under {max_len} characters."],
         )
+
+
+def _validate_timeout_sec(timeout, flag_name="--timeout"):
+    if timeout is None:
+        return None
+    if timeout <= 0:
+        fail(f"{flag_name} must be a positive integer")
+    return int(timeout)
+
+
+def _effective_ticket_timeout_sec(project, ticket, override_timeout=None):
+    if override_timeout is not None:
+        return override_timeout
+    ticket_timeout = ticket["timeout_sec"] if "timeout_sec" in ticket.keys() else None
+    if ticket_timeout is not None:
+        return int(ticket_timeout)
+    project_timeout = project["timeout_sec"] if "timeout_sec" in project.keys() else None
+    if project_timeout is not None:
+        return int(project_timeout)
+    return None
 
 
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3}
@@ -64,6 +147,7 @@ TOP_LEVEL_COMMANDS = [
     "ticket",
     "next",
     "claim",
+    "reap",
     "status",
     "search",
     "list",
@@ -77,14 +161,27 @@ TOP_LEVEL_COMMANDS = [
     "remove",
     "history",
     "subtask",
+    "role",
+    "hook",
+    "agent",
     "completion",
+    "context",
+    "route",
+    "spawn-terminal",
+    "monitor-process",
+    "auto-tag",
+    "chain",
 ]
-TICKET_COMMANDS = ["add", "update", "edit", "done", "skip", "start", "list"]
+TICKET_COMMANDS = ["add", "update", "edit", "done", "skip", "start", "block", "fail", "review", "list"]
 SUBTASK_COMMANDS = ["add", "done", "list"]
+ROLE_COMMANDS = ["list", "add", "remove", "update"]
+HOOK_COMMANDS = ["add", "list", "remove"]
+AGENT_COMMANDS = ["add", "list", "remove", "update"]
 PROJECT_TOP_LEVEL_COMMANDS = {
     "status",
     "next",
     "claim",
+    "reap",
     "archive",
     "attach",
     "log",
@@ -94,6 +191,10 @@ PROJECT_TOP_LEVEL_COMMANDS = {
     "undepend",
     "remove",
     "history",
+    "context",
+    "route",
+    "auto-tag",
+    "chain",
 }
 
 
@@ -209,15 +310,7 @@ def has_cycle(tickets, ticket_num, new_deps):
 
 
 def get_unblocked(tickets):
-    done_nums = {t["num"] for t in tickets if t["status"] in ("done", "skipped")}
-    out = []
-    for t in tickets:
-        if t["status"] != "pending":
-            continue
-        deps = json.loads(t["depends_on"] or "[]")
-        if all(d in done_nums for d in deps):
-            out.append(t)
-    return out
+    return db_get_unblocked(tickets)
 
 
 
@@ -232,6 +325,12 @@ def _ticket_icon(status, blocked):
         return "⊘"
     if status == "in-progress":
         return "▶"
+    if status == "blocked":
+        return "⛔"
+    if status == "failed":
+        return "✗"
+    if status == "needs-review":
+        return "👀"
     return "⏳" if blocked else "○"
 
 
@@ -288,6 +387,29 @@ def _parse_tags(tags_arg):
         return ""
     tags = sorted({t.strip().lower() for t in tags_arg.split(",") if t.strip()})
     return ",".join(tags)
+
+
+def _validate_role_tags_or_fail(conn, tags_csv):
+    if not tags_csv:
+        return
+    tags = [t.strip().lower() for t in tags_csv.split(",") if t.strip()]
+    for tag in tags:
+        role_name = None
+        if tag.startswith("role:"):
+            role_name = tag.split(":", 1)[1].strip()
+            if not role_name:
+                fail(
+                    "Invalid role tag 'role:'.",
+                    suggestions=["Use a role tag in the form `role:<name>` (for example: `role:backend`)."],
+                )
+        elif db_get_role(conn, tag):
+            role_name = tag
+
+        if role_name and not db_get_role(conn, role_name):
+            fail(
+                f"Role '{role_name}' is not registered.",
+                suggestions=[f"Add it first with: agentplan role add {role_name}"],
+            )
 
 
 def _ticket_has_tag(ticket, tag):
@@ -379,6 +501,23 @@ def _completion_suggestions(words, current):
             return _completion_filter(_completion_project_slugs(), current)
         return []
 
+    if command == "role":
+        if len(words) == 1:
+            return _completion_filter(ROLE_COMMANDS, current)
+        return []
+
+    if command == "hook":
+        if len(words) == 1:
+            return _completion_filter(HOOK_COMMANDS, current)
+        if len(words) == 2 and words[1] in HOOK_COMMANDS:
+            return _completion_filter(_completion_project_slugs(), current)
+        return []
+
+    if command == "agent":
+        if len(words) == 1:
+            return _completion_filter(AGENT_COMMANDS, current)
+        return []
+
     if command in PROJECT_TOP_LEVEL_COMMANDS and len(words) == 1:
         return _completion_filter(_completion_project_slugs(), current)
 
@@ -389,22 +528,743 @@ def _completion_suggestions(words, current):
 # Commands
 # ---------------------------------------------------------------------------
 
+def _extract_role_from_tags(tags):
+    parts = [p.strip() for p in (tags or "").split(",") if p.strip()]
+    for tag in parts:
+        if tag.startswith("role:") and len(tag) > len("role:"):
+            return tag.split(":", 1)[1]
+    return None
+
+
+def _infer_working_dir(project_notes):
+    notes = project_notes or ""
+    patterns = [
+        r"(?im)^\s*(?:working[_ -]?dir|workdir|cwd)\s*[:=]\s*(.+?)\s*$",
+        r"(?im)^\s*(?:path)\s*[:=]\s*(.+?)\s*$",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, notes)
+        if m:
+            value = m.group(1).strip().strip("\"'")
+            if value:
+                return value
+    return os.environ.get("AGENTPLAN_WORKDIR") or os.getcwd()
+
+
+def _iterm2_running():
+    try:
+        result = subprocess.run(["pgrep", "-x", "iTerm2"], capture_output=True, text=True)
+    except Exception:
+        return False
+    return result.returncode == 0
+
+
+def _iterm2_installed():
+    if os.path.exists("/Applications/iTerm.app"):
+        return True
+    try:
+        result = subprocess.run(
+            ["mdfind", "kMDItemCFBundleIdentifier == 'com.googlecode.iterm2'"],
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return False
+    return result.returncode == 0 and bool((result.stdout or "").strip())
+
+
+def _terminal_preference(explicit=None):
+    pref = (explicit or os.environ.get("AGENTPLAN_TERMINAL", "auto") or "auto").strip().lower()
+    return pref if pref in TERMINAL_CHOICES else "auto"
+
+
+def detect_terminal_app(preference=None):
+    pref = _terminal_preference(preference)
+    if pref == "terminal":
+        return "terminal"
+    if pref == "iterm2":
+        return "iterm2" if (_iterm2_running() or _iterm2_installed()) else "terminal"
+    if _iterm2_running() or _iterm2_installed():
+        return "iterm2"
+    return "terminal"
+
+
+def _escape_applescript_string(value):
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _build_terminal_command(command, title=None):
+    wrapped = f"bash -lc {shlex.quote(command)}"
+    if title:
+        title_cmd = f"printf '\\033]1;%s\\007' {shlex.quote(title)}"
+        return f"{title_cmd}; {wrapped}"
+    return wrapped
+
+
+def _run_osascript(script):
+    return subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
+def spawn_terminal(command: str, title: str = None) -> int:
+    terminal = detect_terminal_app()
+    cmd = _build_terminal_command(command, title=title)
+    escaped = _escape_applescript_string(cmd)
+
+    if terminal == "iterm2":
+        script = (
+            'tell application "iTerm2"\n'
+            '    create window with default profile\n'
+            '    tell current session of current window\n'
+            f'        write text "{escaped}"\n'
+            '    end tell\n'
+            'end tell'
+        )
+        try:
+            result = _run_osascript(script)
+            if result.returncode == 0:
+                return 0
+            LOGGER.warning("iTerm2 osascript failed: %s", (result.stderr or "").strip())
+        except Exception as exc:
+            LOGGER.warning("iTerm2 osascript failed: %s", exc)
+        terminal = "terminal"
+
+    script = (
+        'tell application "Terminal"\n'
+        '    activate\n'
+        f'    do script "{escaped}"\n'
+        'end tell'
+    )
+    try:
+        result = _run_osascript(script)
+        if result.returncode != 0:
+            LOGGER.warning("Terminal osascript failed: %s", (result.stderr or "").strip())
+    except Exception as exc:
+        LOGGER.warning("Terminal osascript failed: %s", exc)
+    return 0
+
+
+def _get_ticket_status(project_slug, ticket_num):
+    conn = _ensure(get_connection())
+    try:
+        proj = resolve_project(conn, project_slug)
+        ticket = resolve_ticket(conn, proj["id"], ticket_num, proj["slug"])
+        return ticket["status"], ticket["id"]
+    finally:
+        conn.close()
+
+
+def _record_monitor_history(project_slug, ticket_num, old_state, message):
+    try:
+        conn = _ensure(get_connection())
+        try:
+            proj = resolve_project(conn, project_slug)
+            ticket = resolve_ticket(conn, proj["id"], ticket_num, proj["slug"])
+            _record_ticket_history(conn, ticket["id"], old_state, message)
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:
+        LOGGER.warning("Failed to record monitor history for %s#%s: %s", project_slug, ticket_num, exc)
+
+
+def _get_exit_code_for_pid(pid):
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "exit_code=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception as exc:
+        LOGGER.warning("Failed to query exit code for pid %s: %s", pid, exc)
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    output = (result.stdout or "").strip()
+    if not output:
+        return None
+    first_line = output.splitlines()[0].strip()
+    try:
+        return int(first_line)
+    except ValueError:
+        return None
+
+
+def monitor_process(pid: int, project_slug: str, ticket_num: int, timeout_sec: int = 3600) -> dict:
+    start = time.monotonic()
+    last_heartbeat = start
+    poll_interval = 5
+    heartbeat_interval = 60
+    terminal_states = {"done", "failed", "needs-review"}
+
+    ticket_status = "unknown"
+    timed_out = False
+    exit_code = None
+
+    while True:
+        now_mono = time.monotonic()
+        elapsed = now_mono - start
+        if elapsed >= timeout_sec:
+            timed_out = True
+            break
+
+        try:
+            current_status, _ = _get_ticket_status(project_slug, ticket_num)
+            ticket_status = current_status
+            if current_status in terminal_states:
+                return {
+                    "pid": pid,
+                    "exit_code": None,
+                    "ticket_status": current_status,
+                    "timed_out": False,
+                }
+        except Exception as exc:
+            LOGGER.warning("Failed reading ticket status for %s#%s: %s", project_slug, ticket_num, exc)
+
+        if now_mono - last_heartbeat >= heartbeat_interval:
+            _record_monitor_history(
+                project_slug,
+                ticket_num,
+                ticket_status,
+                f"monitor-heartbeat: pid={pid} elapsed={int(elapsed)}s",
+            )
+            last_heartbeat = now_mono
+
+        alive = True
+        if pid > 0:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                alive = False
+            except Exception as exc:
+                LOGGER.warning("Unexpected os.kill error for pid %s: %s", pid, exc)
+                alive = True
+
+        if not alive:
+            exit_code = _get_exit_code_for_pid(pid)
+            try:
+                current_status, _ = _get_ticket_status(project_slug, ticket_num)
+                ticket_status = current_status
+            except Exception:
+                pass
+            break
+
+        time.sleep(poll_interval)
+
+    return {
+        "pid": pid,
+        "exit_code": exit_code,
+        "ticket_status": ticket_status,
+        "timed_out": timed_out,
+    }
+
+
+def cmd_monitor_process(args):
+    result = monitor_process(args.pid, args.project, args.ticket_id, timeout_sec=args.timeout)
+    print(json.dumps(result))
+
+
+
+
+def _next_chain_candidate(conn, project_id):
+    tickets = conn.execute(
+        "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (project_id,)
+    ).fetchall()
+    items = [t for t in tickets if t["status"] == "in-progress"] + get_unblocked(tickets)
+    items = _sort_next_items(items)
+    return items[0] if items else None
+
+
+def _render_agent_command(template, ticket, project):
+    try:
+        project_slug = project["slug"]
+    except Exception:
+        project_slug = str(project)
+
+    try:
+        ticket_num = ticket["num"]
+    except Exception:
+        ticket_num = int(ticket)
+
+    ticket_ref = f"{project_slug} {ticket_num}"
+    command = template or ""
+    return (
+        command.replace("{{ticket}}", ticket_ref)
+        .replace("{{project}}", str(project_slug))
+        .replace("{{ticket_id}}", str(ticket_num))
+        .replace("{ticket}", ticket_ref)
+        .replace("{project}", str(project_slug))
+        .replace("{ticket_id}", str(ticket_num))
+    )
+
+
+def _mark_ticket_failed_for_timeout(conn, project, ticket, timeout_sec):
+    reason = f"timeout: no progress for {timeout_sec}s"
+    conn.execute(
+        "UPDATE tickets SET status='failed', close_note=?, completed_at=NULL, claimed_at=NULL WHERE id=?",
+        (reason, ticket["id"]),
+    )
+    _record_ticket_history(conn, ticket["id"], ticket["status"], "failed")
+    conn.execute(
+        "INSERT INTO log (project_id, ticket_id, entry) VALUES (?,?,?)",
+        (project["id"], ticket["id"], reason),
+    )
+    conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), project["id"]))
+    conn.commit()
+    return reason
+
+
+def _parse_local_timestamp(ts):
+    if not ts:
+        return None
+    try:
+        return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S")
+    except Exception:
+        return None
+
+
+def _latest_ticket_heartbeat(conn, project_id, ticket_id):
+    row = conn.execute(
+        "SELECT created_at FROM log WHERE project_id=? AND ticket_id=? ORDER BY id DESC LIMIT 1",
+        (project_id, ticket_id),
+    ).fetchone()
+    return _parse_local_timestamp(row["created_at"]) if row else None
+
+
+def _monitor_chain_ticket(conn, project, ticket, pid, timeout_sec):
+    poll_interval = 5
+    timeout_sec = int(timeout_sec)
+    now_dt = datetime.now()
+    deadline_dt = now_dt + timedelta(seconds=timeout_sec)
+
+    db_set_chain_state(
+        conn,
+        project["id"],
+        "running",
+        current_ticket_id=ticket["id"],
+        pause_reason=None,
+        heartbeat_at=now_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+        deadline_at=deadline_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+    )
+
+    while True:
+        refreshed = conn.execute("SELECT * FROM tickets WHERE id=?", (ticket["id"],)).fetchone()
+        if refreshed and refreshed["status"] in {"done", "failed", "needs-review", "blocked"}:
+            return {
+                "ticket_status": refreshed["status"],
+                "timed_out": False,
+            }
+
+        latest_hb = _latest_ticket_heartbeat(conn, project["id"], ticket["id"])
+        if latest_hb and latest_hb > now_dt:
+            now_dt = latest_hb
+            deadline_dt = now_dt + timedelta(seconds=timeout_sec)
+            db_set_chain_state(
+                conn,
+                project["id"],
+                "running",
+                current_ticket_id=ticket["id"],
+                pause_reason=None,
+                heartbeat_at=now_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                deadline_at=deadline_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+            )
+
+        current_time = datetime.now()
+        if current_time > deadline_dt:
+            return {
+                "ticket_status": refreshed["status"] if refreshed else "unknown",
+                "timed_out": True,
+            }
+
+        alive = True
+        if pid > 0:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                alive = False
+            except Exception:
+                alive = True
+
+        if not alive:
+            refreshed = conn.execute("SELECT * FROM tickets WHERE id=?", (ticket["id"],)).fetchone()
+            return {
+                "ticket_status": refreshed["status"] if refreshed else "unknown",
+                "timed_out": False,
+            }
+
+        time.sleep(poll_interval)
+
+
+def cmd_chain(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    chain_timeout_override = _validate_timeout_sec(getattr(args, "timeout", None))
+
+    if getattr(args, "status", False):
+        state = db_get_chain_state(conn, proj["id"])
+        if not state:
+            print("Chain status: idle")
+        else:
+            current = "none"
+            if state.get("current_ticket_id"):
+                row = conn.execute("SELECT num FROM tickets WHERE id=?", (state["current_ticket_id"],)).fetchone()
+                if row:
+                    current = f"#{row['num']}"
+            print(f"Chain status: {state['status']}")
+            print(f"Current ticket: {current}")
+            print(f"Pause reason: {state.get('pause_reason') or '(none)'}")
+            print(f"Heartbeat: {state.get('heartbeat_at') or '(none)'}")
+            print(f"Deadline: {state.get('deadline_at') or '(none)'}")
+        conn.close()
+        return
+
+    if getattr(args, "stop", False):
+        state = db_get_chain_state(conn, proj["id"])
+        if state and state.get("status") == "running":
+            db_set_chain_state(
+                conn,
+                proj["id"],
+                "stopped",
+                current_ticket_id=state.get("current_ticket_id"),
+                pause_reason="stop requested",
+            )
+            print("Chain stop requested. Will stop after current ticket.")
+        else:
+            db_set_chain_state(conn, proj["id"], "stopped", pause_reason="stop requested")
+            print("Chain marked stopped.")
+        conn.close()
+        return
+
+    processed = 0
+    db_set_chain_state(conn, proj["id"], "running", current_ticket_id=None, pause_reason=None)
+    print(f"Starting chain for project '{proj['slug']}'")
+
+    while True:
+        if args.max_tickets is not None and processed >= args.max_tickets:
+            print(f"Reached --max-tickets={args.max_tickets}; stopping run.")
+            db_set_chain_state(conn, proj["id"], "stopped", current_ticket_id=None, pause_reason="max tickets reached")
+            break
+
+        state = db_get_chain_state(conn, proj["id"])
+        if state and state.get("status") == "stopped" and processed > 0:
+            print("Chain stop acknowledged.")
+            db_set_chain_state(conn, proj["id"], "stopped", current_ticket_id=None, pause_reason="stop requested")
+            break
+
+        ticket = _next_chain_candidate(conn, proj["id"])
+        if not ticket:
+            print("No more unblocked tickets. Chain complete.")
+            db_set_chain_state(conn, proj["id"], "done", current_ticket_id=None, pause_reason=None)
+            break
+
+        agent = db_route_ticket(conn, ticket, default_agent_name=args.default_agent)
+        if not agent:
+            reason = f"no agent found for ticket #{ticket['num']}"
+            print(f"Pausing chain: {reason}")
+            db_set_chain_state(conn, proj["id"], "paused", current_ticket_id=ticket["id"], pause_reason=reason)
+            break
+
+        timeout_sec = _effective_ticket_timeout_sec(proj, ticket, override_timeout=chain_timeout_override)
+        if timeout_sec is None:
+            timeout_sec = 3600
+
+        command = _render_agent_command(agent.get("command_template"), ticket, proj)
+        deadline_preview = (datetime.now() + timedelta(seconds=timeout_sec)).strftime("%Y-%m-%dT%H:%M:%S")
+        start_msg = f"chain-start: ticket #{ticket['num']} timeout={timeout_sec}s deadline={deadline_preview}"
+        conn.execute(
+            "INSERT INTO log (project_id, ticket_id, entry) VALUES (?,?,?)",
+            (proj["id"], ticket["id"], start_msg),
+        )
+        conn.commit()
+
+        print(f"→ Ticket #{ticket['num']} via agent '{agent['name']}' (timeout {timeout_sec}s)")
+        pid = spawn_terminal(command, title=f"agentplan:{agent['name']}")
+
+        result = _monitor_chain_ticket(conn, proj, ticket, pid, timeout_sec=timeout_sec)
+        refreshed = conn.execute("SELECT * FROM tickets WHERE id=?", (ticket["id"],)).fetchone()
+        status = result.get("ticket_status") or (refreshed["status"] if refreshed else "unknown")
+
+        if result.get("timed_out"):
+            reason = _mark_ticket_failed_for_timeout(conn, proj, refreshed or ticket, timeout_sec)
+            print(f"Paused: ticket #{ticket['num']} timed out ({timeout_sec}s)")
+            db_set_chain_state(conn, proj["id"], "paused", current_ticket_id=ticket["id"], pause_reason=reason)
+            break
+
+        if status == "done":
+            processed += 1
+            print(f"✓ Ticket #{ticket['num']} done; continuing")
+            db_set_chain_state(conn, proj["id"], "running", current_ticket_id=None, pause_reason=None)
+            continue
+
+        if status in {"blocked", "failed", "needs-review"}:
+            reason = f"ticket #{ticket['num']} ended as {status}"
+            print(f"Paused: {reason}")
+            db_set_chain_state(conn, proj["id"], "paused", current_ticket_id=ticket["id"], pause_reason=reason)
+            break
+
+        reason = f"ticket #{ticket['num']} ended with status {status}"
+        print(f"Paused: {reason}")
+        db_set_chain_state(conn, proj["id"], "paused", current_ticket_id=ticket["id"], pause_reason=reason)
+        break
+
+    conn.close()
+
+def cmd_context(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+
+    role = _extract_role_from_tags(ticket["tags"]) or "unassigned"
+    deps = json.loads(ticket["depends_on"] or "[]")
+
+    dep_lines = []
+    for dep_num in deps:
+        dep_ticket = db_resolve_ticket(conn, proj["id"], dep_num)
+        if dep_ticket:
+            dep_lines.append(f"  #{dep_ticket['num']}: {dep_ticket['title']} [{dep_ticket['status']}]")
+        else:
+            dep_lines.append(f"  #{dep_num}: (missing ticket) [unknown]")
+    if not dep_lines:
+        dep_lines = ["  (none)"]
+
+    agent_name = args.agent or "<name>"
+    workdir = _infer_working_dir(proj["notes"])
+    _, db_path = get_db_path()
+    claim_timeout = (
+        f"{ticket['claim_timeout']} seconds"
+        if ticket["claim_timeout"] is not None
+        else "not set"
+    )
+
+    lines = [
+        "=== AGENTPLAN CONTEXT BLOCK ===",
+        f"Project: {proj['slug']} ({proj['title']}) [{proj['status']}]",
+        f"Ticket: #{ticket['num']} — {ticket['title']}",
+        f"Priority: {_priority_label(ticket['priority'])}",
+        f"Status: {ticket['status']}",
+        f"Role: {role}",
+        f"Tags: {ticket['tags'] or '(none)'}",
+        f"Description: {ticket['description'] or '(none)'}",
+        "",
+        "Dependencies:",
+        *dep_lines,
+        "",
+        "Commands:",
+        f"  agentplan ticket start {proj['slug']} {ticket['num']} --agent {agent_name}",
+        f"  agentplan ticket done {proj['slug']} {ticket['num']} --agent {agent_name}",
+        f"  agentplan ticket block {proj['slug']} {ticket['num']} --reason \"...\"",
+        f"  agentplan ticket fail {proj['slug']} {ticket['num']} --reason \"...\"",
+        f"  agentplan log {proj['slug']} {ticket['num']} \"message\"",
+        "",
+        f"Working dir: {workdir}",
+        f"DB: {db_path}",
+        f"Claim timeout: {claim_timeout}",
+        "==============================",
+    ]
+    print("\n".join(lines))
+    conn.close()
+
+
+def cmd_route(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+    agent = db_route_ticket(conn, ticket, default_agent_name=args.default_agent)
+    conn.close()
+
+    if not agent:
+        print(f"No agent found for ticket #{ticket['num']}")
+        return
+
+    print(agent["name"])
+    if getattr(args, "terminal_pref", None):
+        os.environ["AGENTPLAN_TERMINAL"] = args.terminal_pref
+    if getattr(args, "terminal", False):
+        command = _render_agent_command(agent.get("command_template"), ticket, proj)
+        pid = spawn_terminal(command, title=f"agentplan:{agent['name']}")
+        if getattr(args, "monitor", False):
+            def _monitor_runner():
+                result = monitor_process(pid, proj["slug"], ticket["num"], timeout_sec=3600)
+                _record_monitor_history(
+                    proj["slug"],
+                    ticket["num"],
+                    result.get("ticket_status", "unknown"),
+                    f"monitor-result: {json.dumps(result, sort_keys=True)}",
+                )
+
+            thread = threading.Thread(target=_monitor_runner, daemon=True)
+            thread.start()
+
+
+def cmd_spawn_terminal(args):
+    if getattr(args, "terminal_pref", None):
+        os.environ["AGENTPLAN_TERMINAL"] = args.terminal_pref
+    spawn_terminal(args.command, title=getattr(args, "title", None))
+
+
+def _ticket_has_role_tag(ticket):
+    tags = (ticket["tags"] or "").split(",")
+    for tag in tags:
+        val = tag.strip().lower()
+        if val.startswith("role:") and len(val) > len("role:"):
+            return True
+    return False
+
+
+def _choose_autotag_agent(conn, requested_name=None):
+    if requested_name:
+        agent = db_get_agent(conn, requested_name)
+        if not agent:
+            fail(f"Agent '{requested_name}' not found.")
+        if not (agent.get("command_template") or "").strip():
+            fail(f"Agent '{requested_name}' has no command template configured.")
+        return agent
+
+    for agent in db_list_agents(conn):
+        if (agent.get("command_template") or "").strip():
+            return agent
+    return None
+
+
+def _invoke_autotag_ai(command_template, prompt, ticket_text):
+    if command_template:
+        rendered = command_template.replace("{ticket}", ticket_text).replace("{prompt}", prompt)
+        argv = shlex.split(rendered)
+    else:
+        argv = ["claude", "-p", prompt]
+
+    result = subprocess.run(argv, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"command failed: {' '.join(argv)}")
+
+    return (result.stdout or "").strip()
+
+
+def _normalize_role_prediction(raw):
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    first = text.splitlines()[0].strip()
+    first = first.strip("`'\" ")
+    first = re.sub(r"[^a-zA-Z0-9_-]", "", first)
+    return first.lower()
+
+
+def cmd_auto_tag(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    roles = [r.name.lower() for r in db_list_roles(conn)]
+    if not roles:
+        conn.close()
+        fail("No roles configured.", suggestions=["Add roles first with: agentplan role add <name>"])
+
+    selected_agent = _choose_autotag_agent(conn, requested_name=getattr(args, "agent", None))
+    command_template = selected_agent["command_template"] if selected_agent else None
+    agent_label = selected_agent["name"] if selected_agent else "claude"
+
+    if not command_template and not shutil.which("claude"):
+        conn.close()
+        fail(
+            "No configured agent command_template found and fallback 'claude' is unavailable.",
+            suggestions=["Add an agent: agentplan agent add <name> --command '<cmd>'"],
+        )
+
+    tickets = conn.execute(
+        "SELECT * FROM tickets WHERE project_id=? ORDER BY num",
+        (proj["id"],),
+    ).fetchall()
+    if args.ticket is not None:
+        tickets = [t for t in tickets if t["num"] == args.ticket]
+        if not tickets:
+            conn.close()
+            fail(
+                f"Ticket #{args.ticket} not found in project '{proj['slug']}'.",
+                suggestions=[f"Run `agentplan ticket list {proj['slug']}` to see available ticket IDs."],
+            )
+
+    processed = 0
+    changed = 0
+    for t in tickets:
+        if _ticket_has_role_tag(t):
+            print(f"Skipping ticket #{t['num']}: already has role tag")
+            continue
+
+        processed += 1
+        prompt = (
+            f"Given these roles: {', '.join(roles)}, classify the following ticket title+description into one role. "
+            f"Reply with just the role name. Ticket: {t['title']}. {t['description'] or ''}"
+        )
+        ticket_text = f"{t['title']}. {t['description'] or ''}".strip()
+
+        try:
+            raw = _invoke_autotag_ai(command_template, prompt, ticket_text)
+        except Exception as e:
+            print(f"Warning: ticket #{t['num']} auto-tag failed via {agent_label}: {e}", file=sys.stderr)
+            continue
+
+        predicted = _normalize_role_prediction(raw)
+        role = db_get_role(conn, predicted)
+        if not role:
+            print(
+                f"Warning: ticket #{t['num']} returned unknown role '{predicted or raw}'. Skipping.",
+                file=sys.stderr,
+            )
+            continue
+
+        new_tag = f"role:{role.name}"
+        existing_tags = [x.strip() for x in (t["tags"] or "").split(",") if x.strip()]
+        updated_tags = ",".join(existing_tags + [new_tag]) if existing_tags else new_tag
+
+        if args.dry_run:
+            print(f"[dry-run] ticket #{t['num']} -> {new_tag}")
+        else:
+            conn.execute("UPDATE tickets SET tags=? WHERE id=?", (updated_tags, t["id"]))
+            _record_ticket_history(conn, t["id"], t["status"], f"auto-tag:{role.name}")
+            print(f"Tagged ticket #{t['num']} -> {new_tag}")
+            changed += 1
+
+    if not args.dry_run and changed:
+        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
+        conn.commit()
+    elif args.dry_run:
+        conn.rollback()
+
+    if processed == 0:
+        print("No untagged tickets found.")
+    conn.close()
+
+
 def cmd_init(args):
     dir_path, db_path = get_db_path()
     os.makedirs(dir_path, exist_ok=True)
     conn = get_connection(db_path)
     init_db(conn)
+    detected_tools = _detect_installed_tools()
+    created_agents = _create_default_agents(conn, detected_tools)
     conn.commit()
     conn.close()
     print(f"Initialized agentplan database at {db_path}")
+    if created_agents:
+        print(f"Auto-detected agents: {', '.join(created_agents)}")
 
 
 def cmd_create(args):
     _validate_len(args.title, MAX_TITLE_LEN, "Project title")
     _validate_len(args.notes, MAX_NOTES_LEN, "Notes")
+    timeout_sec = _validate_timeout_sec(getattr(args, "timeout", None))
     conn = _ensure(get_connection())
     slug = unique_slug(conn, slugify(args.title))
-    conn.execute("INSERT INTO projects (slug, title, notes) VALUES (?,?,?)", (slug, args.title, args.notes))
+    conn.execute(
+        "INSERT INTO projects (slug, title, notes, timeout_sec) VALUES (?,?,?,?)",
+        (slug, args.title, args.notes, timeout_sec),
+    )
     pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     n = 0
     for t in args.ticket or []:
@@ -431,6 +1291,17 @@ def cmd_ticket_add(args):
     _validate_len(getattr(args, "tag", None), MAX_TAG_LEN, "Tags")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
+    # Ticket #17: validate --role against registered roles
+    role_tag = None
+    if getattr(args, "role", None):
+        role = db_get_role(conn, args.role)
+        if not role:
+            conn.close()
+            fail(
+                f"Role '{args.role}' is not registered.",
+                suggestions=["Add it first with: agentplan role add " + args.role],
+            )
+        role_tag = f"role:{role.name}"
     deps = []
     if args.depends:
         deps = [int(x.strip()) for x in args.depends.split(",")]
@@ -438,10 +1309,18 @@ def cmd_ticket_add(args):
             resolve_ticket(conn, proj["id"], d, proj["slug"])
     num = _next_ticket_num(conn, proj["id"])
     tags = _parse_tags(args.tag)
+    _validate_role_tags_or_fail(conn, tags)
+    if role_tag:
+        existing = [t for t in tags.split(",") if t] if tags else []
+        if role_tag not in existing:
+            existing.append(role_tag)
+        tags = ",".join(existing)
+    _validate_role_tags_or_fail(conn, tags)
     due_date = _parse_due_date(getattr(args, "due", None))
+    timeout_sec = _validate_timeout_sec(getattr(args, "timeout", None))
     conn.execute(
-        "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes, due_date) VALUES (?,?,?,?,?,?,?,?,?)",
-        (proj["id"], num, args.title, args.desc, args.priority or "none", tags, json.dumps(deps), args.notes, due_date),
+        "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes, due_date, timeout_sec) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (proj["id"], num, args.title, args.desc, args.priority or "none", tags, json.dumps(deps), args.notes, due_date, timeout_sec),
     )
     ticket_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     _record_ticket_history(conn, ticket_id, None, "created")
@@ -533,17 +1412,22 @@ def cmd_ticket_edit(args):
         updates.append("priority=?")
         values.append(args.priority)
     if args.tag is not None:
+        parsed_tags = _parse_tags(args.tag)
+        _validate_role_tags_or_fail(conn, parsed_tags)
         updates.append("tags=?")
-        values.append(_parse_tags(args.tag))
+        values.append(parsed_tags)
     if args.due is not None:
         updates.append("due_date=?")
         values.append(_parse_due_date(args.due))
+    if args.timeout is not None:
+        updates.append("timeout_sec=?")
+        values.append(_validate_timeout_sec(args.timeout))
 
     if not updates:
         conn.close()
         fail(
             "No updates provided.",
-            suggestions=["Use at least one of: `--title`, `--desc`, `--priority`, `--tag`, `--due`."],
+            suggestions=["Use at least one of: `--title`, `--desc`, `--priority`, `--tag`, `--due`, `--timeout`."],
         )
 
     values.append(t["id"])
@@ -563,6 +1447,102 @@ def _expand_ticket_ids(ticket_ids):
     return expanded
 
 
+def _validate_ticket_transition_or_fail(ticket, to_state):
+    ok, reason = validate_transition(ticket["status"], to_state)
+    if not ok:
+        fail(
+            f"Ticket #{ticket['num']} transition blocked: {reason}",
+            suggestions=[f"Current state is '{ticket['status']}'. Choose a valid transition."],
+        )
+
+
+def _fire_webhook_hook(target, payload):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        target,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=5):
+        return
+
+
+def _fire_command_hook(target, payload):
+    """Execute a DB-persisted command hook safely without a shell."""
+    rendered_target = _render_agent_command(target, payload["ticket_id"], payload["project"])
+    argv = shlex.split(rendered_target, posix=True)
+    if not argv:
+        raise ValueError("empty command hook target")
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "AGENTPLAN_TICKET_ID": str(payload["ticket_id"]),
+            "AGENTPLAN_TITLE": str(payload["ticket_title"]),
+            "AGENTPLAN_PROJECT": str(payload["project"]),
+            "AGENTPLAN_STATUS": str(payload["status"]),
+            "AGENTPLAN_AGENT": str(payload["agent"] or ""),
+        }
+    )
+    subprocess.run(
+        argv,
+        shell=False,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        check=False,
+    )
+
+
+def _fire_chain_hook(project_slug, default_agent_name=None):
+    """Launch the next chain candidate in a new terminal (fire-and-forget)."""
+    chain_conn = _ensure(get_connection())
+    try:
+        proj = resolve_project(chain_conn, project_slug)
+        ticket = _next_chain_candidate(chain_conn, proj["id"])
+        if not ticket:
+            return
+
+        agent = db_route_ticket(chain_conn, ticket, default_agent_name=default_agent_name)
+        if not agent:
+            return
+
+        command = _render_agent_command(agent.get("command_template"), ticket, proj)
+        spawn_terminal(command, title=f"agentplan:{agent['name']}")
+    finally:
+        chain_conn.close()
+
+
+def _fire_on_complete_hooks(conn, project, ticket, agent_name=None):
+    hooks = conn.execute(
+        "SELECT * FROM hooks WHERE project_id=? AND event='on-complete' ORDER BY id",
+        (project["id"],),
+    ).fetchall()
+    if not hooks:
+        return
+    payload = {
+        "ticket_id": ticket["num"],
+        "ticket_title": ticket["title"],
+        "project": project["slug"],
+        "status": "done",
+        "agent": agent_name,
+    }
+    for hook in hooks:
+        try:
+            if hook["hook_type"] == "webhook":
+                _fire_webhook_hook(hook["target"], payload)
+            elif hook["hook_type"] == "command":
+                _fire_command_hook(hook["target"], payload)
+            elif hook["hook_type"] == "chain":
+                _fire_chain_hook(project["slug"], default_agent_name=agent_name)
+            else:
+                print(f"Warning: unsupported hook type '{hook['hook_type']}' for hook #{hook['id']}", file=sys.stderr)
+        except Exception as e:
+            print(f"Warning: hook #{hook['id']} failed: {e}", file=sys.stderr)
+
+
 def cmd_ticket_done(args):
     close_note = getattr(args, 'note', None)
     done_by = getattr(args, "agent", None)
@@ -570,13 +1550,16 @@ def cmd_ticket_done(args):
     _validate_len(done_by, MAX_AGENT_LEN, "Agent name")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
+    completed_tickets = []
     for num_str in _expand_ticket_ids(args.ticket_ids):
         t = resolve_ticket(conn, proj["id"], num_str, proj["slug"])
+        _validate_ticket_transition_or_fail(t, "done")
         conn.execute(
-            "UPDATE tickets SET status='done', completed_at=?, close_note=?, done_by=? WHERE id=?",
+            "UPDATE tickets SET status='done', completed_at=?, close_note=?, done_by=?, claimed_at=NULL WHERE id=?",
             (_now(), close_note, done_by, t["id"])
         )
         _record_ticket_history(conn, t["id"], t["status"], "done")
+        completed_tickets.append(t)
         msg = f"✓ Ticket #{t['num']}: {t['title']} → done"
         if close_note:
             msg += f" [{close_note}]"
@@ -590,13 +1573,21 @@ def cmd_ticket_done(args):
     conn.commit()
     conn.close()
 
+    hooks_conn = _ensure(get_connection())
+    try:
+        for t in completed_tickets:
+            _fire_on_complete_hooks(hooks_conn, proj, t, agent_name=done_by)
+    finally:
+        hooks_conn.close()
+
 
 def cmd_ticket_skip(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
-    for num_str in args.ticket_ids:
+    for num_str in _expand_ticket_ids(args.ticket_ids):
         t = resolve_ticket(conn, proj["id"], num_str, proj["slug"])
-        conn.execute("UPDATE tickets SET status='skipped', completed_at=? WHERE id=?", (_now(), t["id"]))
+        _validate_ticket_transition_or_fail(t, "skipped")
+        conn.execute("UPDATE tickets SET status='skipped', completed_at=?, claimed_at=NULL WHERE id=?", (_now(), t["id"]))
         _record_ticket_history(conn, t["id"], t["status"], "skipped")
         print(f"⊘ Ticket #{t['num']}: {t['title']} → skipped")
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
@@ -611,6 +1602,7 @@ def cmd_ticket_start(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+    _validate_ticket_transition_or_fail(t, "in-progress")
     conn.execute(
         "UPDATE tickets SET status='in-progress', started_by=? WHERE id=?",
         (started_by, t["id"]),
@@ -625,11 +1617,80 @@ def cmd_ticket_start(args):
     conn.close()
 
 
+def _set_ticket_state_with_reason(args, to_state, symbol):
+    reason = getattr(args, "reason", None)
+    _validate_len(reason, MAX_NOTES_LEN, "Reason")
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+    _validate_ticket_transition_or_fail(t, to_state)
+    conn.execute(
+        "UPDATE tickets SET status=?, close_note=?, completed_at=NULL, claimed_at=NULL WHERE id=?",
+        (to_state, reason, t["id"]),
+    )
+    _record_ticket_history(conn, t["id"], t["status"], to_state)
+    conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
+    conn.commit()
+    msg = f"{symbol} Ticket #{t['num']}: {t['title']} → {to_state}"
+    if reason:
+        msg += f" [{reason}]"
+    print(msg)
+    conn.close()
+
+
+def cmd_ticket_block(args):
+    _set_ticket_state_with_reason(args, "blocked", "⛔")
+
+
+def cmd_ticket_fail(args):
+    _set_ticket_state_with_reason(args, "failed", "✗")
+
+
+def cmd_ticket_review(args):
+    _set_ticket_state_with_reason(args, "needs-review", "👀")
+
+
+def _reap_expired_claims(conn, project_id):
+    expired_claims = conn.execute(
+        """
+        SELECT * FROM tickets
+        WHERE project_id=?
+          AND status='in-progress'
+          AND claim_timeout IS NOT NULL
+          AND claimed_at IS NOT NULL
+          AND (
+            claim_timeout <= 0
+            OR (
+              claim_timeout > 0
+              AND julianday(replace(claimed_at, 'T', ' ')) IS NOT NULL
+              AND julianday('now') > (julianday(replace(claimed_at, 'T', ' ')) + (claim_timeout / 86400.0))
+            )
+          )
+        """,
+        (project_id,),
+    ).fetchall()
+
+    reclaimed_count = 0
+    for t in expired_claims:
+        reclaimed = conn.execute(
+            "UPDATE tickets SET status='pending', claimed_at=NULL, claim_timeout=NULL WHERE id=? AND status='in-progress'",
+            (t["id"],),
+        ).rowcount
+        if reclaimed == 1:
+            reclaimed_count += 1
+            # Reclaiming is an action; the ticket transitions back into pending.
+            _record_ticket_history(conn, t["id"], t["status"], "pending")
+
+    return reclaimed_count
+
+
 def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
     """Atomically claim the next unblocked pending ticket for a project."""
     tag_filter = (tag or "").strip().lower()
     conn.execute("BEGIN IMMEDIATE")
     try:
+        _reap_expired_claims(conn, project_id)
+
         tickets = conn.execute(
             "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (project_id,)
         ).fetchall()
@@ -646,9 +1707,12 @@ def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
             return None
 
         chosen = candidates[0]
+        claimed_at = _now()
+        if not is_valid_iso_local_timestamp(claimed_at):
+            raise ValueError("internal error: invalid claimed_at timestamp")
         updated = conn.execute(
-            "UPDATE tickets SET status='in-progress', started_by=? WHERE id=? AND status='pending'",
-            (started_by, chosen["id"]),
+            "UPDATE tickets SET status='in-progress', started_by=?, claimed_at=? WHERE id=? AND status='pending'",
+            (started_by, claimed_at, chosen["id"]),
         ).rowcount
         if updated != 1:
             conn.rollback()
@@ -666,6 +1730,10 @@ def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
 
 def cmd_claim(args):
     _validate_len(getattr(args, "agent", None), MAX_AGENT_LEN, "Agent name")
+    timeout = getattr(args, "timeout", None)
+    if timeout is not None and timeout <= 0:
+        fail("--timeout must be a positive integer")
+
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     claimed = _claim_next_ticket(
@@ -678,10 +1746,40 @@ def cmd_claim(args):
         print("No unblocked tickets to claim.")
         conn.close()
         sys.exit(1)
+
+    if timeout is not None:
+        conn.execute(
+            "UPDATE tickets SET claim_timeout=? WHERE id=?",
+            (timeout, claimed["id"]),
+        )
+        conn.commit()
+        claimed = conn.execute("SELECT * FROM tickets WHERE id=?", (claimed["id"],)).fetchone()
+
     msg = f"▶ Claimed ticket #{claimed['num']}: {claimed['title']} → in-progress"
     if claimed["started_by"]:
         msg += f" (by {claimed['started_by']})"
     print(msg)
+    conn.close()
+
+
+def cmd_reap(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        reclaimed_count = _reap_expired_claims(conn, proj["id"])
+        if reclaimed_count:
+            conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        conn.close()
+        raise
+
+    if reclaimed_count:
+        print(f"Reclaimed {reclaimed_count} expired ticket(s).")
+    else:
+        print("No expired claims to reclaim.")
     conn.close()
 
 
@@ -747,6 +1845,8 @@ def cmd_next(args):
 
     results = []
     for p in projects:
+        _reap_expired_claims(conn, p["id"])
+        conn.commit()
         tickets = conn.execute(
             "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
         ).fetchall()
@@ -811,8 +1911,12 @@ def cmd_status(args):
         done_nums = {t["num"] for t in all_tickets if t["status"] in ("done", "skipped")}
         done_count = sum(1 for t in tickets if t["status"] in ("done", "skipped"))
         total = len(tickets)
+        failed_count = sum(1 for t in tickets if t["status"] == "failed")
+        needs_review_count = sum(1 for t in tickets if t["status"] == "needs-review")
+        manual_blocked_count = sum(1 for t in tickets if t["status"] == "blocked")
         open_tickets = [t for t in tickets if t["status"] in ("pending", "in-progress")]
-        blocked_count = sum(1 for t in open_tickets if _is_blocked(t, done_nums))
+        dependency_blocked_count = sum(1 for t in open_tickets if _is_blocked(t, done_nums))
+        blocked_count = manual_blocked_count + dependency_blocked_count
         unblocked_open = [t for t in open_tickets if not _is_blocked(t, done_nums)]
         next_ticket = _sort_next_items(unblocked_open)[0] if unblocked_open else None
 
@@ -822,6 +1926,8 @@ def cmd_status(args):
                 "status": p["status"], "notes": p["notes"],
                 "done": done_count, "total": total,
                 "blocked": blocked_count,
+                "failed": failed_count,
+                "needs_review": needs_review_count,
                 "next": (
                     {"num": next_ticket["num"], "title": next_ticket["title"]}
                     if next_ticket
@@ -850,14 +1956,24 @@ def cmd_status(args):
                     f"[{t['num']}] {t['title']}{progress_segment} {marker} ({_priority_label(t['priority'])})"
                 )
             nxt = ", ".join(parts)
-            line = f"📋 {p['title']}: {done_count}/{total} done"
+            _extra = ""
+            if failed_count:
+                _extra += f", {failed_count} failed"
+            if needs_review_count:
+                _extra += f", {needs_review_count} needs-review"
+            line = f"📋 {p['title']}: {done_count}/{total} done, {blocked_count} blocked{_extra}"
             if nxt:
                 line += f" | Next: {nxt}"
             print(line)
             continue
 
         # Full
-        summary = f"{done_count}/{total} done, {blocked_count} blocked, next: "
+        _extra2 = ""
+        if failed_count:
+            _extra2 += f", {failed_count} failed"
+        if needs_review_count:
+            _extra2 += f", {needs_review_count} needs-review"
+        summary = f"{done_count}/{total} done, {blocked_count} blocked{_extra2}, next: "
         summary += f"[{next_ticket['num']}] {next_ticket['title']}" if next_ticket else "none"
         print(summary)
         print(f"{p['title']} [{p['status']}] — {done_count}/{total} done")
@@ -1010,20 +2126,46 @@ def cmd_attach(args):
 
 
 def cmd_log(args):
-    _validate_len(args.entry, MAX_LOG_ENTRY_LEN, "Log entry")
+    parts = list(getattr(args, "parts", []) or [])
+    ticket_ref = getattr(args, "ticket", None)
+    if ticket_ref is None and len(parts) >= 2 and str(parts[0]).isdigit():
+        ticket_ref = parts[0]
+        parts = parts[1:]
+    entry = " ".join(parts).strip()
+    _validate_len(entry, MAX_LOG_ENTRY_LEN, "Log entry")
+
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     ticket_id = None
-    if args.ticket:
-        t = resolve_ticket(conn, proj["id"], args.ticket, proj["slug"])
-        ticket_id = t["id"]
+    ticket = None
+    if ticket_ref:
+        ticket = resolve_ticket(conn, proj["id"], ticket_ref, proj["slug"])
+        ticket_id = ticket["id"]
     conn.execute(
         "INSERT INTO log (project_id, ticket_id, entry) VALUES (?,?,?)",
-        (proj["id"], ticket_id, args.entry),
+        (proj["id"], ticket_id, entry),
     )
+
+    if ticket and ticket["status"] == "in-progress":
+        timeout_sec = _effective_ticket_timeout_sec(proj, ticket)
+        if timeout_sec:
+            now_dt = datetime.now()
+            deadline_dt = now_dt + timedelta(seconds=timeout_sec)
+            state = db_get_chain_state(conn, proj["id"])
+            if state:
+                db_set_chain_state(
+                    conn,
+                    proj["id"],
+                    state["status"],
+                    current_ticket_id=state.get("current_ticket_id"),
+                    pause_reason=state.get("pause_reason"),
+                    heartbeat_at=now_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                    deadline_at=deadline_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                )
+
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
     conn.commit()
-    print(f"📝 Logged: {args.entry}")
+    print(f"📝 Logged: {entry}")
     conn.close()
 
 
@@ -1148,6 +2290,50 @@ def cmd_history(args):
     conn.close()
 
 
+def cmd_hook_add(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    conn.execute(
+        "INSERT INTO hooks (project_id, event, hook_type, target, created_at) VALUES (?,?,?,?,?)",
+        (proj["id"], args.event, args.hook_type, args.target, _now()),
+    )
+    hook_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    print(f"Added hook #{hook_id} to project '{proj['slug']}' ({args.hook_type} {args.event}).")
+    conn.close()
+
+
+def cmd_hook_list(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    hooks = conn.execute(
+        "SELECT id, event, hook_type, target, created_at FROM hooks WHERE project_id=? ORDER BY id",
+        (proj["id"],),
+    ).fetchall()
+    if not hooks:
+        print("No hooks found.")
+        conn.close()
+        return
+    for h in hooks:
+        print(f"{h['id']}: [{h['event']}] {h['hook_type']} -> {h['target']}")
+    conn.close()
+
+
+def cmd_hook_remove(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    deleted = conn.execute(
+        "DELETE FROM hooks WHERE project_id=? AND id=?",
+        (proj["id"], args.hook_id),
+    ).rowcount
+    if not deleted:
+        conn.close()
+        fail(f"Hook #{args.hook_id} not found for project '{proj['slug']}'.")
+    conn.commit()
+    print(f"Removed hook #{args.hook_id} from project '{proj['slug']}'.")
+    conn.close()
+
+
 def cmd_version(_args):
     print(f"agentplan {__version__}")
 
@@ -1165,15 +2351,27 @@ def cmd_dashboard(args):
             return
         try:
             result = subprocess.run(
-                f"lsof -ti:{port} | xargs kill",
-                shell=True,
+                ["lsof", "-ti", f":{port}"],
                 capture_output=True,
                 text=True,
+                check=False,
             )
-            if result.returncode == 0:
-                print("Dashboard stopped")
-            else:
-                print(f"Failed to stop dashboard: {result.stderr.strip()}")
+            pids = []
+            for line in (result.stdout or "").splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    pids.append(int(line))
+
+            if not pids:
+                print(f"No dashboard process found on port {port}")
+                return
+
+            for pid in pids:
+                try:
+                    os.kill(pid, 15)
+                except ProcessLookupError:
+                    continue
+            print("Dashboard stopped")
         except Exception as e:
             print(f"Error stopping dashboard: {e}")
         return
@@ -1250,7 +2448,177 @@ def cmd_subtask_list(args):
     conn.close()
 
 
+def cmd_role_list(_args):
+    conn = _ensure(get_connection())
+    roles = db_list_roles(conn)
+    if not roles:
+        print("No roles found.")
+        conn.close()
+        return
+
+    print("id  name      description")
+    for role in roles:
+        print(f"{role.id:<3} {role.name:<9} {role.description or ''}")
+    conn.close()
+
+
+def cmd_role_add(args):
+    conn = _ensure(get_connection())
+    try:
+        role = db_create_role(conn, args.name, args.description)
+        print(f"Added role '{role.name}'.")
+    except Exception as e:
+        conn.close()
+        fail(f"Could not add role '{args.name}': {e}")
+    conn.close()
+
+
+def cmd_role_remove(args):
+    conn = _ensure(get_connection())
+    deleted = db_delete_role(conn, args.name)
+    if not deleted:
+        conn.close()
+        fail(f"Role '{args.name}' not found.")
+    print(f"Removed role '{args.name}'.")
+    conn.close()
+
+
+def cmd_role_update(args):
+    if args.new_name is None and args.description is None:
+        fail(
+            "No updates provided.",
+            suggestions=["Use at least one of: `--name`, `--description`."],
+        )
+    conn = _ensure(get_connection())
+    role = db_update_role(
+        conn,
+        args.name,
+        new_name=args.new_name,
+        new_description=args.description,
+    )
+    if not role:
+        conn.close()
+        fail(f"Role '{args.name}' not found.")
+    print(f"Updated role '{role.name}'.")
+    conn.close()
+
+
+def _validate_agent_command_template_or_fail(command_template):
+    template = (command_template or "").strip()
+    placeholder_pattern = re.compile(r"(\{\{(?:ticket|project|ticket_id)\}\}|\{(?:ticket|project|ticket_id)\})")
+    if placeholder_pattern.search(template):
+        return
+    fail(
+        "Agent command template must include '{{ticket}}' placeholder (or {project}/{ticket_id} placeholder variants).",
+        suggestions=["Example: --command 'codex exec {{ticket}}'"],
+    )
+
+
+def _warn_if_command_missing(command_template):
+    template = (command_template or "").strip()
+    if not template:
+        return
+    try:
+        argv = shlex.split(template)
+    except ValueError:
+        return
+    if not argv:
+        return
+    base_cmd = argv[0]
+    if shutil.which(base_cmd) is None:
+        print(
+            f"Warning: command '{base_cmd}' not found on PATH. Agent was saved, but execution may fail.",
+            file=sys.stderr,
+        )
+
+
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Agent registry commands (ticket #10)
+# ---------------------------------------------------------------------------
+
+def cmd_agent_add(args):
+    command_template = getattr(args, "command_template", None)
+    if command_template is None:
+        command_template = getattr(args, "command", None)
+    _validate_agent_command_template_or_fail(command_template)
+    conn = _ensure(get_connection())
+    roles = [r.strip() for r in args.roles.split(",")] if args.roles else []
+    # Validate roles exist
+    for rname in roles:
+        if not db_get_role(conn, rname):
+            conn.close()
+            fail(f"Role '{rname}' not found. Add it first with: agentplan role add {rname}")
+    try:
+        agent = db_create_agent(conn, args.name, command_template, role_names=roles, priority=getattr(args, "priority", 0))
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise CliError(f"Agent '{args.name}' already exists.")
+    _warn_if_command_missing(command_template)
+    role_str = ", ".join(agent["roles"]) if agent["roles"] else "(none)"
+    print(f"Added agent '{agent['name']}' with roles: {role_str}")
+    conn.close()
+
+
+def cmd_agent_list(_args):
+    conn = _ensure(get_connection())
+    agents = db_list_agents(conn)
+    conn.close()
+    if not agents:
+        print("No agents registered.")
+        return
+    print(f"{'id':<4} {'name':<20} {'roles':<30} command_template")
+    for a in agents:
+        roles_str = ", ".join(a["roles"]) if a["roles"] else "(none)"
+        print(f"{a['id']:<4} {a['name']:<20} {roles_str:<30} {a['command_template']}")
+
+
+def cmd_agent_remove(args):
+    conn = _ensure(get_connection())
+    if not db_delete_agent(conn, args.name):
+        conn.close()
+        fail(f"Agent '{args.name}' not found.")
+    print(f"Removed agent '{args.name}'.")
+    conn.close()
+
+
+def cmd_agent_update(args):
+    command_template = getattr(args, "command_template", None)
+    if command_template is None:
+        command_template = getattr(args, "command", None)
+    if args.new_name is None and command_template is None and args.roles is None and args.priority is None:
+        fail("No updates provided.", suggestions=["Use --name, --command, --roles, or --priority."])
+    conn = _ensure(get_connection())
+    role_names = None
+    if args.roles is not None:
+        role_names = [r.strip() for r in args.roles.split(",")] if args.roles else []
+        for rname in role_names:
+            if not db_get_role(conn, rname):
+                conn.close()
+                fail(f"Role '{rname}' not found.")
+    if command_template is not None:
+        _validate_agent_command_template_or_fail(command_template)
+    try:
+        agent = db_update_agent(
+            conn, args.name,
+            new_name=args.new_name,
+            new_command_template=command_template,
+            role_names=role_names,
+            new_priority=getattr(args, "priority", None),
+        )
+    except sqlite3.IntegrityError:
+        conn.close()
+        conflict_name = args.new_name or args.name
+        raise CliError(f"Agent '{conflict_name}' already exists.")
+    if not agent:
+        conn.close()
+        fail(f"Agent '{args.name}' not found.")
+    if command_template is not None:
+        _warn_if_command_missing(command_template)
+    print(f"Updated agent '{agent['name']}'.")
+    conn.close()
+
+
 # CLI parser
 # ---------------------------------------------------------------------------
 
@@ -1272,7 +2640,7 @@ def build_parser():
 
     dash_p = sub.add_parser("dashboard", help="Launch web dashboard")
     dash_p.add_argument("--port", type=int, default=5001, help="Port to listen on (default: 5001)")
-    dash_p.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    dash_p.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
     dash_p.add_argument("--open", action="store_true", dest="open_browser", help="Open dashboard in default browser")
     dash_p.add_argument("--stop", action="store_true", help="Stop the running dashboard")
 
@@ -1280,6 +2648,7 @@ def build_parser():
     c.add_argument("title")
     c.add_argument("--ticket", action="append", help="Add inline ticket(s)")
     c.add_argument("--notes")
+    c.add_argument("--timeout", type=int, help="Default per-ticket timeout in seconds for this project")
 
     tp = sub.add_parser("ticket", help="Manage tickets")
     ts = tp.add_subparsers(dest="ticket_command")
@@ -1288,6 +2657,8 @@ def build_parser():
     a.add_argument("--tag", help="Comma-separated tags (e.g. security,css)")
     a.add_argument("--priority", choices=PRIORITY_CHOICES[:-1], default="none")
     a.add_argument("--due", help="Due date in YYYY-MM-DD format")
+    a.add_argument("--timeout", type=int, help="Per-ticket timeout in seconds")
+    a.add_argument("--role", help="Assign a registered role to this ticket (must exist in role registry)")
     u = ts.add_parser("update")
     u.add_argument("project"); u.add_argument("ticket_id")
     u.add_argument("--title"); u.add_argument("--notes"); u.add_argument("--depends")
@@ -1297,6 +2668,7 @@ def build_parser():
     e.add_argument("--title"); e.add_argument("--desc"); e.add_argument("--tag")
     e.add_argument("--priority", choices=PRIORITY_CHOICES)
     e.add_argument("--due", help="Due date in YYYY-MM-DD format")
+    e.add_argument("--timeout", type=int, help="Per-ticket timeout in seconds")
     d = ts.add_parser("done")
     d.add_argument("project"); d.add_argument("ticket_ids", nargs="+", help="Ticket IDs (space or comma-separated, e.g. 1 2 or 1,2,3)")
     d.add_argument("--note", help="Optional closing note/reason")
@@ -1306,8 +2678,17 @@ def build_parser():
     st = ts.add_parser("start")
     st.add_argument("project"); st.add_argument("ticket_id")
     st.add_argument("--agent", help="Agent name starting ticket (e.g. dash)")
+    tb = ts.add_parser("block")
+    tb.add_argument("project"); tb.add_argument("ticket_id")
+    tb.add_argument("--reason", help="Optional reason for blocking")
+    tf = ts.add_parser("fail")
+    tf.add_argument("project"); tf.add_argument("ticket_id")
+    tf.add_argument("--reason", help="Optional reason for failing")
+    tr = ts.add_parser("review")
+    tr.add_argument("project"); tr.add_argument("ticket_id")
+    tr.add_argument("--reason", help="Optional reason for review")
     tl = ts.add_parser("list")
-    tl.add_argument("project"); tl.add_argument("--status", choices=["pending", "done", "in-progress", "skipped", "all"])
+    tl.add_argument("project"); tl.add_argument("--status", choices=["pending", "done", "in-progress", "skipped", "blocked", "failed", "needs-review", "all"])
 
     n = sub.add_parser("next", help="Show next unblocked tickets")
     n.add_argument("project", nargs="?")
@@ -1318,6 +2699,10 @@ def build_parser():
     clm.add_argument("project")
     clm.add_argument("--agent", help="Agent name claiming ticket (e.g. dash)")
     clm.add_argument("--tag", help="Filter by a single tag")
+    clm.add_argument("--timeout", type=int, help="Claim timeout in seconds")
+
+    rp = sub.add_parser("reap", help="Reclaim expired in-progress ticket claims for a project")
+    rp.add_argument("project", help="Project slug or name")
 
     ss = sub.add_parser("status", help="Project status")
     ss.add_argument("project", nargs="?")
@@ -1338,7 +2723,9 @@ def build_parser():
     at.add_argument("project"); at.add_argument("label"); at.add_argument("location"); at.add_argument("--ticket")
 
     lg = sub.add_parser("log", help="Add log entry")
-    lg.add_argument("project"); lg.add_argument("entry"); lg.add_argument("--ticket")
+    lg.add_argument("project")
+    lg.add_argument("parts", nargs="+", help="Either '<message>' or '<ticket_id> <message>'")
+    lg.add_argument("--ticket")
 
     cl = sub.add_parser("close", help="Close a project")
     cl.add_argument("project"); cl.add_argument("--abandon", action="store_true")
@@ -1359,6 +2746,44 @@ def build_parser():
     hs.add_argument("project")
     hs.add_argument("ticket_id")
 
+    ctx = sub.add_parser("context", help="Generate system prompt injection block for an agent turn")
+    ctx.add_argument("project")
+    ctx.add_argument("ticket_id")
+    ctx.add_argument("--agent", help="Agent name for command templates")
+
+    rt = sub.add_parser("route", help="Route a ticket to an agent by role tags")
+    rt.add_argument("project")
+    rt.add_argument("ticket_id")
+    rt.add_argument("--default-agent", dest="default_agent", help="Fallback agent name if no role match")
+    rt.add_argument("--terminal", action="store_true", help="Spawn the routed agent command in a visible terminal")
+    rt.add_argument("--monitor", action="store_true", help="When used with --terminal, monitor the spawned PID in a background thread")
+    rt.add_argument("--terminal-pref", choices=sorted(TERMINAL_CHOICES), help="Terminal preference override (or use AGENTPLAN_TERMINAL)")
+
+    stp = sub.add_parser("spawn-terminal", help="Open a visible terminal and run a command")
+    stp.add_argument("command")
+    stp.add_argument("--title", help="Optional terminal title")
+    stp.add_argument("--terminal-pref", choices=sorted(TERMINAL_CHOICES), help="Terminal preference override (or use AGENTPLAN_TERMINAL)")
+
+    mp = sub.add_parser("monitor-process", help="Monitor a spawned terminal process and ticket status")
+    mp.add_argument("project")
+    mp.add_argument("ticket_id", type=int)
+    mp.add_argument("pid", type=int)
+    mp.add_argument("--timeout", type=int, default=3600, help="Timeout in seconds (default: 3600)")
+
+    atg = sub.add_parser("auto-tag", help="Auto-classify untagged tickets into roles using a configured AI tool")
+    atg.add_argument("project")
+    atg.add_argument("--ticket", type=int, help="Tag only a specific ticket number")
+    atg.add_argument("--dry-run", action="store_true", help="Show predicted tags without writing changes")
+    atg.add_argument("--agent", help="Use a specific configured agent name")
+
+    ch = sub.add_parser("chain", help="Run or manage sequential ticket orchestration")
+    ch.add_argument("project")
+    ch.add_argument("--status", action="store_true", help="Show chain status")
+    ch.add_argument("--stop", action="store_true", help="Request stop after current ticket")
+    ch.add_argument("--default-agent", dest="default_agent", help="Fallback agent name if no role match")
+    ch.add_argument("--max-tickets", type=int, help="Maximum tickets to process this run")
+    ch.add_argument("--timeout", type=int, help="Override per-ticket timeout in seconds")
+
     sp = sub.add_parser("subtask", help="Manage ticket subtasks")
     sps = sp.add_subparsers(dest="subtask_command")
     sa = sps.add_parser("add")
@@ -1367,6 +2792,50 @@ def build_parser():
     sd.add_argument("project"); sd.add_argument("ticket_id"); sd.add_argument("subtask_id")
     sl = sps.add_parser("list")
     sl.add_argument("project"); sl.add_argument("ticket_id")
+
+    rp = sub.add_parser("role", help="Manage roles")
+    rps = rp.add_subparsers(dest="role_command")
+    rl = rps.add_parser("list")
+    ra = rps.add_parser("add")
+    ra.add_argument("name")
+    ra.add_argument("--description")
+    rr = rps.add_parser("remove")
+    rr.add_argument("name")
+    ru = rps.add_parser("update")
+    ru.add_argument("name")
+    ru.add_argument("--name", dest="new_name")
+    ru.add_argument("--description")
+
+    hp = sub.add_parser("hook", help="Manage project event hooks")
+    hps = hp.add_subparsers(dest="hook_command")
+    ha = hps.add_parser("add")
+    ha.add_argument("project")
+    ha.add_argument("--event", choices=["on-complete"], default="on-complete")
+    ha.add_argument("--type", dest="hook_type", choices=["webhook", "command", "chain"], required=True)
+    ha.add_argument("--target", required=True)
+    hl = hps.add_parser("list")
+    hl.add_argument("project")
+    hr = hps.add_parser("remove")
+    hr.add_argument("project")
+    hr.add_argument("hook_id", type=int)
+
+    agp = sub.add_parser("agent", help="Manage registered agents (agent registry)")
+    agps = agp.add_subparsers(dest="agent_command")
+    ag_add = agps.add_parser("add", help="Register an agent")
+    ag_add.add_argument("name", help="Agent name")
+    ag_add.add_argument("--command", dest="command_template", required=True, help="Command template (e.g. 'claude -p {ticket}')")
+    ag_add.add_argument("--roles", help="Comma-separated list of role names to assign")
+    ag_add.add_argument("--role", dest="roles", help=argparse.SUPPRESS)
+    ag_add.add_argument("--priority", type=int, default=0, help="Agent routing priority (lower number wins)")
+    ag_list = agps.add_parser("list", help="List registered agents")
+    ag_rm = agps.add_parser("remove", help="Remove a registered agent")
+    ag_rm.add_argument("name")
+    ag_upd = agps.add_parser("update", help="Update a registered agent")
+    ag_upd.add_argument("name")
+    ag_upd.add_argument("--name", dest="new_name", help="New name")
+    ag_upd.add_argument("--command", dest="command_template", help="New command template")
+    ag_upd.add_argument("--roles", help="New comma-separated roles (replaces existing)")
+    ag_upd.add_argument("--priority", type=int, help="New routing priority (lower number wins)")
 
     cp = sub.add_parser("completion", help="Print shell completion script")
     cp.add_argument("shell", choices=COMPLETION_SHELLS)
@@ -1380,16 +2849,23 @@ def build_parser():
 
 
 DISPATCH = {
-    "init": cmd_init, "create": cmd_create, "next": cmd_next, "claim": cmd_claim, "status": cmd_status,
+    "init": cmd_init, "create": cmd_create, "next": cmd_next, "claim": cmd_claim, "reap": cmd_reap, "status": cmd_status,
     "list": cmd_list, "search": cmd_search, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
     "archive": cmd_archive,
     "note": cmd_note, "depend": cmd_depend, "undepend": cmd_undepend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version, "dashboard": cmd_dashboard,
     "completion": cmd_completion, "__complete": cmd_internal_complete,
+    "context": cmd_context,
+    "route": cmd_route,
+    "spawn-terminal": cmd_spawn_terminal,
+    "monitor-process": cmd_monitor_process,
+    "auto-tag": cmd_auto_tag,
+    "chain": cmd_chain,
 }
 
 TICKET_DISPATCH = {
     "add": cmd_ticket_add, "done": cmd_ticket_done, "skip": cmd_ticket_skip,
-    "start": cmd_ticket_start, "list": cmd_ticket_list,
+    "start": cmd_ticket_start, "block": cmd_ticket_block, "fail": cmd_ticket_fail,
+    "review": cmd_ticket_review, "list": cmd_ticket_list,
     "update": cmd_ticket_update, "edit": cmd_ticket_edit,
 }
 
@@ -1397,6 +2873,26 @@ SUBTASK_DISPATCH = {
     "add": cmd_subtask_add,
     "done": cmd_subtask_done,
     "list": cmd_subtask_list,
+}
+
+ROLE_DISPATCH = {
+    "list": cmd_role_list,
+    "add": cmd_role_add,
+    "remove": cmd_role_remove,
+    "update": cmd_role_update,
+}
+
+HOOK_DISPATCH = {
+    "add": cmd_hook_add,
+    "list": cmd_hook_list,
+    "remove": cmd_hook_remove,
+}
+
+AGENT_DISPATCH = {
+    "add": cmd_agent_add,
+    "list": cmd_agent_list,
+    "remove": cmd_agent_remove,
+    "update": cmd_agent_update,
 }
 
 
@@ -1418,6 +2914,18 @@ def main():
             if not getattr(args, "subtask_command", None):
                 parser.parse_args(["subtask", "--help"])
             SUBTASK_DISPATCH[args.subtask_command](args)
+        elif args.command == "role":
+            if not getattr(args, "role_command", None):
+                parser.parse_args(["role", "--help"])
+            ROLE_DISPATCH[args.role_command](args)
+        elif args.command == "hook":
+            if not getattr(args, "hook_command", None):
+                parser.parse_args(["hook", "--help"])
+            HOOK_DISPATCH[args.hook_command](args)
+        elif args.command == "agent":
+            if not getattr(args, "agent_command", None):
+                parser.parse_args(["agent", "--help"])
+            AGENT_DISPATCH[args.agent_command](args)
         else:
             DISPATCH[args.command](args)
     except CliError as e:

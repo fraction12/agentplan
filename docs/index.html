@@ -171,7 +171,7 @@
     <div class="container">
       <div class="eyebrow">pip install agentplan &nbsp;·&nbsp; Python 3.9+</div>
       <h1>The task queue your AI agents are missing</h1>
-      <p class="lead">A dependency-aware ticket system that any agent can read from and write to. No framework lock-in. No runtime. Just a shared to-do list.</p>
+      <p class="lead">A dependency-aware task queue with role-based routing, event hooks, and a dashboard control plane. Any agent can use it. No framework lock-in. No runtime.</p>
       <div class="pip-install-wrap" style="margin: 0 auto 28px; display:inline-flex; align-items:center; background:#151b2b; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:12px 20px; gap:14px; font-family:'JetBrains Mono',monospace; font-size:1rem; color:#a7f3d0; max-width:340px; width:100%;">
         <span style="flex:1; text-align:left;">pip install agentplan</span>
         <button onclick="(async()=>{try{await navigator.clipboard.writeText('pip install agentplan');this.innerHTML='✓';setTimeout(()=>this.innerHTML='&#128203;',1500)}catch(e){}})()" title="Copy to clipboard" style="background:none;border:none;cursor:pointer;font-size:1.1rem;color:#8892a8;padding:0;line-height:1;transition:color 0.2s;" onmouseover="this.style.color='#e2e8f0'" onmouseout="this.style.color='#8892a8'">&#128203;</button>
@@ -191,7 +191,7 @@
 
   <div class="trust-bar">
     <div class="container">
-      <p>Installed via PyPI &nbsp;·&nbsp; Works with Claude Code, Codex, OpenClaw, and any CLI-capable agent</p>
+      <p>1,100+ installs &nbsp;·&nbsp; Works with Claude Code, Codex, OpenClaw, and any CLI-capable agent &nbsp;·&nbsp; v0.5 now with roles, hooks & routing</p>
     </div>
   </div>
 
@@ -241,9 +241,24 @@
           <p>Works with any agent, any framework, any model. No vendor lock-in.</p>
         </div>
         <div class="feature-card">
+          <span class="feature-icon">🏷️</span>
+          <h3>Roles & Routing</h3>
+          <p>Define roles, register agents, tag tickets. agentplan routes work to the right tool automatically.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🪝</span>
+          <h3>Event Hooks</h3>
+          <p>Fire webhooks, commands, or agent chains when tickets complete. Build autonomous pipelines.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🔄</span>
+          <h3>Stale Claim Handling</h3>
+          <p>Claim timeouts and auto-reaping. Crashed agents don't block the queue — tickets self-heal.</p>
+        </div>
+        <div class="feature-card">
           <span class="feature-icon">📊</span>
-          <h3>Built-in dashboard</h3>
-          <p>Real-time web UI with SSE live updates. See project state at a glance.</p>
+          <h3>Dashboard Control Plane</h3>
+          <p>Start/Stop work, Kanban board, Agents page, review panel. Real-time SSE updates.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">🔒</span>
@@ -251,9 +266,9 @@
           <p>SQLite with BEGIN IMMEDIATE. No double-claims. Safe across concurrent agents.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">🏷️</span>
-          <h3>Rich metadata</h3>
-          <p>Priority, tags, subtasks, due dates, audit logs. Everything you need to track.</p>
+          <span class="feature-icon">🔍</span>
+          <h3>Auto-Detection</h3>
+          <p>Scans your system for installed AI tools and registers them automatically on init.</p>
         </div>
       </div>
     </div>
@@ -299,18 +314,28 @@
         </div>
         <div class="feature-card">
           <span class="feature-icon">📋</span>
-          <h3>Kanban Board</h3>
-          <p>Tickets organized by status with priority stripes and tag pills for fast scanning.</p>
+          <h3>6-Column Kanban</h3>
+          <p>Full-width board: Todo → In Progress → Blocked → Needs Review → Failed → Done. Start/Stop buttons to control agent chains.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🤖</span>
+          <h3>Agents Page</h3>
+          <p>Configure agents, assign roles, edit command templates. Auto-detected tools panel shows what's installed.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">🔍</span>
           <h3>Ticket Detail</h3>
           <p>Slide-over panel with subtasks, dependencies, and full audit timeline.</p>
         </div>
-        <div class="feature-card" style="grid-column:1/-1;max-width:340px;">
+        <div class="feature-card">
           <span class="feature-icon">⚡</span>
           <h3>Live Activity Feed</h3>
           <p>Real-time stream of agent actions delivered via SSE — no polling, no refresh.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🛡️</span>
+          <h3>Review Panel</h3>
+          <p>Failed and needs-review tickets surface with Mark Done, Retry, or Skip actions. Human in the loop.</p>
         </div>
       </div>
       <p style="font-family:'Inter',ui-sans-serif,sans-serif;color:var(--muted);font-size:0.9rem;">Requires Flask: <code style="font-family:'JetBrains Mono',monospace;color:#a7f3d0;background:var(--panel);padding:2px 8px;border-radius:6px;border:1px solid var(--border);">pip install agentplan[dashboard]</code></p>
@@ -337,7 +362,10 @@
             <tr><td>Agent lock-in</td><td class="check">None</td><td class="cross">CrewAI only</td><td class="cross">AutoGen only</td><td class="cross">LangChain only</td></tr>
             <tr><td>Ticket tracking</td><td class="check">Built-in</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
             <tr><td>Dependency resolution</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="partial">Partial</td></tr>
-            <tr><td>Web dashboard</td><td class="check">Yes</td><td class="cross" style="color:#f97316">Paid/cloud</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Role-based routing</td><td class="check">Built-in</td><td class="partial">Manual</td><td class="partial">Manual</td><td class="cross">No</td></tr>
+            <tr><td>Event hooks</td><td class="check">Commands, webhooks, chains</td><td class="cross">No</td><td class="cross">No</td><td class="partial">Callbacks</td></tr>
+            <tr><td>Stale claim handling</td><td class="check">Auto-reap</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Web dashboard</td><td class="check">Yes + control plane</td><td class="cross" style="color:#f97316">Paid/cloud</td><td class="cross">No</td><td class="cross">No</td></tr>
             <tr><td>Parallel safety</td><td class="check">SQLite locks</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
           </tbody>
         </table>
@@ -396,13 +424,15 @@
       if (!terminal || !playBtn || !pauseBtn || !replayBtn) return;
 
       const demoSteps = [
-        { command: 'agentplan create sprint-1', output: ["Created project 'sprint-1' (sprint-1)"] },
-        { command: 'agentplan ticket add sprint-1 "Build API" --priority high --tag backend', output: ['Added ticket #1: Build API [priority: high]'] },
-        { command: 'agentplan ticket add sprint-1 "Write tests" --priority medium --tag testing', output: ['Added ticket #2: Write tests [priority: medium]'] },
-        { command: 'agentplan depend sprint-1 2 --on 1', output: ['Ticket #2 now depends on: [1]'] },
-        { command: 'agentplan next sprint-1', output: ['📋 sprint-1: [1] Build API ○ (priority: high)'] },
-        { command: 'agentplan ticket done sprint-1 1 --agent dash --note "API shipped"', output: ['✓ Ticket #1: Build API → done [API shipped] (by dash)'], success: true },
-        { command: 'agentplan status sprint-1', output: ['1/2 done, 0 blocked, next: [2] Write tests'] }
+        { command: 'agentplan init', output: ['Detected: claude ✓, codex ✓, aider ✗, cursor ✗, openclaw ✓', 'Registered codex → coding | claude → research, writing'] },
+        { command: 'agentplan create sprint-1 --ticket "Build API" --ticket "Write tests" --ticket "Research caching"', output: ["Created project 'sprint-1' (sprint-1) with 3 ticket(s)"] },
+        { command: 'agentplan ticket edit sprint-1 1 --tag role:coding --priority high', output: ['Updated ticket #1.'] },
+        { command: 'agentplan ticket edit sprint-1 3 --tag role:research', output: ['Updated ticket #3.'] },
+        { command: 'agentplan route sprint-1 1', output: ['codex (matched role:coding, priority 1)'] },
+        { command: 'agentplan claim sprint-1 --agent codex --timeout 30', output: ['▶ Claimed ticket #1: Build API → in-progress (by codex, expires in 30m)'] },
+        { command: 'agentplan ticket done sprint-1 1 --agent codex', output: ['✓ Ticket #1: Build API → done (by codex)'], success: true },
+        { command: 'agentplan hook add sprint-1 --event on-complete --type command --target \'echo {ticket} shipped!\'', output: ['Added hook #1 to project sprint-1 (command on-complete).'] },
+        { command: 'agentplan status sprint-1', output: ['1/3 done, 0 blocked, next: [2] Write tests, [3] Research caching'] }
       ];
 
       const state = { running: false, paused: false, started: false, timer: null, observerFired: false };

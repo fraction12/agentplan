@@ -6,7 +6,35 @@ import os
 import sqlite3
 from datetime import datetime
 
-from agentplan.models import HistoryEntry, Project, Subtask, Ticket
+from agentplan.models import Role
+
+
+VALID_TICKET_STATES = {"pending", "in-progress", "done", "skipped", "blocked", "failed", "needs-review"}
+
+VALID_TRANSITIONS = {
+    "pending": {"in-progress", "done", "skipped", "blocked"},
+    "in-progress": {"done", "failed", "needs-review", "blocked", "pending"},
+    "blocked": {"pending", "in-progress"},
+    "failed": {"pending", "in-progress"},
+    "needs-review": {"done", "in-progress", "failed"},
+    "done": set(),
+    "skipped": set(),
+}
+
+
+def validate_transition(from_state, to_state):
+    if from_state not in VALID_TICKET_STATES:
+        return False, f"Unknown source state: {from_state}"
+    if to_state not in VALID_TICKET_STATES:
+        return False, f"Unknown target state: {to_state}"
+    if from_state == to_state:
+        return True, ""
+    allowed = VALID_TRANSITIONS.get(from_state, set())
+    if to_state in allowed:
+        return True, ""
+    if not allowed:
+        return False, f"Cannot transition from terminal state '{from_state}' to '{to_state}'."
+    return False, f"Invalid transition: '{from_state}' -> '{to_state}'. Allowed: {', '.join(sorted(allowed))}."
 
 
 def get_db_path():
@@ -38,6 +66,7 @@ def init_db(conn):
             title TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'active',
             notes TEXT,
+            timeout_sec INTEGER,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
         );
@@ -55,6 +84,9 @@ def init_db(conn):
             started_by TEXT,
             done_by TEXT,
             due_date TEXT,
+            claimed_at TEXT,
+            claim_timeout INTEGER,
+            timeout_sec INTEGER,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
             completed_at TEXT
         );
@@ -94,6 +126,42 @@ def init_db(conn):
             completed_at TEXT
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_subtask_ticket_num ON subtasks(ticket_id, num);
+        CREATE TABLE IF NOT EXISTS roles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+        );
+        CREATE TABLE IF NOT EXISTS hooks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            event TEXT NOT NULL DEFAULT 'on-complete',
+            hook_type TEXT NOT NULL,
+            target TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+        );
+        CREATE TABLE IF NOT EXISTS agents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            command_template TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+        );
+        CREATE TABLE IF NOT EXISTS agent_roles (
+            agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+            role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+            PRIMARY KEY (agent_id, role_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS chain_state (
+            project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+            status TEXT NOT NULL,
+            current_ticket_id INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+            pause_reason TEXT,
+            heartbeat_at TEXT,
+            deadline_at TEXT,
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+        );
     """
     )
 
@@ -117,6 +185,9 @@ def init_db(conn):
         ("done_by", "ALTER TABLE tickets ADD COLUMN done_by TEXT", None),
         ("description", "ALTER TABLE tickets ADD COLUMN description TEXT", None),
         ("due_date", "ALTER TABLE tickets ADD COLUMN due_date TEXT", None),
+        ("claimed_at", "ALTER TABLE tickets ADD COLUMN claimed_at TEXT", None),
+        ("claim_timeout", "ALTER TABLE tickets ADD COLUMN claim_timeout INTEGER", None),
+        ("timeout_sec", "ALTER TABLE tickets ADD COLUMN timeout_sec INTEGER", None),
     ]
     for col, alter_sql, fix_sql in migrations:
         try:
@@ -141,11 +212,53 @@ def init_db(conn):
         """
     )
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_subtask_ticket_num ON subtasks(ticket_id, num)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS hooks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            event TEXT NOT NULL DEFAULT 'on-complete',
+            hook_type TEXT NOT NULL,
+            target TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+        )
+        """)
+
+
+    try:
+        conn.execute("SELECT priority FROM agents LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE agents ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+
+    # Project-level timeout default (seconds)
+    try:
+        conn.execute("SELECT timeout_sec FROM projects LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE projects ADD COLUMN timeout_sec INTEGER")
+
+    # Chain heartbeat/deadline tracking
+    for col in ("heartbeat_at", "deadline_at"):
+        try:
+            conn.execute(f"SELECT {col} FROM chain_state LIMIT 0")
+        except sqlite3.OperationalError:
+            conn.execute(f"ALTER TABLE chain_state ADD COLUMN {col} TEXT")
+
     conn.commit()
 
 
 def now():
     return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def is_valid_iso_local_timestamp(value):
+    if value in (None, ""):
+        return True
+    if not isinstance(value, str):
+        return False
+    try:
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return False
+    return True
 
 
 def ensure(conn):
@@ -228,7 +341,74 @@ def list_project_slugs():
         conn.close()
 
 
+def create_role(conn, name, description=None):
+    conn.execute(
+        "INSERT INTO roles (name, description) VALUES (?, ?)",
+        (name, description),
+    )
+    row = conn.execute("SELECT * FROM roles WHERE id = last_insert_rowid()").fetchone()
+    conn.commit()
+    return Role.from_row(row)
+
+
+def get_role(conn, name_or_id):
+    row = None
+    try:
+        role_id = int(name_or_id)
+        row = conn.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
+    except (ValueError, TypeError):
+        pass
+    if row is None:
+        row = conn.execute(
+            "SELECT * FROM roles WHERE LOWER(name)=LOWER(?)",
+            (str(name_or_id),),
+        ).fetchone()
+    return Role.from_row(row) if row else None
+
+
+def list_roles(conn):
+    rows = conn.execute("SELECT * FROM roles ORDER BY id").fetchall()
+    return [Role.from_row(row) for row in rows]
+
+
+def delete_role(conn, name_or_id):
+    role = get_role(conn, name_or_id)
+    if not role:
+        return False
+    deleted = conn.execute("DELETE FROM roles WHERE id=?", (role.id,)).rowcount > 0
+    if deleted:
+        conn.commit()
+    return deleted
+
+
+def update_role(conn, name_or_id, new_name=None, new_description=None):
+    role = get_role(conn, name_or_id)
+    if not role:
+        return None
+
+    updates = []
+    values = []
+    if new_name is not None:
+        updates.append("name=?")
+        values.append(new_name)
+    if new_description is not None:
+        updates.append("description=?")
+        values.append(new_description)
+
+    if not updates:
+        return role
+
+    values.append(role.id)
+    conn.execute(f"UPDATE roles SET {', '.join(updates)} WHERE id=?", values)
+    conn.commit()
+    return get_role(conn, role.id)
+
+
 def get_unblocked(tickets):
+    """Return only pending tickets whose dependencies are fully done/skipped.
+
+    blocked/failed/needs-review are intentionally excluded until manually transitioned.
+    """
     done_nums = {t["num"] for t in tickets if t["status"] in ("done", "skipped")}
     out = []
     for t in tickets:
@@ -282,3 +462,177 @@ def get_subtask_progress_map(conn, ticket_ids):
         ticket_ids,
     ).fetchall()
     return {row["ticket_id"]: {"done": int(row["done"] or 0), "total": int(row["total"] or 0)} for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# Agent registry (ticket #10)
+# ---------------------------------------------------------------------------
+
+def create_agent(conn, name, command_template, role_names=None, priority=0):
+    conn.execute(
+        "INSERT INTO agents (name, command_template, priority) VALUES (?, ?, ?)",
+        (name, command_template, int(priority)),
+    )
+    agent_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    if role_names:
+        for rname in role_names:
+            role = get_role(conn, rname)
+            if role:
+                conn.execute(
+                    "INSERT OR IGNORE INTO agent_roles (agent_id, role_id) VALUES (?, ?)",
+                    (agent_id, role.id),
+                )
+    conn.commit()
+    return get_agent(conn, agent_id)
+
+
+def get_agent(conn, name_or_id):
+    row = None
+    try:
+        aid = int(name_or_id)
+        row = conn.execute("SELECT * FROM agents WHERE id=?", (aid,)).fetchone()
+    except (ValueError, TypeError):
+        pass
+    if row is None:
+        row = conn.execute("SELECT * FROM agents WHERE name=?", (str(name_or_id),)).fetchone()
+    if row is None:
+        return None
+    agent = dict(row)
+    role_rows = conn.execute(
+        "SELECT r.name FROM roles r JOIN agent_roles ar ON ar.role_id=r.id WHERE ar.agent_id=?",
+        (agent["id"],),
+    ).fetchall()
+    agent["roles"] = [r["name"] for r in role_rows]
+    return agent
+
+
+def list_agents(conn):
+    rows = conn.execute("SELECT * FROM agents ORDER BY priority ASC, id ASC").fetchall()
+    agents = []
+    for row in rows:
+        a = dict(row)
+        role_rows = conn.execute(
+            "SELECT r.name FROM roles r JOIN agent_roles ar ON ar.role_id=r.id WHERE ar.agent_id=?",
+            (a["id"],),
+        ).fetchall()
+        a["roles"] = [r["name"] for r in role_rows]
+        agents.append(a)
+    return agents
+
+
+def delete_agent(conn, name_or_id):
+    agent = get_agent(conn, name_or_id)
+    if not agent:
+        return False
+    conn.execute("DELETE FROM agents WHERE id=?", (agent["id"],))
+    conn.commit()
+    return True
+
+
+def update_agent(conn, name_or_id, new_name=None, new_command_template=None, role_names=None, new_priority=None):
+    agent = get_agent(conn, name_or_id)
+    if not agent:
+        return None
+    updates, values = [], []
+    if new_name is not None:
+        updates.append("name=?"); values.append(new_name)
+    if new_command_template is not None:
+        updates.append("command_template=?"); values.append(new_command_template)
+    if new_priority is not None:
+        updates.append("priority=?"); values.append(int(new_priority))
+    if updates:
+        values.append(agent["id"])
+        conn.execute(f"UPDATE agents SET {', '.join(updates)} WHERE id=?", values)
+    if role_names is not None:
+        conn.execute("DELETE FROM agent_roles WHERE agent_id=?", (agent["id"],))
+        for rname in role_names:
+            role = get_role(conn, rname)
+            if role:
+                conn.execute(
+                    "INSERT OR IGNORE INTO agent_roles (agent_id, role_id) VALUES (?, ?)",
+                    (agent["id"], role.id),
+                )
+    conn.commit()
+    return get_agent(conn, agent["id"])
+
+
+def route_ticket(conn, ticket, default_agent_name=None):
+    """Route a ticket to an agent.
+
+    Matching is first-match-wins: agents are ordered by priority ASC then id ASC.
+    Lower priority numbers win.
+    """
+    tags = (ticket["tags"] if isinstance(ticket, dict) else ticket["tags"]) or ""
+    role_names = []
+    for part in tags.split(","):
+        tag = part.strip()
+        if tag.lower().startswith("role:") and len(tag) > len("role:"):
+            role_name = tag.split(":", 1)[1].strip()
+            if role_name:
+                role_names.append(role_name.lower())
+
+    if role_names:
+        placeholders = ",".join("?" for _ in role_names)
+        row = conn.execute(
+            f"""
+            SELECT a.id
+            FROM agents a
+            JOIN agent_roles ar ON ar.agent_id = a.id
+            JOIN roles r ON r.id = ar.role_id
+            WHERE LOWER(r.name) IN ({placeholders})
+            ORDER BY a.priority ASC, a.id ASC
+            LIMIT 1
+            """,
+            role_names,
+        ).fetchone()
+        if row:
+            return get_agent(conn, row["id"])
+
+    if default_agent_name:
+        return get_agent(conn, default_agent_name)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Chain state persistence (ticket #23)
+# ---------------------------------------------------------------------------
+
+def get_chain_state(conn, project_id):
+    row = conn.execute(
+        "SELECT * FROM chain_state WHERE project_id=?",
+        (project_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def set_chain_state(
+    conn,
+    project_id,
+    status,
+    current_ticket_id=None,
+    pause_reason=None,
+    heartbeat_at=None,
+    deadline_at=None,
+):
+    conn.execute(
+        """
+        INSERT INTO chain_state (
+            project_id, status, current_ticket_id, pause_reason, heartbeat_at, deadline_at, updated_at
+        )
+        VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(project_id) DO UPDATE SET
+            status=excluded.status,
+            current_ticket_id=excluded.current_ticket_id,
+            pause_reason=excluded.pause_reason,
+            heartbeat_at=excluded.heartbeat_at,
+            deadline_at=excluded.deadline_at,
+            updated_at=excluded.updated_at
+        """,
+        (project_id, status, current_ticket_id, pause_reason, heartbeat_at, deadline_at, now()),
+    )
+    conn.commit()
+
+
+def clear_chain_state(conn, project_id):
+    conn.execute("DELETE FROM chain_state WHERE project_id=?", (project_id,))
+    conn.commit()
