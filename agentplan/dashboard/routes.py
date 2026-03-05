@@ -146,7 +146,7 @@ def _project_context_payload(project):
 
 def _fetch_projects_with_stats(conn):
     projects = conn.execute(
-        "SELECT id, slug, title, status, updated_at FROM projects ORDER BY updated_at DESC, id DESC LIMIT 100"
+        "SELECT id, slug, title, status, updated_at, dir FROM projects ORDER BY updated_at DESC, id DESC LIMIT 100"
     ).fetchall()
     rows = conn.execute("SELECT project_id, status, COUNT(*) AS c FROM tickets GROUP BY project_id, status").fetchall()
 
@@ -188,6 +188,7 @@ def _fetch_projects_with_stats(conn):
                 "done_count": done,
                 "in_flight_count": in_flight,
                 "progress_pct": progress,
+                "missing_directory": bool(p["dir"] and not os.path.isdir(p["dir"])),
             }
         )
     return out
@@ -842,6 +843,7 @@ def create_app():
             chain_pause_reason=chain_pause_reason,
             chain_text=chain_text,
             context_payload=context_payload,
+            directory_warning=bool(project["dir"] and not os.path.isdir(project["dir"])),
         )
 
     @app.route("/api/chain/<slug>/start", methods=["POST"])

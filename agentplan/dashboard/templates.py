@@ -239,6 +239,19 @@ INDEX_TEMPLATE = """
         display: grid;
         gap: 7px;
       }
+      .project-warning {
+        margin-top: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(245, 158, 11, 0.45);
+        background: rgba(120, 53, 15, 0.35);
+        color: #fde68a;
+        font-size: var(--fs-small);
+        font-family: var(--font-body);
+      }
       .project-progress-text,
       .project-last-activity {
         font-family: var(--font-body);
@@ -341,6 +354,9 @@ INDEX_TEMPLATE = """
                   {% endfor %}
                 </div>
                 <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
+                {% if project.missing_directory %}
+                <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
+                {% endif %}
               </div>
             </article>
           </a>
@@ -370,6 +386,9 @@ INDEX_TEMPLATE = """
               <div class="project-meta">
                 <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
                 <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
+                {% if project.missing_directory %}
+                <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
+                {% endif %}
               </div>
             </article>
           </a>
@@ -433,7 +452,8 @@ INDEX_TEMPLATE = """
       function projectCard(project, isCompleted) {
         const breakdown = project.breakdown || {};
         const breakdownHtml = isCompleted ? '' : `<div class="dot-breakdown project-breakdown">${statusOrder.map((status) => `<span class="dot-item"><span class="dot ${status}"></span><span class="dot-value" data-status="${status}">${breakdown[status] || 0}</span></span>`).join("")}</div>`;
-        return `<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}"><article class="project-card"><div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div></div></article></a>`;
+        const warningHtml = project.missing_directory ? `<div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>` : "";
+        return `<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}"><article class="project-card"><div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a>`;
       }
 
       function renderProjects(projects) {
@@ -1123,6 +1143,11 @@ PROJECT_TEMPLATE = """
         color: var(--color-muted);
         font-size: var(--fs-small);
       }
+      .project-dir-warning {
+        margin: 0 0 10px;
+        color: #fde68a;
+        font-size: var(--fs-small);
+      }
       .project-code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.08em; }
       .topbar-right { display: flex; align-items: center; gap: 12px; justify-self: end; color: var(--color-muted); font-family: var(--font-body); font-size: var(--fs-body); }
       .sse-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-small); color: var(--color-muted); }
@@ -1504,6 +1529,7 @@ PROJECT_TEMPLATE = """
         <button id="project-dir-save-btn" class="btn btn-primary" type="submit">Save</button>
         <button id="project-dir-cancel-btn" class="btn" type="button">Cancel</button>
       </form>
+      <div id="project-dir-warning" class="project-dir-warning" {% if not directory_warning %}hidden{% endif %}>Warning: linked directory does not exist on disk.</div>
       <div id="project-dir-note" class="project-dir-note"></div>
 
       <div id="chain-status" class="chain-status">
@@ -1749,6 +1775,7 @@ PROJECT_TEMPLATE = """
         const dirInput = document.getElementById("project-dir-input");
         const dirCancelBtn = document.getElementById("project-dir-cancel-btn");
         const dirNote = document.getElementById("project-dir-note");
+        const dirWarning = document.getElementById("project-dir-warning");
 
         function showToast(message, tone = "error") {
           if (!toastStack) return;
@@ -1875,9 +1902,9 @@ PROJECT_TEMPLATE = """
                 throw new Error((payload && payload.error) || `HTTP ${response.status}`);
               }
               renderDirectoryDisplay(payload ? payload.directory : directory);
-              dirNote.textContent = payload && payload.exists_on_disk === false && payload.directory
-                ? "Warning: linked directory does not exist on disk."
-                : "Directory saved.";
+              const missing = Boolean(payload && payload.directory && payload.exists_on_disk === false);
+              if (dirWarning) dirWarning.hidden = !missing;
+              dirNote.textContent = "Directory saved.";
               dirForm.hidden = true;
               dirEditBtn.hidden = false;
             } catch (error) {
