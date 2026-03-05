@@ -13,9 +13,11 @@ from urllib.parse import urlparse
 
 from flask import Flask, abort, render_template, request, url_for
 
+from agentplan.cli import build_context_prompt, _render_prompt_agent_command, spawn_terminal
 from agentplan.db import (
     create_agent,
     delete_agent,
+    get_agent_by_role,
     get_chain_state,
     get_connection,
     list_agents,
@@ -31,6 +33,8 @@ from .constants import (
     KANBAN_STATUS_ORDER,
     TAG_TONES,
 )
+
+_CONTEXT_PIDS = {}
 
 def _db_path():
     return os.environ.get("AGENTPLAN_DB", os.path.expanduser("~/.agentplan/agentplan.db"))
@@ -922,6 +926,110 @@ def create_app():
             }
         finally:
             conn.close()
+
+    @app.route("/api/project/<slug>/generate-context", methods=["POST"])
+    @_require_local_origin
+    def api_generate_project_context(slug):
+        payload = request.get_json(silent=True) or {}
+        regenerate = bool(payload.get("regenerate"))
+
+        conn = get_connection(_db_path())
+        try:
+            project = conn.execute("SELECT id, slug, title, dir FROM projects WHERE slug=?", (slug,)).fetchone()
+            if not project:
+                abort(404)
+            project_dir = (project["dir"] or "").strip()
+            if not project_dir:
+                return ({"error": f"No directory linked to project '{project['slug']}'."}, 400)
+
+            writer_agent = get_agent_by_role(conn, "writing")
+            if not writer_agent:
+                return ({"error": "No writer agent configured. Assign a role named 'writing' to an agent."}, 400)
+
+            tickets = conn.execute(
+                "SELECT num, title, status, priority FROM tickets WHERE project_id=? ORDER BY num",
+                (project["id"],),
+            ).fetchall()
+
+            context_path = _context_path_for_project(project)
+            existing_context = None
+            if context_path and os.path.exists(context_path):
+                try:
+                    with open(context_path, "r", encoding="utf-8") as handle:
+                        existing_context = handle.read().strip()
+                except Exception:
+                    existing_context = None
+
+            if regenerate:
+                existing_context = None
+
+            prompt = build_context_prompt(project, tickets, existing_context=existing_context)
+            if regenerate:
+                prompt = (
+                    f"{prompt}\n"
+                    "- Regenerate from scratch. Ignore old context and write a brand new .agentplan.md.\n"
+                )
+
+            command = _render_prompt_agent_command(
+                writer_agent.get("command_template"),
+                prompt,
+                project["slug"],
+                project_dir,
+            )
+
+            terminal_pid = spawn_terminal(command, title=f"agentplan:{writer_agent['name']}")
+            pid = terminal_pid if isinstance(terminal_pid, int) and terminal_pid > 1 else None
+            if pid is None:
+                try:
+                    proc = subprocess.Popen(
+                        command,
+                        shell=True,
+                        executable="/bin/bash",
+                        cwd=project_dir,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        stdin=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                    pid = proc.pid
+                except OSError as exc:
+                    return ({"error": f"failed to start context generation process: {exc}"}, 500)
+
+            _CONTEXT_PIDS[project["slug"]] = pid
+            return {"pid": pid, "status": "started"}
+        finally:
+            conn.close()
+
+    @app.route("/api/project/<slug>/context-status")
+    def api_project_context_status(slug):
+        conn = get_connection(_db_path())
+        try:
+            project = conn.execute("SELECT id, slug, dir FROM projects WHERE slug=?", (slug,)).fetchone()
+            if not project:
+                abort(404)
+        finally:
+            conn.close()
+
+        pid = _CONTEXT_PIDS.get(project["slug"])
+        running = False
+        if isinstance(pid, int) and pid > 0:
+            try:
+                os.kill(pid, 0)
+                running = True
+            except ProcessLookupError:
+                running = False
+            except Exception:
+                running = True
+
+        context_path = _context_path_for_project(project)
+        last_modified = None
+        if context_path and os.path.exists(context_path):
+            try:
+                last_modified = datetime.fromtimestamp(os.path.getmtime(context_path)).isoformat(timespec="seconds")
+            except Exception:
+                last_modified = None
+
+        return {"running": running, "last_modified": last_modified, "pid": pid}
 
     def _update_ticket_state(conn, project_id, ticket_num, new_status):
         ticket = conn.execute(

@@ -1500,6 +1500,65 @@ def test_dashboard_project_directory_api_crud():
     assert row["dir"] is None
 
 
+def test_dashboard_generate_context_returns_400_when_no_writer_agent_configured():
+    from agentplan.dashboard import create_app
+
+    os.makedirs("/tmp/web-context-no-writer", exist_ok=True)
+    cli("create", "Web Context No Writer", "--dir", "/tmp/web-context-no-writer")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/project/web-context-no-writer/generate-context",
+        headers={"Origin": "http://localhost"},
+        json={},
+    )
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert "No writer agent configured" in payload["error"]
+
+
+def test_dashboard_generate_context_returns_400_when_no_directory_linked():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Web Context No Dir")
+    cli("role", "add", "writing")
+    cli("agent", "add", "writer", "--command", "echo {ticket}", "--roles", "writing")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/project/web-context-no-dir/generate-context",
+        headers={"Origin": "http://localhost"},
+        json={},
+    )
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert "No directory linked to project 'web-context-no-dir'" in payload["error"]
+
+
+def test_dashboard_context_status_returns_running_state():
+    from agentplan.dashboard import create_app
+    import agentplan.dashboard.routes as dashboard_routes
+
+    os.makedirs("/tmp/web-context-status", exist_ok=True)
+    Path("/tmp/web-context-status/.agentplan.md").write_text("hello", encoding="utf-8")
+    cli("create", "Web Context Status", "--dir", "/tmp/web-context-status")
+
+    dashboard_routes._CONTEXT_PIDS["web-context-status"] = os.getpid()
+    test_app = create_app()
+    client = test_app.test_client()
+
+    resp = client.get("/api/project/web-context-status/context-status")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["running"] is True
+    assert payload["pid"] == os.getpid()
+    assert payload["last_modified"] is not None
+
+
 def test_dashboard_shows_missing_directory_warnings():
     from agentplan.dashboard import app
 
