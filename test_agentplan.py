@@ -2952,7 +2952,8 @@ def test_ticket_add_and_edit_timeout_sec():
 
 
 def test_chain_marks_ticket_failed_and_pauses_on_timeout():
-    cli("create", "Chain Timeout Project")
+    os.makedirs("/tmp/chain-timeout-project", exist_ok=True)
+    cli("create", "Chain Timeout Project", "--dir", "/tmp/chain-timeout-project")
     cli("ticket", "add", "chain-timeout-project", "Run long", "--timeout", "7")
     with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
          patch("agentplan.cli.spawn_terminal", return_value=1234), \
@@ -3017,7 +3018,8 @@ def test_log_heartbeat_resets_chain_deadline():
 
 
 def test_project_default_timeout_applies_to_chain_when_ticket_timeout_missing():
-    cli("create", "Project Default Timeout", "--timeout", "9")
+    os.makedirs("/tmp/project-default-timeout", exist_ok=True)
+    cli("create", "Project Default Timeout", "--dir", "/tmp/project-default-timeout", "--timeout", "9")
     cli("ticket", "add", "project-default-timeout", "No per-ticket timeout")
     with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
          patch("agentplan.cli.spawn_terminal", return_value=999), \
@@ -3048,8 +3050,9 @@ def test_chain_no_warning_when_dir_not_set():
          patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "failed", "timed_out": False}):
         out, err, code = cli("chain", "chain-no-dir", "--default-agent", "dash")
 
-    assert code == 0, err
-    assert "linked project directory does not exist" not in out
+    assert out == ""
+    assert code == 2
+    assert "No directory linked to project 'chain-no-dir'" in err
 
 
 def test_chain_injects_agentplan_md_content_in_spawned_command():
@@ -3215,7 +3218,8 @@ def test_auto_tag_already_tagged_tickets_are_skipped():
 def test_chain_processes_done_then_moves_to_next_ticket():
     import agentplan.cli as agent_cli
 
-    cli("create", "Chain Move Project")
+    os.makedirs("/tmp/chain-move-project", exist_ok=True)
+    cli("create", "Chain Move Project", "--dir", "/tmp/chain-move-project")
     cli("role", "add", "backend")
     _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run-{ticket_id}", roles="backend")
     cli("ticket", "add", "chain-move-project", "First", "--tag", "role:backend")
@@ -3248,7 +3252,8 @@ def test_chain_processes_done_then_moves_to_next_ticket():
 def test_chain_pauses_on_failed_ticket():
     import agentplan.cli as agent_cli
 
-    cli("create", "Chain Fail Project")
+    os.makedirs("/tmp/chain-fail-project", exist_ok=True)
+    cli("create", "Chain Fail Project", "--dir", "/tmp/chain-fail-project")
     _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
     cli("ticket", "add", "chain-fail-project", "Only task")
 
@@ -3263,7 +3268,8 @@ def test_chain_pauses_on_failed_ticket():
 def test_chain_pauses_on_needs_review_ticket():
     import agentplan.cli as agent_cli
 
-    cli("create", "Chain Review Project")
+    os.makedirs("/tmp/chain-review-project", exist_ok=True)
+    cli("create", "Chain Review Project", "--dir", "/tmp/chain-review-project")
     _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
     cli("ticket", "add", "chain-review-project", "Only task")
 
@@ -3276,7 +3282,8 @@ def test_chain_pauses_on_needs_review_ticket():
 
 
 def test_chain_stops_when_no_more_tickets():
-    cli("create", "Chain Empty Project")
+    os.makedirs("/tmp/chain-empty-project", exist_ok=True)
+    cli("create", "Chain Empty Project", "--dir", "/tmp/chain-empty-project")
 
     out, err, code = cli("chain", "chain-empty-project")
     assert code == 0, err
@@ -3286,7 +3293,8 @@ def test_chain_stops_when_no_more_tickets():
 def test_chain_state_persisted_in_db_and_status_command():
     import agentplan.cli as agent_cli
 
-    cli("create", "Chain State Project")
+    os.makedirs("/tmp/chain-state-project", exist_ok=True)
+    cli("create", "Chain State Project", "--dir", "/tmp/chain-state-project")
     _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
     cli("ticket", "add", "chain-state-project", "Only task")
 
@@ -3309,7 +3317,8 @@ def test_chain_state_persisted_in_db_and_status_command():
 def test_chain_max_tickets_limits_processing():
     import agentplan.cli as agent_cli
 
-    cli("create", "Chain Max Project")
+    os.makedirs("/tmp/chain-max-project", exist_ok=True)
+    cli("create", "Chain Max Project", "--dir", "/tmp/chain-max-project")
     _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
     cli("ticket", "add", "chain-max-project", "T1")
     cli("ticket", "add", "chain-max-project", "T2")

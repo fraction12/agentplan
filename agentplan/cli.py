@@ -1031,6 +1031,13 @@ def cmd_chain(args):
             suggestions=[f"Run `agentplan chain {proj['slug']} --status` to inspect the current run."],
         )
 
+    project_dir = (proj["dir"] if "dir" in proj.keys() else None) or ""
+    if not project_dir.strip():
+        conn.close()
+        fail(
+            f"No directory linked to project '{proj['slug']}'. Set one with: agentplan project {proj['slug']} --dir ~/path/to/repo"
+        )
+
     processed = 0
     _warn_if_missing_project_dir(proj)
     db_set_chain_state(conn, proj["id"], "running", current_ticket_id=None, pause_reason=None)
