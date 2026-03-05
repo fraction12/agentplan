@@ -663,21 +663,30 @@ def _render_prompt_agent_command(template, prompt, project_slug, project_dir):
 
     command = (template or "").strip()
 
-    # Strip the prompt placeholder from the command — we'll pipe via stdin instead
-    stripped = (
-        command.replace("{{ticket}}", "")
-        .replace("{{prompt}}", "")
-        .replace("{ticket}", "")
-        .replace("{prompt}", "")
-        .replace("{{project}}", str(project_slug))
+    # Replace project placeholders directly
+    base_cmd = (
+        command.replace("{{project}}", str(project_slug))
         .replace("{{project_dir}}", shlex.quote(project_dir))
         .replace("{project}", str(project_slug))
         .replace("{project_dir}", shlex.quote(project_dir))
-        .strip()
     )
 
-    # Pipe the prompt file into the agent command via stdin
-    rendered = f"cat {prompt_file_quoted} | {stripped}"
+    has_placeholder = any(p in base_cmd for p in ["{ticket}", "{prompt}", "{{ticket}}", "{{prompt}}"])
+
+    if has_placeholder:
+        # Strip prompt placeholder — we'll pass the temp file path instead
+        stripped = (
+            base_cmd.replace("{{ticket}}", "")
+            .replace("{{prompt}}", "")
+            .replace("{ticket}", "")
+            .replace("{prompt}", "")
+            .strip()
+        )
+        # Run agent with prompt file as argument: `agent_cmd "$(cat /tmp/prompt.md)"`
+        # For agents that support it, pass as file-based prompt
+        rendered = f'prompt=$(cat {prompt_file_quoted}) && {stripped} "$prompt"'
+    else:
+        rendered = f'prompt=$(cat {prompt_file_quoted}) && {base_cmd} "$prompt"'
 
     # Clean up temp file after command finishes
     cleanup = f"rm -f {prompt_file_quoted}"
