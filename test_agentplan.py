@@ -3107,6 +3107,49 @@ def test_auto_tag_unknown_role_response_is_skipped():
     assert ticket["tags"] == ""
 
 
+def test_auto_tag_handles_ai_tool_unavailable_file_not_found():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Auto Tag Tool Missing")
+    cli("role", "add", "coding")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="missing-binary --prompt {prompt}", roles="coding")
+    cli("ticket", "add", "auto-tag-tool-missing", "Build parser")
+
+    with patch("agentplan.cli.subprocess.run", side_effect=FileNotFoundError("missing-binary")):
+        out, err, code = cli("auto-tag", "auto-tag-tool-missing")
+
+    assert code == 0
+    assert "auto-tag failed" in err.lower()
+    assert out == ""
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    ticket = conn.execute("SELECT tags FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert ticket["tags"] == ""
+
+
+def test_auto_tag_handles_empty_or_malformed_model_output():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Auto Tag Malformed Output")
+    cli("role", "add", "coding")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="dummy --prompt {prompt} --ticket {ticket}", roles="coding")
+    cli("ticket", "add", "auto-tag-malformed-output", "Build parser")
+
+    with patch("agentplan.cli.subprocess.run") as mock_run:
+        mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": "```json\n{\"role\":\"coding\"}\n```", "stderr": ""})()
+        out, err, code = cli("auto-tag", "auto-tag-malformed-output")
+
+    assert code == 0
+    assert "unknown role" in err.lower()
+    assert out == ""
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    ticket = conn.execute("SELECT tags FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert ticket["tags"] == ""
+
+
 def test_auto_tag_already_tagged_tickets_are_skipped():
     import agentplan.cli as agent_cli
 
