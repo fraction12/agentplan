@@ -171,6 +171,7 @@ TOP_LEVEL_COMMANDS = [
     "monitor-process",
     "auto-tag",
     "chain",
+    "project",
 ]
 TICKET_COMMANDS = ["add", "update", "edit", "done", "skip", "start", "block", "fail", "review", "list"]
 SUBTASK_COMMANDS = ["add", "done", "list"]
@@ -195,6 +196,7 @@ PROJECT_TOP_LEVEL_COMMANDS = {
     "route",
     "auto-tag",
     "chain",
+    "project",
 }
 
 
@@ -1411,6 +1413,24 @@ def cmd_create(args):
         msg += f" with {n} ticket(s)"
     print(msg)
     conn.close()
+
+
+def cmd_project(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    dir_path = (args.dir or "").strip()
+    if not dir_path:
+        conn.close()
+        fail("Missing directory path.", suggestions=["Use: agentplan project <slug> --dir ~/path/to/repo"])
+
+    resolved_dir = os.path.expanduser(dir_path)
+    if not os.path.exists(resolved_dir):
+        print(f"Warning: directory does not exist on disk: {resolved_dir}")
+
+    conn.execute("UPDATE projects SET dir=?, updated_at=? WHERE id=?", (resolved_dir, _now(), proj["id"]))
+    conn.commit()
+    conn.close()
+    print(f"Updated project '{proj['slug']}' directory to: {resolved_dir}")
 
 
 def cmd_ticket_add(args):
@@ -2787,6 +2807,10 @@ def build_parser():
     c.add_argument("--dir", help="Link this project to a local directory")
     c.add_argument("--timeout", type=int, help="Default per-ticket timeout in seconds for this project")
 
+    prj = sub.add_parser("project", help="Update project settings")
+    prj.add_argument("project", help="Project slug or name")
+    prj.add_argument("--dir", required=True, help="Set or update the linked local directory")
+
     tp = sub.add_parser("ticket", help="Manage tickets")
     ts = tp.add_subparsers(dest="ticket_command")
     a = ts.add_parser("add")
@@ -2987,7 +3011,7 @@ def build_parser():
 
 
 DISPATCH = {
-    "init": cmd_init, "create": cmd_create, "next": cmd_next, "claim": cmd_claim, "reap": cmd_reap, "status": cmd_status,
+    "init": cmd_init, "create": cmd_create, "project": cmd_project, "next": cmd_next, "claim": cmd_claim, "reap": cmd_reap, "status": cmd_status,
     "list": cmd_list, "search": cmd_search, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
     "archive": cmd_archive,
     "note": cmd_note, "depend": cmd_depend, "undepend": cmd_undepend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version, "dashboard": cmd_dashboard,
