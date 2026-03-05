@@ -650,21 +650,41 @@ def build_context_prompt(project, tickets, existing_context=None):
 
 
 def _render_prompt_agent_command(template, prompt, project_slug, project_dir):
+    import tempfile as _tempfile
+    # Write prompt to a temp file to avoid shell quoting/ARG_MAX issues
+    prompt_file = _tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", prefix=f"agentplan-{project_slug}-",
+        dir=project_dir, delete=False,
+    )
+    prompt_file.write(prompt)
+    prompt_file.close()
+    prompt_file_path = prompt_file.name
+    prompt_file_quoted = shlex.quote(prompt_file_path)
+
     prompt_quoted = shlex.quote(prompt)
     command = (template or "").strip()
-    rendered = (
-        command.replace("{{ticket}}", prompt_quoted)
-        .replace("{{project}}", str(project_slug))
-        .replace("{{project_dir}}", shlex.quote(project_dir))
-        .replace("{{prompt}}", prompt_quoted)
-        .replace("{ticket}", prompt_quoted)
-        .replace("{project}", str(project_slug))
-        .replace("{project_dir}", shlex.quote(project_dir))
-        .replace("{prompt}", prompt_quoted)
-    )
-    if prompt_quoted not in rendered and "{ticket}" not in command and "{prompt}" not in command:
-        rendered = f"{rendered} {prompt_quoted}".strip()
-    return f"cd {shlex.quote(project_dir)} && {rendered}"
+
+    # Check if template has placeholders — if so, use file content via $() substitution
+    has_placeholder = any(p in command for p in ["{ticket}", "{prompt}", "{{ticket}}", "{{prompt}}"])
+
+    if has_placeholder:
+        file_sub = f"$(cat {prompt_file_quoted})"
+        rendered = (
+            command.replace("{{ticket}}", file_sub)
+            .replace("{{project}}", str(project_slug))
+            .replace("{{project_dir}}", shlex.quote(project_dir))
+            .replace("{{prompt}}", file_sub)
+            .replace("{ticket}", file_sub)
+            .replace("{project}", str(project_slug))
+            .replace("{project_dir}", shlex.quote(project_dir))
+            .replace("{prompt}", file_sub)
+        )
+    else:
+        rendered = f"cat {prompt_file_quoted} | {command}"
+
+    # Clean up temp file after command finishes
+    cleanup = f"rm -f {prompt_file_quoted}"
+    return f"cd {shlex.quote(project_dir)} && {rendered}; {cleanup}"
 
 
 def _warn_if_missing_project_dir(project):

@@ -1190,11 +1190,9 @@ def test_context_command_project_mode_file_missing():
     assert "Started context generation with agent 'scribe' in terminal." in out
     assert mock_spawn.call_count == 1
     command = mock_spawn.call_args[0][0]
-    assert "Project title: Project Context Missing" in command
-    assert "Project slug: project-context-missing" in command
-    assert "Directory path: /tmp/project-context-missing" in command
-    assert "Existing .agentplan.md content:" in command
-    assert "None found." in command
+    # Prompt is now written to a temp file referenced in the command
+    assert "agentplan-project-context-missing-" in command
+    assert "cat" in command  # reads prompt from file
 
 
 def test_context_command_project_mode_file_exists_and_regenerate():
@@ -1211,16 +1209,29 @@ def test_context_command_project_mode_file_exists_and_regenerate():
     assert code == 0, err
     assert "Started context generation with agent 'scribe' in terminal." in out
     command = mock_spawn.call_args[0][0]
-    assert "hello context" in command
-    assert "- #1: Ticket one [status=pending, priority=high]" in command
+    # Prompt file should contain existing context and ticket info
+    import glob
+    prompt_files = glob.glob("/tmp/project-context-exists/agentplan-project-context-exists-*.md")
+    assert len(prompt_files) >= 1
+    prompt_content = Path(prompt_files[0]).read_text()
+    assert "hello context" in prompt_content
+    assert "- #1: Ticket one [status=pending, priority=high]" in prompt_content
+
+    # Clean up prompt files from first run
+    for f in prompt_files:
+        try: os.remove(f)
+        except: pass
 
     with patch("agentplan.cli.spawn_terminal", return_value=0) as mock_spawn2:
         out2, err2, code2 = cli("context", "project-context-exists", "--regenerate")
     assert code2 == 0, err2
     assert "Started context generation with agent 'scribe' in terminal." in out2
     command2 = mock_spawn2.call_args[0][0]
-    assert "Regenerate from scratch. Ignore old context" in command2
-    assert not os.path.exists(context_file)
+    # Find the new prompt file
+    prompt_files2 = glob.glob("/tmp/project-context-exists/agentplan-project-context-exists-*.md")
+    assert len(prompt_files2) >= 1
+    prompt_content2 = Path(prompt_files2[0]).read_text()
+    assert "Regenerate from scratch" in prompt_content2
 
 
 # ---------------------------------------------------------------------------
