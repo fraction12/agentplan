@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>#{{ ticket.num }} {{ ticket.title }} · {{ project.title }} · agentplan dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      :root {
+        --font-heading: 'Playfair Display', Georgia, serif;
+        --font-body: 'Inter', ui-sans-serif, sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --fs-h1: 2rem;
+        --fs-h2: 1.25rem;
+        --fs-card-title: 1rem;
+        --fs-nav: 0.875rem;
+        --fs-body: 0.875rem;
+        --fs-small: 0.75rem;
+        --fs-button: 0.75rem;
+        --fs-mono: 0.8rem;
+        --fw-h1: 700;
+        --fw-h2: 600;
+        --fw-card-title: 600;
+        --fw-nav: 500;
+        --fw-body: 400;
+        --fw-small: 400;
+        --fw-button: 500;
+        --fw-mono: 400;
+        --color-bg: #0a0e1a;
+        --color-bg-alt: #0f1420;
+        --color-panel: #151b2b;
+        --color-panel-soft: #1b2236;
+        --color-text: #e2e8f0;
+        --color-muted: #8892a8;
+        --color-border: rgba(255,255,255,0.08);
+        --color-shadow: rgba(0,0,0,0.42);
+        --color-high: #ef4444;
+        --color-medium: #f97316;
+        --color-low: #8892a8;
+        --color-done: #22c55e;
+        --color-in-progress: #3b82f6;
+        --color-blocked: #f59e0b;
+        --color-todo: #94a3b8;
+      }
+      body { font-family: var(--font-body); background: var(--color-bg) !important; color: var(--color-text); }
+      h1, h2, h3, h4, h5, h6 { letter-spacing: -0.01em; font-family: var(--font-body); } h1 { font-family: var(--font-heading); }
+      .text-muted { color: var(--color-muted) !important; }
+      .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 12px 36px var(--color-shadow); color: var(--color-text); }
+      .card.priority-high { border-left: 4px solid var(--color-high); }
+      .card.priority-medium { border-left: 4px solid var(--color-medium); }
+      .card.priority-low, .card.priority-none { border-left: 4px solid var(--color-low); }
+      .badge.status-badge { color: #061018; font-weight: var(--fw-button); }
+      .badge.status-done { background: var(--status-done); }
+      .badge.status-in-progress { background: var(--status-in-progress); color: #eaf2ff; }
+      .badge.status-blocked { background: var(--status-blocked); }
+      .badge.status-todo, .badge.status-pending, .badge.status-skipped { background: var(--status-todo); }
+      .priority-pill, .tag-pill-muted { background: var(--color-bg-alt); border-color: var(--color-border); }
+      .priority-pill { color: var(--color-text); }
+      .tag-pill-muted { color: var(--color-muted); }
+      .ticket-id, .project-code { font-family: var(--font-mono); }
+      .progress-ring { --ring-size: 42px; --ring-stroke: 4; --ring-progress: 0; --ring-track: rgba(255,255,255,0.14); --ring-color: var(--status-in-progress); width: var(--ring-size); height: var(--ring-size); }
+      .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+      .progress-ring-track, .progress-ring-value { fill: none; stroke-width: var(--ring-stroke); }
+      .progress-ring-track { stroke: var(--ring-track); }
+      .progress-ring-value { stroke: var(--ring-color); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--ring-progress)); transition: stroke-dashoffset 450ms ease; }
+      .agent-avatar { --avatar-size: 2rem; width: var(--avatar-size); height: var(--avatar-size); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-body); font-size: var(--fs-small); font-weight: var(--fw-card-title); background: var(--color-bg-alt); border: 1px solid var(--color-border); color: var(--color-text); }
+      .list-group-item, .form-control { background: var(--color-panel-soft); border-color: var(--color-border); color: var(--color-text); }
+      .form-control::placeholder { color: var(--color-muted); }
+      .form-control:focus { background: var(--color-panel-soft); color: var(--color-text); border-color: var(--status-in-progress); box-shadow: 0 0 0 0.2rem rgba(59,130,246,0.2); }
+      .btn-outline-secondary { color: var(--color-muted); border-color: var(--color-border); font-family: var(--font-body); font-weight: var(--fw-button); font-size: var(--fs-small); }
+      .btn-outline-secondary:hover { color: var(--color-text); background: rgba(255,255,255,0.06); }
+      .ticket-page-title { font-family: var(--font-heading); font-size: var(--fs-h1); font-weight: var(--fw-h1); }
+      .ticket-section-title { font-family: var(--font-body); font-size: var(--fs-h2); font-weight: var(--fw-h2); }
+      .body-text { font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-body); }
+      .secondary-text { font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-small); color: var(--color-muted) !important; }
+      .btn, .badge { font-family: var(--font-body); }
+      .btn, .btn-sm { font-weight: var(--fw-button); font-size: var(--fs-small); }
+      .pill { font-family: var(--font-body); font-weight: var(--fw-button); font-size: var(--fs-small); }
+    </style>
+  </head>
+  <body>
+    <main class="container py-4 page">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="m-0 ticket-page-title">#{{ ticket.num }} {{ ticket.title }}</h1>
+        <a href="{{ url_for('project_detail', slug=project.slug) }}" class="btn btn-sm btn-outline-secondary">Back to project</a>
+      </div>
+
+      <div class="card shadow-sm mb-3">
+        <div class="card-body">
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <span class="badge status-badge status-{{ ticket.status }}">{{ ticket.status }}</span>
+            <span class="badge ticket-id pill priority-pill">priority: {{ ticket.priority }}</span>
+            {% if ticket.tags %}
+              {% for tag in ticket.tags %}
+              <span class="badge rounded-pill pill tag-pill-muted">{{ tag }}</span>
+              {% endfor %}
+            {% endif %}
+          </div>
+          <h2 class="ticket-section-title">Description</h2>
+          {% if ticket.description %}
+          <p class="mb-0 body-text">{{ ticket.description }}</p>
+          {% else %}
+          <p class="text-muted mb-0 secondary-text">No description.</p>
+          {% endif %}
+          {% if ticket.close_note %}
+          <hr>
+          <h2 class="ticket-section-title">Close notes</h2>
+          <p class="mb-0 body-text">{{ ticket.close_note }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-12 col-md-6">
+          <div class="card h-100 shadow-sm priority-low">
+            <div class="card-body">
+              <h2 class="ticket-section-title">Dependencies</h2>
+              <div class="small text-muted mb-1 secondary-text">blocked by</div>
+              {% if blocked_by %}
+              <ul class="mb-3">
+                {% for dep in blocked_by %}
+                <li class="body-text"><a href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=dep.num) }}"><span class="ticket-id">#{{ dep.num }}</span> {{ dep.title }}</a></li>
+                {% endfor %}
+              </ul>
+              {% else %}
+              <p class="text-muted small secondary-text">None.</p>
+              {% endif %}
+
+              <div class="small text-muted mb-1 secondary-text">blocks</div>
+              {% if blocks %}
+              <ul class="mb-0">
+                {% for dep in blocks %}
+                <li class="body-text"><a href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=dep.num) }}"><span class="ticket-id">#{{ dep.num }}</span> {{ dep.title }}</a></li>
+                {% endfor %}
+              </ul>
+              {% else %}
+              <p class="text-muted small mb-0 secondary-text">None.</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-md-6">
+          <div class="card h-100 shadow-sm priority-low">
+            <div class="card-body">
+              <h2 class="ticket-section-title">Subtasks</h2>
+              {% if subtasks %}
+              <ul class="list-group list-group-flush">
+                {% for subtask in subtasks %}
+                <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                  <span class="body-text"><span class="ticket-id">#{{ subtask.num }}</span> {{ subtask.title }}</span>
+                  <span class="badge status-badge pill {{ 'status-done' if subtask.status == 'done' else 'status-todo' }}">{{ subtask.status }}</span>
+                </li>
+                {% endfor %}
+              </ul>
+              {% else %}
+              <p class="text-muted small mb-0 secondary-text">No subtasks.</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h2 class="ticket-section-title">History / audit log</h2>
+          {% if history %}
+          <ul class="list-group list-group-flush">
+            {% for item in history %}
+            <li class="list-group-item px-0">
+              <div class="small text-muted ticket-id secondary-text">{{ item.changed_at }}</div>
+              <div class="body-text">{{ item.message }}</div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="text-muted small mb-0 secondary-text">No history yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
