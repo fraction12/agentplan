@@ -1167,6 +1167,16 @@ def test_context_command_project_mode_no_dir_set():
     assert "No directory linked to this project" in out
 
 
+def test_context_command_project_mode_errors_when_no_writer_agent_configured():
+    os.makedirs("/tmp/project-context-no-writer-cli", exist_ok=True)
+    cli("create", "Project Context No Writer CLI", "--dir", "/tmp/project-context-no-writer-cli")
+
+    out, err, code = cli("context", "project-context-no-writer-cli")
+    assert code == 2
+    assert out == ""
+    assert "No writer-role agent configured." in err
+
+
 def test_context_command_project_mode_file_missing():
     os.makedirs("/tmp/project-context-missing", exist_ok=True)
     cli("create", "Project Context Missing", "--dir", "/tmp/project-context-missing")
