@@ -1101,9 +1101,21 @@ def test_context_command_project_mode_no_dir_set():
 def test_context_command_project_mode_file_missing():
     os.makedirs("/tmp/project-context-missing", exist_ok=True)
     cli("create", "Project Context Missing", "--dir", "/tmp/project-context-missing")
-    out, err, code = cli("context", "project-context-missing")
+    cli("role", "add", "writing")
+    cli("agent", "add", "scribe", "--command", "echo {ticket}", "--roles", "writing")
+
+    with patch("agentplan.cli.spawn_terminal", return_value=0) as mock_spawn:
+        out, err, code = cli("context", "project-context-missing")
+
     assert code == 0, err
-    assert "No .agentplan.md found in /tmp/project-context-missing" in out
+    assert "Started context generation with agent 'scribe' in terminal." in out
+    assert mock_spawn.call_count == 1
+    command = mock_spawn.call_args[0][0]
+    assert "Project title: Project Context Missing" in command
+    assert "Project slug: project-context-missing" in command
+    assert "Directory path: /tmp/project-context-missing" in command
+    assert "Existing .agentplan.md content:" in command
+    assert "None found." in command
 
 
 def test_context_command_project_mode_file_exists_and_regenerate():
@@ -1111,14 +1123,24 @@ def test_context_command_project_mode_file_exists_and_regenerate():
     context_file = "/tmp/project-context-exists/.agentplan.md"
     Path(context_file).write_text("hello context", encoding="utf-8")
     cli("create", "Project Context Exists", "--dir", "/tmp/project-context-exists")
+    cli("ticket", "add", "project-context-exists", "Ticket one", "--priority", "high")
+    cli("role", "add", "writing")
+    cli("agent", "add", "scribe", "--command", "echo {ticket}", "--roles", "writing")
 
-    out, err, code = cli("context", "project-context-exists")
+    with patch("agentplan.cli.spawn_terminal", return_value=0) as mock_spawn:
+        out, err, code = cli("context", "project-context-exists")
     assert code == 0, err
-    assert "hello context" in out
+    assert "Started context generation with agent 'scribe' in terminal." in out
+    command = mock_spawn.call_args[0][0]
+    assert "hello context" in command
+    assert "- #1: Ticket one [status=pending, priority=high]" in command
 
-    out2, err2, code2 = cli("context", "project-context-exists", "--regenerate")
+    with patch("agentplan.cli.spawn_terminal", return_value=0) as mock_spawn2:
+        out2, err2, code2 = cli("context", "project-context-exists", "--regenerate")
     assert code2 == 0, err2
-    assert "No .agentplan.md found in /tmp/project-context-exists" in out2
+    assert "Started context generation with agent 'scribe' in terminal." in out2
+    command2 = mock_spawn2.call_args[0][0]
+    assert "Regenerate from scratch. Ignore old context" in command2
     assert not os.path.exists(context_file)
 
 
