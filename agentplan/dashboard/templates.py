@@ -1007,6 +1007,7 @@ AGENTS_TEMPLATE = """
       .status-dot.connected { background: var(--status-done); box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15); }
       .status-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15); }
       .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+      .side-stack { display: grid; gap: 14px; }
       .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; padding: 14px; }
       .title { margin: 0 0 10px; font-size: 1rem; }
       .table { width: 100%; border-collapse: collapse; }
@@ -1018,13 +1019,21 @@ AGENTS_TEMPLATE = """
       .pill { border: 1px solid var(--color-border); border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; background: var(--color-panel-soft); }
       .form-grid { display: grid; gap: 8px; }
       input[type="text"] { width: 100%; background: var(--color-panel-soft); border: 1px solid var(--color-border); color: var(--color-text); border-radius: 10px; padding: 8px; }
-      .role-list { max-height: 130px; overflow: auto; border: 1px solid var(--color-border); border-radius: 10px; padding: 8px; background: rgba(255,255,255,0.02); }
-      .role-item { display: block; margin-bottom: 6px; font-size: 0.85rem; }
+      .role-list { max-height: 130px; overflow: auto; border: 1px solid var(--color-border); border-radius: 10px; padding: 8px; background: rgba(255,255,255,0.02); display: flex; flex-wrap: wrap; gap: 6px 10px; }
+      .role-item { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 0.85rem; white-space: nowrap; }
+      .role-item input { margin: 0; }
       .btn { border: 1px solid var(--color-border); border-radius: 8px; padding: 7px 10px; background: transparent; color: var(--color-muted); cursor: pointer; font-family: var(--font-body); font-weight: var(--fw-button); font-size: var(--fs-button); }
       .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .btn-sm { padding: 3px 8px; font-size: 0.8rem; border-radius: 6px; }
       .btn-primary { background: rgba(59,130,246,0.18); color: #dbeafe; border-color: rgba(59,130,246,0.35); }
       .btn-danger { border-color: rgba(239,68,68,0.4); color: #fca5a5; }
+      .agent-actions { display: inline-flex; align-items: center; gap: 8px; }
+      .edit-row td { background: rgba(255,255,255,0.015); }
+      .edit-form { gap: 10px; }
+      .edit-actions { display: flex; align-items: center; gap: 8px; }
+      .delete-form { margin: 0; }
+      .delete-link { border: 0; background: transparent; color: #fca5a5; cursor: pointer; font-family: var(--font-body); font-size: var(--fs-small); padding: 0; text-decoration: underline; }
+      .delete-link:hover { color: #fecaca; }
       .tool-grid { display: grid; gap: 8px; }
       .tool-row { display: flex; justify-content: space-between; border: 1px solid var(--color-border); border-radius: 10px; padding: 8px; background: rgba(255,255,255,0.02); }
       @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
@@ -1053,6 +1062,7 @@ AGENTS_TEMPLATE = """
             <thead><tr><th>Name</th><th>Command Template</th><th>Roles</th><th>Actions</th></tr></thead>
             <tbody>
               {% for agent in agents %}
+              {% set row_key = "agent-" ~ loop.index0 %}
               <tr>
                 <td class="mono">{{ agent.name }}</td>
                 <td class="mono">{{ agent.command_template }}</td>
@@ -1063,17 +1073,27 @@ AGENTS_TEMPLATE = """
                   </div>
                 </td>
                 <td>
-                  <form class="form-grid" method="post" action="{{ url_for('edit_agent', name=agent.name) }}">
+                  <div class="agent-actions">
+                    <button class="btn btn-sm" type="button" data-edit-toggle="{{ row_key }}" aria-expanded="false">Edit</button>
+                    <form class="delete-form" method="post" action="{{ url_for('delete_agent_route', name=agent.name) }}">
+                      <button class="delete-link" type="submit" aria-label="Delete {{ agent.name }}">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              <tr class="edit-row" data-edit-row="{{ row_key }}" hidden>
+                <td colspan="4">
+                  <form class="form-grid edit-form" method="post" action="{{ url_for('edit_agent', name=agent.name) }}">
                     <input type="text" name="command_template" value="{{ agent.command_template }}" required>
                     <div class="role-list">
                     {% for role in roles %}
                       <label class="role-item"><input type="checkbox" name="roles" value="{{ role.name }}" {{ 'checked' if role.name in agent.roles else '' }}> {{ role.name }}</label>
                     {% endfor %}
                     </div>
-                    <button class="btn" type="submit">Save</button>
-                  </form>
-                  <form method="post" action="{{ url_for('delete_agent_route', name=agent.name) }}" style="margin-top:6px;">
-                    <button class="btn btn-danger" type="submit">Delete</button>
+                    <div class="edit-actions">
+                      <button class="btn btn-sm btn-primary" type="submit">Save</button>
+                      <button class="btn btn-sm" type="button" data-edit-cancel="{{ row_key }}">Cancel</button>
+                    </div>
                   </form>
                 </td>
               </tr>
@@ -1085,26 +1105,29 @@ AGENTS_TEMPLATE = """
           {% endif %}
         </div>
 
-        <div class="card">
-          <h2 class="title">Detected Tools</h2>
-          <div class="tool-grid">
-          {% for tool in detected_tools %}
-            <div class="tool-row"><span class="mono">{{ tool.name }}</span><span class="{{ '' if tool.found else 'muted' }}">{{ 'found' if tool.found else 'missing' }}</span></div>
-          {% endfor %}
-          </div>
-
-          <h2 class="title" style="margin-top:16px;">Add Agent</h2>
-          <form class="form-grid" method="post" action="{{ url_for('add_agent') }}">
-            <input type="text" name="name" placeholder="name" required>
-            <input type="text" name="command_template" placeholder="command template" required>
-            <div class="role-list">
-            {% for role in roles %}
-              <label class="role-item"><input type="checkbox" name="roles" value="{{ role.name }}"> {{ role.name }}</label>
+        <div class="side-stack">
+          <div class="card">
+            <h2 class="title">Detected Tools</h2>
+            <div class="tool-grid">
+            {% for tool in detected_tools %}
+              <div class="tool-row"><span class="mono">{{ tool.name }}</span><span class="{{ '' if tool.found else 'muted' }}">{{ 'found' if tool.found else 'missing' }}</span></div>
             {% endfor %}
-            {% if not roles %}<div class="muted">No roles available yet.</div>{% endif %}
             </div>
-            <button class="btn" type="submit">Add Agent</button>
-          </form>
+          </div>
+          <div class="card">
+            <h2 class="title">Add Agent</h2>
+            <form class="form-grid" method="post" action="{{ url_for('add_agent') }}">
+              <input type="text" name="name" placeholder="name" required>
+              <input type="text" name="command_template" placeholder="command template" required>
+              <div class="role-list">
+              {% for role in roles %}
+                <label class="role-item"><input type="checkbox" name="roles" value="{{ role.name }}"> {{ role.name }}</label>
+              {% endfor %}
+              {% if not roles %}<div class="muted">No roles available yet.</div>{% endif %}
+              </div>
+              <button class="btn" type="submit">Add Agent</button>
+            </form>
+          </div>
         </div>
       </section>
     </main>
@@ -1144,6 +1167,35 @@ AGENTS_TEMPLATE = """
         });
         source.onerror = () => setConnection(false, "reconnecting…");
       })();
+
+      function setEditRowOpen(rowKey, isOpen) {
+        const row = document.querySelector(`[data-edit-row="${rowKey}"]`);
+        const toggle = document.querySelector(`[data-edit-toggle="${rowKey}"]`);
+        if (!row || !toggle) return;
+        row.hidden = !isOpen;
+        toggle.textContent = isOpen ? "Close" : "Edit";
+        toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      }
+
+      document.querySelectorAll("[data-edit-toggle]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const rowKey = button.getAttribute("data-edit-toggle");
+          const row = document.querySelector(`[data-edit-row="${rowKey}"]`);
+          const opening = row ? row.hidden : false;
+          document.querySelectorAll("[data-edit-row]").forEach((otherRow) => {
+            const otherKey = otherRow.getAttribute("data-edit-row");
+            setEditRowOpen(otherKey, false);
+          });
+          setEditRowOpen(rowKey, opening);
+        });
+      });
+
+      document.querySelectorAll("[data-edit-cancel]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const rowKey = button.getAttribute("data-edit-cancel");
+          setEditRowOpen(rowKey, false);
+        });
+      });
     </script>
   </body>
 </html>
