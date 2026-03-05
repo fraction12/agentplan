@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.6.4 - 2026-03-05
+
+### Added
+- Agent-powered project context generation from both CLI and dashboard
+  - CLI `agentplan context <project>` now runs through configured writer-role agent
+  - Dashboard adds **Generate Context** button in Project Context panel
+- New dashboard APIs:
+  - `POST /api/project/<slug>/generate-context`
+  - `GET /api/project/<slug>/context-status`
+- Writer-agent routing helper (`get_agent_by_role`) and associated validation/error flows
+
+### Changed
+- Context prompt is now **investigation-driven** (AGENTS.md/CLAUDE.md style):
+  - Uses ticket status summaries + capped open/in-progress list (instead of full ticket dump)
+  - Instructs agents to run discovery commands (`agentplan ticket list ...`, `ls`, `rg`, key-file inspection)
+  - Enforces structured `.agentplan.md` output sections (summary, architecture, runbook, guardrails, etc.)
+- Unified spawn command rendering to use robust prompt-file pattern across context + chain paths
+  - Prevents AppleScript/shell escaping issues and long-prompt truncation
+  - Uses temp prompt files + bash variable handoff for terminal-spawned agents
+- Context generation now supports update-vs-regenerate behavior explicitly (preserve valid sections vs full rewrite)
+
+### Fixed
+- Terminal-spawned context generation for Claude writer agent (removed broken `-m` usage path)
+- Prompt delivery failures caused by inline shell substitution for large payloads
+
+### Tests
+- Expanded coverage for context APIs, writer-role resolution, prompt construction, and status polling
+- 225 tests passing
+
 ## v0.6.3 - 2026-03-05
 
 ### Changed
