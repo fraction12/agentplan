@@ -3062,8 +3062,18 @@ def test_route_terminal_injects_agentplan_md_content_when_present():
     assert code == 0, err
     assert out.strip() == "dash"
     cmd = mock_spawn.call_args.args[0]
-    assert "verify: pytest -q" in cmd
-    assert "[Project Context from .agentplan.md]" in cmd
+    assert "prompt=$(cat " in cmd
+    assert "agentplan-routing-context-project-" in cmd
+    assert "cd /tmp/routing-context &&" in cmd
+    assert "rm -f " in cmd
+
+    import glob
+    prompt_files = glob.glob("/tmp/routing-context/agentplan-routing-context-project-*.md")
+    assert len(prompt_files) >= 1
+    prompt_content = Path(prompt_files[-1]).read_text(encoding="utf-8")
+    assert "routing-context-project 1" in prompt_content
+    assert "verify: pytest -q" in prompt_content
+    assert "[Project Context from .agentplan.md]" in prompt_content
 
 
 def test_route_terminal_instructs_context_creation_when_missing():
@@ -3080,8 +3090,18 @@ def test_route_terminal_instructs_context_creation_when_missing():
 
     assert code == 0, err
     cmd = mock_spawn.call_args.args[0]
-    assert "No .agentplan.md found in project directory" in cmd
-    assert "create .agentplan.md" in cmd
+    assert "prompt=$(cat " in cmd
+    assert "agentplan-routing-context-missing-" in cmd
+    assert "cd /tmp/routing-context-missing &&" in cmd
+    assert "rm -f " in cmd
+
+    import glob
+    prompt_files = glob.glob("/tmp/routing-context-missing/agentplan-routing-context-missing-*.md")
+    assert len(prompt_files) >= 1
+    prompt_content = Path(prompt_files[-1]).read_text(encoding="utf-8")
+    assert "routing-context-missing 1" in prompt_content
+    assert "No .agentplan.md found in project directory" in prompt_content
+    assert "create .agentplan.md" in prompt_content
 
 
 def test_detect_terminal_prefers_iterm2_when_running():
@@ -3373,7 +3393,18 @@ def test_chain_injects_agentplan_md_content_in_spawned_command():
         out, err, code = cli("chain", "chain-context", "--default-agent", "dash")
 
     assert code == 0, err
-    assert "verify: python3 -m pytest" in mock_spawn.call_args.args[0]
+    cmd = mock_spawn.call_args.args[0]
+    assert "prompt=$(cat " in cmd
+    assert "agentplan-chain-context-" in cmd
+    assert "cd /tmp/chain-context &&" in cmd
+    assert "rm -f " in cmd
+
+    import glob
+    prompt_files = glob.glob("/tmp/chain-context/agentplan-chain-context-*.md")
+    assert len(prompt_files) >= 1
+    prompt_content = Path(prompt_files[-1]).read_text(encoding="utf-8")
+    assert "chain-context 1" in prompt_content
+    assert "verify: python3 -m pytest" in prompt_content
 
 
 def test_chain_injects_create_context_instruction_when_file_missing():
@@ -3386,7 +3417,18 @@ def test_chain_injects_create_context_instruction_when_file_missing():
         out, err, code = cli("chain", "chain-context-missing", "--default-agent", "dash")
 
     assert code == 0, err
-    assert "No .agentplan.md found in project directory" in mock_spawn.call_args.args[0]
+    cmd = mock_spawn.call_args.args[0]
+    assert "prompt=$(cat " in cmd
+    assert "agentplan-chain-context-missing-" in cmd
+    assert "cd /tmp/chain-context-missing &&" in cmd
+    assert "rm -f " in cmd
+
+    import glob
+    prompt_files = glob.glob("/tmp/chain-context-missing/agentplan-chain-context-missing-*.md")
+    assert len(prompt_files) >= 1
+    prompt_content = Path(prompt_files[-1]).read_text(encoding="utf-8")
+    assert "chain-context-missing 1" in prompt_content
+    assert "No .agentplan.md found in project directory" in prompt_content
 
 
 # ---------------------------------------------------------------------------

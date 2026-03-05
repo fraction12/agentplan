@@ -666,7 +666,8 @@ def _render_command_template(template, project_slug="", ticket_ref="", ticket_id
 def _render_temp_prompt_command(base_cmd, prompt, project_slug, project_dir=None):
     import tempfile as _tempfile
 
-    prompt_dir = project_dir or _tempfile.gettempdir()
+    use_project_dir = bool(project_dir and os.path.isdir(project_dir))
+    prompt_dir = project_dir if use_project_dir else _tempfile.gettempdir()
     prompt_file = _tempfile.NamedTemporaryFile(
         mode="w",
         suffix=".md",
@@ -695,7 +696,7 @@ def _render_temp_prompt_command(base_cmd, prompt, project_slug, project_dir=None
         rendered = f'prompt=$(cat {prompt_file_quoted}) && {base_cmd} "$prompt"'
 
     cleanup = f"rm -f {prompt_file_quoted}"
-    if project_dir:
+    if use_project_dir:
         return f"cd {shlex.quote(project_dir)} && {rendered}; {cleanup}"
     return f"{rendered}; {cleanup}"
 
@@ -986,7 +987,7 @@ def _next_chain_candidate(conn, project_id):
     return items[0] if items else None
 
 
-def _render_agent_command(template, ticket, project, extra_context=""):
+def _render_agent_command(template, ticket, project, extra_context="", project_dir=None):
     try:
         project_slug = project["slug"]
     except Exception:
@@ -997,18 +998,29 @@ def _render_agent_command(template, ticket, project, extra_context=""):
     except Exception:
         ticket_num = int(ticket)
 
+    if project_dir is None:
+        try:
+            project_dir = project.get("dir") if hasattr(project, "get") else project["dir"]
+        except Exception:
+            project_dir = None
+
     ticket_ref = f"{project_slug} {ticket_num}"
-    command = template or ""
-    rendered = (
-        command.replace("{{ticket}}", ticket_ref)
-        .replace("{{project}}", str(project_slug))
-        .replace("{{ticket_id}}", str(ticket_num))
-        .replace("{ticket}", ticket_ref)
-        .replace("{project}", str(project_slug))
-        .replace("{ticket_id}", str(ticket_num))
+    rendered = _render_command_template(
+        template,
+        project_slug=project_slug,
+        ticket_ref=ticket_ref,
+        ticket_id=ticket_num,
+        project_dir=project_dir or "",
     )
-    if extra_context:
-        rendered = f"{rendered}\n{extra_context.strip()}"
+    context = (extra_context or "").strip()
+    if context:
+        prompt = f"{ticket_ref}\n{context}"
+        rendered = _render_temp_prompt_command(
+            rendered,
+            prompt,
+            project_slug=project_slug,
+            project_dir=project_dir,
+        )
     return rendered
 
 
@@ -1203,6 +1215,7 @@ def cmd_chain(args):
             ticket,
             proj,
             extra_context=_project_prompt_context(proj),
+            project_dir=project_dir,
         )
         deadline_preview = (datetime.now() + timedelta(seconds=timeout_sec)).strftime("%Y-%m-%dT%H:%M:%S")
         start_msg = f"chain-start: ticket #{ticket['num']} timeout={timeout_sec}s deadline={deadline_preview}"
@@ -1395,6 +1408,7 @@ def cmd_route(args):
             ticket,
             proj,
             extra_context=_project_prompt_context(proj),
+            project_dir=proj["dir"] if "dir" in proj.keys() else None,
         )
         pid = spawn_terminal(command, title=f"agentplan:{agent['name']}")
         if getattr(args, "monitor", False):
@@ -1840,6 +1854,7 @@ def _fire_chain_hook(project_slug, default_agent_name=None):
             ticket,
             proj,
             extra_context=_project_prompt_context(proj),
+            project_dir=proj["dir"] if "dir" in proj.keys() else None,
         )
         spawn_terminal(command, title=f"agentplan:{agent['name']}")
     finally:
