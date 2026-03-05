@@ -201,6 +201,26 @@ def test_create_project_without_dir_flag_leaves_directory_empty():
     assert row["dir"] is None
 
 
+def test_project_command_sets_and_updates_directory():
+    cli("create", "Project Dir Cmd")
+
+    out_set, err_set, code_set = cli("project", "project-dir-cmd", "--dir", "/tmp/project-dir-cmd-a")
+    assert code_set == 0, err_set
+    assert "Updated project 'project-dir-cmd' directory to: /tmp/project-dir-cmd-a" in out_set
+    assert "Warning: directory does not exist on disk: /tmp/project-dir-cmd-a" in out_set
+
+    os.makedirs("/tmp/project-dir-cmd-b", exist_ok=True)
+    out_update, err_update, code_update = cli("project", "project-dir-cmd", "--dir", "/tmp/project-dir-cmd-b")
+    assert code_update == 0, err_update
+    assert "Updated project 'project-dir-cmd' directory to: /tmp/project-dir-cmd-b" in out_update
+    assert "Warning: directory does not exist on disk" not in out_update
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT dir FROM projects WHERE slug='project-dir-cmd'").fetchone()
+    conn.close()
+    assert row["dir"] == "/tmp/project-dir-cmd-b"
+
+
 def test_list_projects_after_create():
     cli("create", "Alpha Project")
     out, err, code = cli("list")
@@ -1212,8 +1232,21 @@ def test_dashboard_project_detail_shows_no_directory_and_no_context_message():
     resp = client.get("/project/web-no-context")
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "No directory linked" in body
+    assert "No directory set" in body
     assert "No context file yet. The first agent to work on this project will create one." in body
+
+
+def test_dashboard_project_detail_includes_editable_directory_field():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Dir Field")
+
+    client = app.test_client()
+    resp = client.get("/project/web-dir-field")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="project-dir-edit-btn"' in body
+    assert 'id="project-dir-input"' in body
 
 
 def test_dashboard_project_detail_links_to_ticket_detail_view():
@@ -1272,7 +1305,8 @@ def test_dashboard_ticket_retry_rejects_invalid_transition():
 def test_dashboard_chain_start_sets_running_state_after_spawn():
     from agentplan.dashboard import create_app
 
-    cli("create", "Web Chain Start")
+    os.makedirs("/tmp/web-chain-start", exist_ok=True)
+    cli("create", "Web Chain Start", "--dir", "/tmp/web-chain-start")
 
     test_app = create_app()
     client = test_app.test_client()
@@ -1294,7 +1328,8 @@ def test_dashboard_chain_start_sets_running_state_after_spawn():
 def test_dashboard_chain_start_spawn_failure_does_not_mark_running():
     from agentplan.dashboard import create_app
 
-    cli("create", "Web Chain Spawn Failure")
+    os.makedirs("/tmp/web-chain-spawn-failure", exist_ok=True)
+    cli("create", "Web Chain Spawn Failure", "--dir", "/tmp/web-chain-spawn-failure")
 
     test_app = create_app()
     client = test_app.test_client()
@@ -1309,6 +1344,84 @@ def test_dashboard_chain_start_spawn_failure_does_not_mark_running():
     state = conn.execute("SELECT status FROM chain_state WHERE project_id=1").fetchone()
     conn.close()
     assert state is None
+
+
+def test_dashboard_chain_start_returns_400_when_directory_missing():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Web Chain Missing Dir")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/chain/web-chain-missing-dir/start",
+        headers={"Origin": "http://localhost"},
+    )
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert "No directory linked to project 'web-chain-missing-dir'" in payload["error"]
+
+
+def test_dashboard_project_directory_api_crud():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Web Dir API")
+    os.makedirs("/tmp/web-dir-api-a", exist_ok=True)
+
+    test_app = create_app()
+    client = test_app.test_client()
+
+    set_resp = client.post(
+        "/api/project/web-dir-api/directory",
+        headers={"Origin": "http://localhost"},
+        json={"directory": "/tmp/web-dir-api-a"},
+    )
+    assert set_resp.status_code == 200
+    set_payload = set_resp.get_json()
+    assert set_payload["ok"] is True
+    assert set_payload["directory"] == "/tmp/web-dir-api-a"
+    assert set_payload["exists_on_disk"] is True
+
+    update_resp = client.post(
+        "/api/project/web-dir-api/directory",
+        headers={"Origin": "http://localhost"},
+        json={"directory": "/tmp/web-dir-api-b"},
+    )
+    assert update_resp.status_code == 200
+    update_payload = update_resp.get_json()
+    assert update_payload["directory"] == "/tmp/web-dir-api-b"
+    assert update_payload["exists_on_disk"] is False
+
+    clear_resp = client.post(
+        "/api/project/web-dir-api/directory",
+        headers={"Origin": "http://localhost"},
+        json={"directory": ""},
+    )
+    assert clear_resp.status_code == 200
+    clear_payload = clear_resp.get_json()
+    assert clear_payload["directory"] is None
+    assert clear_payload["exists_on_disk"] is False
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT dir FROM projects WHERE slug='web-dir-api'").fetchone()
+    conn.close()
+    assert row["dir"] is None
+
+
+def test_dashboard_shows_missing_directory_warnings():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Missing Dir Warning", "--dir", "/tmp/does-not-exist-web-warning")
+
+    client = app.test_client()
+    index_resp = client.get("/")
+    assert index_resp.status_code == 200
+    assert "Missing directory" in index_resp.get_data(as_text=True)
+
+    detail_resp = client.get("/project/web-missing-dir-warning")
+    assert detail_resp.status_code == 200
+    assert "Linked directory does not exist on disk." in detail_resp.get_data(as_text=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1570,7 +1683,8 @@ def test_dashboard_api_stats_returns_json():
 def test_dashboard_chain_start_and_stop_api():
     from agentplan.dashboard import create_app
 
-    cli("create", "Dashboard Chain API")
+    os.makedirs("/tmp/dashboard-chain-api", exist_ok=True)
+    cli("create", "Dashboard Chain API", "--dir", "/tmp/dashboard-chain-api")
 
     test_app = create_app()
     client = test_app.test_client()
@@ -2952,7 +3066,8 @@ def test_ticket_add_and_edit_timeout_sec():
 
 
 def test_chain_marks_ticket_failed_and_pauses_on_timeout():
-    cli("create", "Chain Timeout Project")
+    os.makedirs("/tmp/chain-timeout-project", exist_ok=True)
+    cli("create", "Chain Timeout Project", "--dir", "/tmp/chain-timeout-project")
     cli("ticket", "add", "chain-timeout-project", "Run long", "--timeout", "7")
     with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
          patch("agentplan.cli.spawn_terminal", return_value=1234), \
@@ -3017,7 +3132,8 @@ def test_log_heartbeat_resets_chain_deadline():
 
 
 def test_project_default_timeout_applies_to_chain_when_ticket_timeout_missing():
-    cli("create", "Project Default Timeout", "--timeout", "9")
+    os.makedirs("/tmp/project-default-timeout", exist_ok=True)
+    cli("create", "Project Default Timeout", "--dir", "/tmp/project-default-timeout", "--timeout", "9")
     cli("ticket", "add", "project-default-timeout", "No per-ticket timeout")
     with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
          patch("agentplan.cli.spawn_terminal", return_value=999), \
@@ -3048,8 +3164,32 @@ def test_chain_no_warning_when_dir_not_set():
          patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "failed", "timed_out": False}):
         out, err, code = cli("chain", "chain-no-dir", "--default-agent", "dash")
 
+    assert out == ""
+    assert code == 2
+    assert "No directory linked to project 'chain-no-dir'" in err
+
+
+def test_chain_start_without_directory_returns_hard_error():
+    cli("create", "Chain Hard Error")
+    cli("ticket", "add", "chain-hard-error", "Task")
+
+    out, err, code = cli("chain", "chain-hard-error")
+
+    assert out == ""
+    assert code == 2
+    assert "No directory linked to project 'chain-hard-error'" in err
+    assert "agentplan project chain-hard-error --dir ~/path/to/repo" in err
+
+
+def test_chain_start_with_directory_set_runs_normally():
+    os.makedirs("/tmp/chain-dir-ok", exist_ok=True)
+    cli("create", "Chain Dir OK", "--dir", "/tmp/chain-dir-ok")
+
+    out, err, code = cli("chain", "chain-dir-ok")
+
     assert code == 0, err
-    assert "linked project directory does not exist" not in out
+    assert "Starting chain for project 'chain-dir-ok'" in out
+    assert "No more unblocked tickets. Chain complete." in out
 
 
 def test_chain_injects_agentplan_md_content_in_spawned_command():
@@ -3215,7 +3355,8 @@ def test_auto_tag_already_tagged_tickets_are_skipped():
 def test_chain_processes_done_then_moves_to_next_ticket():
     import agentplan.cli as agent_cli
 
-    cli("create", "Chain Move Project")
+    os.makedirs("/tmp/chain-move-project", exist_ok=True)
+    cli("create", "Chain Move Project", "--dir", "/tmp/chain-move-project")
     cli("role", "add", "backend")
     _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run-{ticket_id}", roles="backend")
     cli("ticket", "add", "chain-move-project", "First", "--tag", "role:backend")
@@ -3248,7 +3389,8 @@ def test_chain_processes_done_then_moves_to_next_ticket():
 def test_chain_pauses_on_failed_ticket():
     import agentplan.cli as agent_cli
 
-    cli("create", "Chain Fail Project")
+    os.makedirs("/tmp/chain-fail-project", exist_ok=True)
+    cli("create", "Chain Fail Project", "--dir", "/tmp/chain-fail-project")
     _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
     cli("ticket", "add", "chain-fail-project", "Only task")
 
@@ -3263,7 +3405,8 @@ def test_chain_pauses_on_failed_ticket():
 def test_chain_pauses_on_needs_review_ticket():
     import agentplan.cli as agent_cli
 
-    cli("create", "Chain Review Project")
+    os.makedirs("/tmp/chain-review-project", exist_ok=True)
+    cli("create", "Chain Review Project", "--dir", "/tmp/chain-review-project")
     _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
     cli("ticket", "add", "chain-review-project", "Only task")
 
@@ -3276,7 +3419,8 @@ def test_chain_pauses_on_needs_review_ticket():
 
 
 def test_chain_stops_when_no_more_tickets():
-    cli("create", "Chain Empty Project")
+    os.makedirs("/tmp/chain-empty-project", exist_ok=True)
+    cli("create", "Chain Empty Project", "--dir", "/tmp/chain-empty-project")
 
     out, err, code = cli("chain", "chain-empty-project")
     assert code == 0, err
@@ -3286,7 +3430,8 @@ def test_chain_stops_when_no_more_tickets():
 def test_chain_state_persisted_in_db_and_status_command():
     import agentplan.cli as agent_cli
 
-    cli("create", "Chain State Project")
+    os.makedirs("/tmp/chain-state-project", exist_ok=True)
+    cli("create", "Chain State Project", "--dir", "/tmp/chain-state-project")
     _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
     cli("ticket", "add", "chain-state-project", "Only task")
 
@@ -3309,7 +3454,8 @@ def test_chain_state_persisted_in_db_and_status_command():
 def test_chain_max_tickets_limits_processing():
     import agentplan.cli as agent_cli
 
-    cli("create", "Chain Max Project")
+    os.makedirs("/tmp/chain-max-project", exist_ok=True)
+    cli("create", "Chain Max Project", "--dir", "/tmp/chain-max-project")
     _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo run {ticket}", roles=None)
     cli("ticket", "add", "chain-max-project", "T1")
     cli("ticket", "add", "chain-max-project", "T2")

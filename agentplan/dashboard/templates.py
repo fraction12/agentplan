@@ -57,6 +57,10 @@ INDEX_TEMPLATE = """
         --color-muted: #8892a8;
         --color-border: rgba(255, 255, 255, 0.08);
         --color-shadow: rgba(0, 0, 0, 0.42);
+        --color-high: #ef4444;
+        --color-medium: #f97316;
+        --color-low: #8892a8;
+        --color-due-overdue: #f87171;
 
         --status-done: #22c55e;
         --status-in-progress: #3b82f6;
@@ -113,6 +117,11 @@ INDEX_TEMPLATE = """
       }
       .top-link:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .top-link.active { color: var(--color-text); font-weight: var(--fw-nav); text-decoration: underline; }
+      .btn { border: 1px solid var(--color-border); border-radius: 8px; padding: 7px 10px; text-decoration: none; font-family: var(--font-body); font-weight: var(--fw-button); font-size: var(--fs-button); color: var(--color-muted); background: transparent; cursor: pointer; }
+      .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .btn-sm { padding: 3px 8px; font-size: 0.8rem; border-radius: 6px; }
+      .btn-primary { background: rgba(59,130,246,0.18); color: #dbeafe; border-color: rgba(59,130,246,0.35); }
+      .btn-danger { border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; }
       .sse-status {
         display: inline-flex;
         align-items: center;
@@ -239,6 +248,19 @@ INDEX_TEMPLATE = """
         display: grid;
         gap: 7px;
       }
+      .project-warning {
+        margin-top: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(245, 158, 11, 0.45);
+        background: rgba(120, 53, 15, 0.35);
+        color: #fde68a;
+        font-size: var(--fs-small);
+        font-family: var(--font-body);
+      }
       .project-progress-text,
       .project-last-activity {
         font-family: var(--font-body);
@@ -341,6 +363,9 @@ INDEX_TEMPLATE = """
                   {% endfor %}
                 </div>
                 <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
+                {% if project.missing_directory %}
+                <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
+                {% endif %}
               </div>
             </article>
           </a>
@@ -370,6 +395,9 @@ INDEX_TEMPLATE = """
               <div class="project-meta">
                 <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
                 <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
+                {% if project.missing_directory %}
+                <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
+                {% endif %}
               </div>
             </article>
           </a>
@@ -433,7 +461,8 @@ INDEX_TEMPLATE = """
       function projectCard(project, isCompleted) {
         const breakdown = project.breakdown || {};
         const breakdownHtml = isCompleted ? '' : `<div class="dot-breakdown project-breakdown">${statusOrder.map((status) => `<span class="dot-item"><span class="dot ${status}"></span><span class="dot-value" data-status="${status}">${breakdown[status] || 0}</span></span>`).join("")}</div>`;
-        return `<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}"><article class="project-card"><div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div></div></article></a>`;
+        const warningHtml = project.missing_directory ? `<div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>` : "";
+        return `<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}"><article class="project-card"><div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a>`;
       }
 
       function renderProjects(projects) {
@@ -532,6 +561,10 @@ ACTIVITY_TEMPLATE = """
         --color-muted: #8892a8;
         --color-border: rgba(255, 255, 255, 0.08);
         --color-shadow: rgba(0, 0, 0, 0.42);
+        --color-high: #ef4444;
+        --color-medium: #f97316;
+        --color-low: #8892a8;
+        --color-due-overdue: #f87171;
 
         --status-done: #22c55e;
         --status-in-progress: #3b82f6;
@@ -571,6 +604,11 @@ ACTIVITY_TEMPLATE = """
       }
       .top-link:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .top-link.active { color: var(--color-text); font-weight: var(--fw-nav); text-decoration: underline; }
+      .btn { border: 1px solid var(--color-border); border-radius: 8px; padding: 7px 10px; text-decoration: none; font-family: var(--font-body); font-weight: var(--fw-button); font-size: var(--fs-button); color: var(--color-muted); background: transparent; cursor: pointer; }
+      .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .btn-sm { padding: 3px 8px; font-size: 0.8rem; border-radius: 6px; }
+      .btn-primary { background: rgba(59,130,246,0.18); color: #dbeafe; border-color: rgba(59,130,246,0.35); }
+      .btn-danger { border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; }
       .sse-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-small); color: var(--color-muted); }
       .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; }
       .status-dot.connected { background: var(--status-done); box-shadow: 0 0 0 0 rgba(34,197,94,0.55); animation: pulse-live 1.6s infinite; }
@@ -659,8 +697,8 @@ ACTIVITY_TEMPLATE = """
           <a href="{{ url_for('agents') }}" class="top-link">Agents</a>
         </nav>
         <div class="topbar-right">
-          <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
           <span id="live-clock" class="clock">--:--:--</span>
+          <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
         </div>
       </header>
 
@@ -869,23 +907,23 @@ ACTIVITY_TEMPLATE = """
         setInterval(() => setClock(), 1000);
 
         if (!window.EventSource) {
-          setConnection(false, "reconnecting");
+          setConnection(false, "SSE unsupported");
           return;
         }
 
         const source = new EventSource("{{ url_for('events') }}");
-        source.addEventListener("open", () => setConnection(true, "live"));
+        source.addEventListener("open", () => setConnection(true, "connected"));
         source.addEventListener("activity_feed", (event) => {
           try {
             const payload = JSON.parse(event.data);
             applyActivity(payload);
             setClock(payload.server_time || null);
-            setConnection(true, "live");
+            setConnection(true, "connected");
           } catch (_err) {
-            setConnection(false, "reconnecting");
+            setConnection(false, "reconnecting…");
           }
         });
-        source.onerror = () => setConnection(false, "reconnecting");
+        source.onerror = () => setConnection(false, "reconnecting…");
       })();
     </script>
   </body>
@@ -904,14 +942,45 @@ AGENTS_TEMPLATE = """
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
       :root {
+        --font-heading: 'Playfair Display', Georgia, serif;
         --font-body: 'Inter', ui-sans-serif, sans-serif;
         --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --fs-h1: 2rem;
+        --fs-h2: 1.25rem;
+        --fs-card-title: 1rem;
+        --fs-nav: 0.875rem;
+        --fs-body: 0.875rem;
+        --fs-small: 0.75rem;
+        --fs-button: 0.75rem;
+        --fs-mono: 0.8rem;
+        --fw-h1: 700;
+        --fw-h2: 600;
+        --fw-card-title: 600;
+        --fw-nav: 500;
+        --fw-body: 400;
+        --fw-small: 400;
+        --fw-button: 500;
+        --fw-mono: 400;
         --color-bg: #0a0e1a;
+        --color-bg-alt: #0f1420;
         --color-panel: #151b2b;
         --color-panel-soft: #1b2236;
         --color-text: #e2e8f0;
         --color-muted: #8892a8;
-        --color-border: rgba(255,255,255,0.08);
+        --color-border: rgba(255, 255, 255, 0.08);
+        --color-shadow: rgba(0, 0, 0, 0.42);
+        --color-high: #ef4444;
+        --color-medium: #f97316;
+        --color-low: #8892a8;
+        --color-due-overdue: #f87171;
+        --status-done: #22c55e;
+        --status-in-progress: #3b82f6;
+        --status-blocked: #f59e0b;
+        --status-pending: #94a3b8;
+        --status-needs-review: #facc15;
+        --status-failed: #ef4444;
+        --status-todo: var(--status-pending);
+        --status-skipped: #64748b;
       }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
@@ -926,12 +995,19 @@ AGENTS_TEMPLATE = """
         border: 1px solid var(--color-border);
         border-radius: 14px;
       }
-      .brand { font-weight: 600; }
+      .brand { font-family: var(--font-body); font-weight: var(--fw-card-title); font-size: var(--fs-card-title); letter-spacing: -0.01em; }
       .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
-      .top-link { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 6px 10px; text-decoration: none; }
+      .topbar-right { display: flex; align-items: center; gap: 12px; color: var(--color-muted); font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-body); justify-self: end; }
+      .clock { font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-body); color: var(--color-text); }
+      .top-link { color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 10px; padding: 6px 10px; text-decoration: none; font-family: var(--font-body); font-weight: var(--fw-nav); font-size: var(--fs-nav); }
       .top-link:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .top-link.active { color: var(--color-text); text-decoration: underline; }
+      .sse-status { display: inline-flex; align-items: center; gap: 6px; }
+      .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; }
+      .status-dot.connected { background: var(--status-done); box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15); }
+      .status-dot.disconnected { background: #ef4444; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15); }
       .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+      .side-stack { display: grid; gap: 14px; }
       .card { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 14px; padding: 14px; }
       .title { margin: 0 0 10px; font-size: 1rem; }
       .table { width: 100%; border-collapse: collapse; }
@@ -943,11 +1019,21 @@ AGENTS_TEMPLATE = """
       .pill { border: 1px solid var(--color-border); border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; background: var(--color-panel-soft); }
       .form-grid { display: grid; gap: 8px; }
       input[type="text"] { width: 100%; background: var(--color-panel-soft); border: 1px solid var(--color-border); color: var(--color-text); border-radius: 10px; padding: 8px; }
-      .role-list { max-height: 130px; overflow: auto; border: 1px solid var(--color-border); border-radius: 10px; padding: 8px; background: rgba(255,255,255,0.02); }
-      .role-item { display: block; margin-bottom: 6px; font-size: 0.85rem; }
-      .btn { border: 1px solid var(--color-border); border-radius: 10px; padding: 6px 10px; background: transparent; color: var(--color-muted); cursor: pointer; }
+      .role-list { max-height: 130px; overflow: auto; border: 1px solid var(--color-border); border-radius: 10px; padding: 8px; background: rgba(255,255,255,0.02); display: flex; flex-wrap: wrap; gap: 6px 10px; }
+      .role-item { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 0.85rem; white-space: nowrap; }
+      .role-item input { margin: 0; }
+      .btn { border: 1px solid var(--color-border); border-radius: 8px; padding: 7px 10px; background: transparent; color: var(--color-muted); cursor: pointer; font-family: var(--font-body); font-weight: var(--fw-button); font-size: var(--fs-button); }
       .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
+      .btn-sm { padding: 3px 8px; font-size: 0.8rem; border-radius: 6px; }
+      .btn-primary { background: rgba(59,130,246,0.18); color: #dbeafe; border-color: rgba(59,130,246,0.35); }
       .btn-danger { border-color: rgba(239,68,68,0.4); color: #fca5a5; }
+      .agent-actions { display: inline-flex; align-items: center; gap: 8px; }
+      .edit-row td { background: rgba(255,255,255,0.015); }
+      .edit-form { gap: 10px; }
+      .edit-actions { display: flex; align-items: center; gap: 8px; }
+      .delete-form { margin: 0; }
+      .delete-link { border: 0; background: transparent; color: #fca5a5; cursor: pointer; font-family: var(--font-body); font-size: var(--fs-small); padding: 0; text-decoration: underline; }
+      .delete-link:hover { color: #fecaca; }
       .tool-grid { display: grid; gap: 8px; }
       .tool-row { display: flex; justify-content: space-between; border: 1px solid var(--color-border); border-radius: 10px; padding: 8px; background: rgba(255,255,255,0.02); }
       @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
@@ -962,7 +1048,10 @@ AGENTS_TEMPLATE = """
           <a class="top-link" href="{{ url_for('activity') }}">Activity</a>
           <a class="top-link active" href="{{ url_for('agents') }}">Agents</a>
         </nav>
-        <div></div>
+        <div class="topbar-right">
+          <span id="agent-clock" class="clock">--:--:--</span>
+          <span class="sse-status"><span id="agent-sse-dot" class="status-dot"></span><span id="agent-sse-label">connecting…</span></span>
+        </div>
       </header>
 
       <section class="grid">
@@ -973,6 +1062,7 @@ AGENTS_TEMPLATE = """
             <thead><tr><th>Name</th><th>Command Template</th><th>Roles</th><th>Actions</th></tr></thead>
             <tbody>
               {% for agent in agents %}
+              {% set row_key = "agent-" ~ loop.index0 %}
               <tr>
                 <td class="mono">{{ agent.name }}</td>
                 <td class="mono">{{ agent.command_template }}</td>
@@ -983,17 +1073,27 @@ AGENTS_TEMPLATE = """
                   </div>
                 </td>
                 <td>
-                  <form class="form-grid" method="post" action="{{ url_for('edit_agent', name=agent.name) }}">
+                  <div class="agent-actions">
+                    <button class="btn btn-sm" type="button" data-edit-toggle="{{ row_key }}" aria-expanded="false">Edit</button>
+                    <form class="delete-form" method="post" action="{{ url_for('delete_agent_route', name=agent.name) }}">
+                      <button class="delete-link" type="submit" aria-label="Delete {{ agent.name }}">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              <tr class="edit-row" data-edit-row="{{ row_key }}" hidden>
+                <td colspan="4">
+                  <form class="form-grid edit-form" method="post" action="{{ url_for('edit_agent', name=agent.name) }}">
                     <input type="text" name="command_template" value="{{ agent.command_template }}" required>
                     <div class="role-list">
                     {% for role in roles %}
                       <label class="role-item"><input type="checkbox" name="roles" value="{{ role.name }}" {{ 'checked' if role.name in agent.roles else '' }}> {{ role.name }}</label>
                     {% endfor %}
                     </div>
-                    <button class="btn" type="submit">Save</button>
-                  </form>
-                  <form method="post" action="{{ url_for('delete_agent_route', name=agent.name) }}" style="margin-top:6px;">
-                    <button class="btn btn-danger" type="submit">Delete</button>
+                    <div class="edit-actions">
+                      <button class="btn btn-sm btn-primary" type="submit">Save</button>
+                      <button class="btn btn-sm" type="button" data-edit-cancel="{{ row_key }}">Cancel</button>
+                    </div>
                   </form>
                 </td>
               </tr>
@@ -1005,29 +1105,98 @@ AGENTS_TEMPLATE = """
           {% endif %}
         </div>
 
-        <div class="card">
-          <h2 class="title">Detected Tools</h2>
-          <div class="tool-grid">
-          {% for tool in detected_tools %}
-            <div class="tool-row"><span class="mono">{{ tool.name }}</span><span class="{{ '' if tool.found else 'muted' }}">{{ 'found' if tool.found else 'missing' }}</span></div>
-          {% endfor %}
-          </div>
-
-          <h2 class="title" style="margin-top:16px;">Add Agent</h2>
-          <form class="form-grid" method="post" action="{{ url_for('add_agent') }}">
-            <input type="text" name="name" placeholder="name" required>
-            <input type="text" name="command_template" placeholder="command template" required>
-            <div class="role-list">
-            {% for role in roles %}
-              <label class="role-item"><input type="checkbox" name="roles" value="{{ role.name }}"> {{ role.name }}</label>
+        <div class="side-stack">
+          <div class="card">
+            <h2 class="title">Detected Tools</h2>
+            <div class="tool-grid">
+            {% for tool in detected_tools %}
+              <div class="tool-row"><span class="mono">{{ tool.name }}</span><span class="{{ '' if tool.found else 'muted' }}">{{ 'found' if tool.found else 'missing' }}</span></div>
             {% endfor %}
-            {% if not roles %}<div class="muted">No roles available yet.</div>{% endif %}
             </div>
-            <button class="btn" type="submit">Add Agent</button>
-          </form>
+          </div>
+          <div class="card">
+            <h2 class="title">Add Agent</h2>
+            <form class="form-grid" method="post" action="{{ url_for('add_agent') }}">
+              <input type="text" name="name" placeholder="name" required>
+              <input type="text" name="command_template" placeholder="command template" required>
+              <div class="role-list">
+              {% for role in roles %}
+                <label class="role-item"><input type="checkbox" name="roles" value="{{ role.name }}"> {{ role.name }}</label>
+              {% endfor %}
+              {% if not roles %}<div class="muted">No roles available yet.</div>{% endif %}
+              </div>
+              <button class="btn" type="submit">Add Agent</button>
+            </form>
+          </div>
         </div>
       </section>
     </main>
+    <script>
+      function setClock(ts) {
+        const d = ts ? new Date(ts) : new Date();
+        document.getElementById("agent-clock").textContent = d.toLocaleTimeString();
+      }
+
+      function setConnection(isConnected, label) {
+        const dot = document.getElementById("agent-sse-dot");
+        const text = document.getElementById("agent-sse-label");
+        dot.classList.remove("connected", "disconnected");
+        dot.classList.add(isConnected ? "connected" : "disconnected");
+        text.textContent = label;
+      }
+
+      (function subscribe() {
+        setClock();
+        setInterval(() => setClock(), 1000);
+
+        if (!window.EventSource) {
+          setConnection(false, "SSE unsupported");
+          return;
+        }
+
+        const source = new EventSource("{{ url_for('events') }}");
+        source.addEventListener("open", () => setConnection(true, "connected"));
+        source.addEventListener("project_stats", (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            setClock(payload.server_time || null);
+            setConnection(true, "connected");
+          } catch (_err) {
+            setConnection(false, "parse error");
+          }
+        });
+        source.onerror = () => setConnection(false, "reconnecting…");
+      })();
+
+      function setEditRowOpen(rowKey, isOpen) {
+        const row = document.querySelector(`[data-edit-row="${rowKey}"]`);
+        const toggle = document.querySelector(`[data-edit-toggle="${rowKey}"]`);
+        if (!row || !toggle) return;
+        row.hidden = !isOpen;
+        toggle.textContent = isOpen ? "Close" : "Edit";
+        toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      }
+
+      document.querySelectorAll("[data-edit-toggle]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const rowKey = button.getAttribute("data-edit-toggle");
+          const row = document.querySelector(`[data-edit-row="${rowKey}"]`);
+          const opening = row ? row.hidden : false;
+          document.querySelectorAll("[data-edit-row]").forEach((otherRow) => {
+            const otherKey = otherRow.getAttribute("data-edit-row");
+            setEditRowOpen(otherKey, false);
+          });
+          setEditRowOpen(rowKey, opening);
+        });
+      });
+
+      document.querySelectorAll("[data-edit-cancel]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const rowKey = button.getAttribute("data-edit-cancel");
+          setEditRowOpen(rowKey, false);
+        });
+      });
+    </script>
   </body>
 </html>
 """
@@ -1069,8 +1238,8 @@ PROJECT_TEMPLATE = """
         --color-panel-soft: #1b2236;
         --color-text: #e2e8f0;
         --color-muted: #8892a8;
-        --color-border: rgba(255,255,255,0.08);
-        --color-shadow: rgba(0,0,0,0.42);
+        --color-border: rgba(255, 255, 255, 0.08);
+        --color-shadow: rgba(0, 0, 0, 0.42);
         --color-high: #ef4444;
         --color-medium: #f97316;
         --color-low: #8892a8;
@@ -1106,6 +1275,32 @@ PROJECT_TEMPLATE = """
       .project-dir { margin: 0 0 10px; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-muted); }
       .project-dir a { color: #93c5fd; text-decoration: none; }
       .project-dir a:hover { text-decoration: underline; }
+      .project-dir-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .project-dir-empty { color: var(--color-muted); font-style: italic; font-family: var(--font-mono); font-size: var(--fs-body); }
+      .btn-sm { padding: 3px 8px; font-size: 0.8rem; border-radius: 6px; }
+      .project-dir-input {
+        flex: 1;
+        max-width: min(640px, 72vw);
+        background: var(--color-panel-soft);
+        border: 1px solid var(--color-border);
+        color: var(--color-text);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-family: var(--font-mono);
+        font-size: var(--fs-mono);
+      }
+      .project-dir-input:focus {
+        outline: none;
+        border-color: rgba(59,130,246,0.6);
+      }
+        color: var(--color-muted);
+        font-size: var(--fs-small);
+      }
+      .project-dir-warning {
+        margin: 0 0 10px;
+        color: #fde68a;
+        font-size: var(--fs-small);
+      }
       .project-code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.08em; }
       .topbar-right { display: flex; align-items: center; gap: 12px; justify-self: end; color: var(--color-muted); font-family: var(--font-body); font-size: var(--fs-body); }
       .sse-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-small); color: var(--color-muted); }
@@ -1139,8 +1334,9 @@ PROJECT_TEMPLATE = """
       .btn-back.active { color: var(--color-text); font-weight: var(--fw-nav); text-decoration: underline; }
 
       .project-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--color-muted); font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-small); }
+      .project-meta span { font-size: var(--fs-small); color: var(--color-muted); }
       .context-panel { margin: 0 0 16px; border: 1px solid var(--color-border); border-radius: 10px; background: rgba(255,255,255,0.02); }
-      .context-panel summary { padding: 12px; cursor: pointer; font-size: var(--fs-h2); font-family: var(--font-heading); font-weight: var(--fw-heading); list-style: none; display: flex; align-items: center; gap: 8px; }
+      .context-panel summary { padding: 12px; cursor: pointer; font-size: var(--fs-body); font-family: var(--font-body); font-weight: var(--fw-nav); list-style: none; display: flex; align-items: center; gap: 8px; }
       .context-panel summary::before { content: "▸"; transition: transform 0.2s; }
       .context-panel[open] summary::before { transform: rotate(90deg); }
       .context-panel summary::-webkit-details-marker { display: none; }
@@ -1182,7 +1378,7 @@ PROJECT_TEMPLATE = """
         padding: 12px 12px 10px;
         border-bottom: 1px solid var(--color-border);
       }
-      .kanban-column-title { margin: 0; font-size: var(--fs-h2); font-family: var(--font-body); font-weight: var(--fw-h2); text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); }
+      .kanban-column-title { margin: 0; font-size: var(--fs-small); font-family: var(--font-body); font-weight: var(--fw-h2); text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-muted); }
       .kanban-count {
         min-width: 1.65rem;
         height: 1.65rem;
@@ -1300,12 +1496,13 @@ PROJECT_TEMPLATE = """
         padding: 8px 10px;
         font-family: var(--font-body);
         font-weight: var(--fw-body);
-        font-size: var(--fs-body);
+        font-size: var(--fs-small);
       }
       .filter-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
-      .btn { border: 1px solid var(--color-border); border-radius: 10px; padding: 7px 10px; text-decoration: none; font-family: var(--font-body); font-weight: var(--fw-button); font-size: var(--fs-button); color: var(--color-muted); background: transparent; cursor: pointer; }
+      .btn { border: 1px solid var(--color-border); border-radius: 8px; padding: 7px 10px; text-decoration: none; font-family: var(--font-body); font-weight: var(--fw-button); font-size: var(--fs-button); color: var(--color-muted); background: transparent; cursor: pointer; }
       .btn:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
       .btn-primary { background: rgba(59,130,246,0.18); color: #dbeafe; border-color: rgba(59,130,246,0.35); }
+      .btn-danger { border-color: rgba(239,68,68,0.4); color: #fca5a5; }
       .btn-chain-start { background: rgba(34, 197, 94, 0.2); color: #dcfce7; border-color: rgba(34, 197, 94, 0.45); }
       .btn-chain-stop { background: rgba(239, 68, 68, 0.16); color: #fecaca; border-color: rgba(239, 68, 68, 0.35); }
       .btn:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -1321,12 +1518,35 @@ PROJECT_TEMPLATE = """
         color: var(--color-muted);
         font-size: var(--fs-small);
       }
+      #chain-status-text { font-size: var(--fs-small); }
       .chain-dot { width: 8px; height: 8px; border-radius: 999px; background: #64748b; }
       .chain-dot.running { background: #22c55e; }
       .chain-dot.paused { background: #facc15; }
       .chain-dot.stopped, .chain-dot.done { background: #64748b; }
       .review-actions { display: grid; gap: 8px; }
       .review-actions-row { display: flex; flex-wrap: wrap; gap: 8px; }
+      .toast-stack {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 120;
+        display: grid;
+        gap: 8px;
+      }
+      .toast {
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--color-border);
+        background: var(--color-panel-soft);
+        color: var(--color-text);
+        max-width: min(460px, 88vw);
+        font-family: var(--font-body);
+        font-size: var(--fs-small);
+      }
+      .toast.error {
+        border-color: rgba(239, 68, 68, 0.45);
+        background: rgba(127, 29, 29, 0.35);
+      }
 
       .ticket-panel-backdrop {
         position: fixed;
@@ -1450,11 +1670,20 @@ PROJECT_TEMPLATE = """
       </header>
 
       <h1 class="project-title">{{ project.title }}</h1>
-      {% if project.dir %}
-      <div class="project-dir"><a href="file://{{ project.dir }}">{{ project.dir }}</a></div>
-      {% else %}
-      <div class="project-dir">No directory linked</div>
-      {% endif %}
+      <div class="project-dir-row" id="project-dir-row">
+        <span id="project-dir-display" class="project-dir">
+        {%- if project.dir -%}
+          <a href="file://{{ project.dir }}">{{ project.dir }}</a>
+        {%- else -%}
+          <span class="project-dir-empty">No directory set</span>
+        {%- endif -%}
+        </span>
+        <input id="project-dir-input" class="project-dir-input" name="directory" type="text" value="{{ project.dir or '' }}" placeholder="~/path/to/repo" hidden>
+        <button id="project-dir-edit-btn" class="btn btn-sm" type="button">Edit</button>
+        <button id="project-dir-save-btn" class="btn btn-sm btn-primary" type="button" hidden>Save</button>
+        <button id="project-dir-cancel-btn" class="btn btn-sm" type="button" hidden>Cancel</button>
+      </div>
+      <div id="project-dir-warning" class="project-dir-warning" {% if not directory_warning %}hidden{% endif %}>⚠ Linked directory does not exist on disk.</div>
 
       <div id="chain-status" class="chain-status">
         <span id="chain-status-dot" class="chain-dot {{ chain.status if chain and chain.status else 'stopped' }}"></span>
@@ -1567,6 +1796,7 @@ PROJECT_TEMPLATE = """
         </header>
         <div id="ticket-panel-content" class="ticket-panel-content"></div>
       </aside>
+      <div id="toast-stack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
     </main>
     <script>
@@ -1691,6 +1921,52 @@ PROJECT_TEMPLATE = """
         const chainStopBtn = document.getElementById("chain-stop-btn");
         const chainStatusDot = document.getElementById("chain-status-dot");
         const chainStatusText = document.getElementById("chain-status-text");
+        const toastStack = document.getElementById("toast-stack");
+        const dirDisplay = document.getElementById("project-dir-display");
+        const dirEditBtn = document.getElementById("project-dir-edit-btn");
+        const dirInput = document.getElementById("project-dir-input");
+        const dirSaveBtn = document.getElementById("project-dir-save-btn");
+        const dirCancelBtn = document.getElementById("project-dir-cancel-btn");
+        const dirWarning = document.getElementById("project-dir-warning");
+
+        function showToast(message, tone = "error") {
+          if (!toastStack) return;
+          const toast = document.createElement("div");
+          toast.className = `toast ${tone}`;
+          toast.textContent = message || "Request failed.";
+          toastStack.appendChild(toast);
+          setTimeout(() => {
+            toast.remove();
+          }, 4500);
+        }
+
+        function renderDirectoryDisplay(directory) {
+          if (!dirDisplay) return;
+          const value = String(directory || "").trim();
+          if (!value) {
+            dirDisplay.innerHTML = `<span class="project-dir-empty">No directory set</span>`;
+            return;
+          }
+          dirDisplay.innerHTML = `<a href="file://${esc(value)}">${esc(value)}</a>`;
+        }
+
+        function enterEditMode() {
+          dirDisplay.hidden = true;
+          dirEditBtn.hidden = true;
+          dirInput.hidden = false;
+          dirSaveBtn.hidden = false;
+          dirCancelBtn.hidden = false;
+          dirInput.focus();
+          dirInput.select();
+        }
+
+        function exitEditMode() {
+          dirInput.hidden = true;
+          dirSaveBtn.hidden = true;
+          dirCancelBtn.hidden = true;
+          dirDisplay.hidden = false;
+          dirEditBtn.hidden = false;
+        }
 
         async function callTicketReviewAction(ticketNum, action) {
           const response = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/${encodeURIComponent(ticketNum)}/${encodeURIComponent(action)}`, { method: "POST" });
@@ -1731,14 +2007,17 @@ PROJECT_TEMPLATE = """
 
         async function callChainAction(action) {
           const response = await fetch(`/api/chain/${encodeURIComponent(projectSlug)}/${encodeURIComponent(action)}`, { method: "POST" });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json().catch(() => null);
+          if (!response.ok) throw new Error((payload && payload.error) || `HTTP ${response.status}`);
+          return payload;
         }
 
         chainStartBtn.addEventListener("click", async () => {
           chainStartBtn.disabled = true;
           try {
             await callChainAction("start");
-          } catch (_error) {
+          } catch (error) {
+            showToast(error.message || "Failed to start chain.");
             chainStartBtn.disabled = false;
           }
         });
@@ -1747,7 +2026,8 @@ PROJECT_TEMPLATE = """
           chainStopBtn.disabled = true;
           try {
             await callChainAction("stop");
-          } catch (_error) {
+          } catch (error) {
+            showToast(error.message || "Failed to stop chain.");
             chainStopBtn.disabled = false;
           }
         });
@@ -1757,6 +2037,40 @@ PROJECT_TEMPLATE = """
           chain_current_ticket_num: {{ chain_current_ticket_num|tojson }},
           chain_pause_reason: {{ chain_pause_reason|tojson }},
         });
+
+        if (dirEditBtn) {
+          dirEditBtn.addEventListener("click", enterEditMode);
+        }
+
+        if (dirCancelBtn) {
+          dirCancelBtn.addEventListener("click", () => {
+            dirInput.value = {{ (project.dir or "")|tojson }};
+            exitEditMode();
+          });
+        }
+
+        if (dirSaveBtn) {
+          dirSaveBtn.addEventListener("click", async () => {
+            const directory = (dirInput.value || "").trim();
+            try {
+              const response = await fetch(`/api/project/${encodeURIComponent(projectSlug)}/directory`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ directory }),
+              });
+              const payload = await response.json().catch(() => null);
+              if (!response.ok) {
+                throw new Error((payload && payload.error) || `HTTP ${response.status}`);
+              }
+              renderDirectoryDisplay(payload ? payload.directory : directory);
+              const missing = Boolean(payload && payload.directory && payload.exists_on_disk === false);
+              if (dirWarning) dirWarning.hidden = !missing;
+              exitEditMode();
+            } catch (error) {
+              showToast(error.message || "Failed to update project directory.");
+            }
+          });
+        }
 
         function setConnection(isConnected, label) {
           const dot = document.getElementById("project-sse-dot");
@@ -2090,4 +2404,3 @@ TICKET_TEMPLATE = """
   </body>
 </html>
 """
-

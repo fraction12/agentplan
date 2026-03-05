@@ -146,7 +146,7 @@ def _project_context_payload(project):
 
 def _fetch_projects_with_stats(conn):
     projects = conn.execute(
-        "SELECT id, slug, title, status, updated_at FROM projects ORDER BY updated_at DESC, id DESC LIMIT 100"
+        "SELECT id, slug, title, status, updated_at, dir FROM projects ORDER BY updated_at DESC, id DESC LIMIT 100"
     ).fetchall()
     rows = conn.execute("SELECT project_id, status, COUNT(*) AS c FROM tickets GROUP BY project_id, status").fetchall()
 
@@ -188,6 +188,7 @@ def _fetch_projects_with_stats(conn):
                 "done_count": done,
                 "in_flight_count": in_flight,
                 "progress_pct": progress,
+                "missing_directory": bool(p["dir"] and not os.path.isdir(p["dir"])),
             }
         )
     return out
@@ -842,6 +843,7 @@ def create_app():
             chain_pause_reason=chain_pause_reason,
             chain_text=chain_text,
             context_payload=context_payload,
+            directory_warning=bool(project["dir"] and not os.path.isdir(project["dir"])),
         )
 
     @app.route("/api/chain/<slug>/start", methods=["POST"])
@@ -852,6 +854,17 @@ def create_app():
             project = conn.execute("SELECT id, slug, dir FROM projects WHERE slug=?", (slug,)).fetchone()
             if not project:
                 abort(404)
+            project_dir = (project["dir"] or "").strip()
+            if not project_dir:
+                return (
+                    {
+                        "error": (
+                            f"No directory linked to project '{project['slug']}'. "
+                            "Set it on the project page before starting work."
+                        )
+                    },
+                    400,
+                )
             if project["dir"] and not os.path.isdir(project["dir"]):
                 print(f"Warning: linked project directory does not exist: {project['dir']}")
             state = get_chain_state(conn, project["id"]) or {}
@@ -882,6 +895,31 @@ def create_app():
                 abort(404)
             set_chain_state(conn, project["id"], "stopped", pause_reason="stop requested")
             return {"ok": True}
+        finally:
+            conn.close()
+
+    @app.route("/api/project/<slug>/directory", methods=["POST"])
+    @_require_local_origin
+    def api_project_directory(slug):
+        payload = request.get_json(silent=True) or {}
+        raw_dir = (payload.get("directory") or "").strip()
+        directory = os.path.expanduser(raw_dir) if raw_dir else None
+
+        conn = get_connection(_db_path())
+        try:
+            project = conn.execute("SELECT id FROM projects WHERE slug=?", (slug,)).fetchone()
+            if not project:
+                abort(404)
+            conn.execute(
+                "UPDATE projects SET dir=?, updated_at=? WHERE id=?",
+                (directory, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"), project["id"]),
+            )
+            conn.commit()
+            return {
+                "ok": True,
+                "directory": directory,
+                "exists_on_disk": bool(directory and os.path.isdir(directory)),
+            }
         finally:
             conn.close()
 
