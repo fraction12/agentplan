@@ -57,6 +57,10 @@ INDEX_TEMPLATE = """
         --color-muted: #8892a8;
         --color-border: rgba(255, 255, 255, 0.08);
         --color-shadow: rgba(0, 0, 0, 0.42);
+        --color-high: #ef4444;
+        --color-medium: #f97316;
+        --color-low: #8892a8;
+        --color-due-overdue: #f87171;
 
         --status-done: #22c55e;
         --status-in-progress: #3b82f6;
@@ -552,6 +556,10 @@ ACTIVITY_TEMPLATE = """
         --color-muted: #8892a8;
         --color-border: rgba(255, 255, 255, 0.08);
         --color-shadow: rgba(0, 0, 0, 0.42);
+        --color-high: #ef4444;
+        --color-medium: #f97316;
+        --color-low: #8892a8;
+        --color-due-overdue: #f87171;
 
         --status-done: #22c55e;
         --status-in-progress: #3b82f6;
@@ -924,14 +932,45 @@ AGENTS_TEMPLATE = """
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
       :root {
+        --font-heading: 'Playfair Display', Georgia, serif;
         --font-body: 'Inter', ui-sans-serif, sans-serif;
         --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --fs-h1: 2rem;
+        --fs-h2: 1.25rem;
+        --fs-card-title: 1rem;
+        --fs-nav: 0.875rem;
+        --fs-body: 0.875rem;
+        --fs-small: 0.75rem;
+        --fs-button: 0.75rem;
+        --fs-mono: 0.8rem;
+        --fw-h1: 700;
+        --fw-h2: 600;
+        --fw-card-title: 600;
+        --fw-nav: 500;
+        --fw-body: 400;
+        --fw-small: 400;
+        --fw-button: 500;
+        --fw-mono: 400;
         --color-bg: #0a0e1a;
+        --color-bg-alt: #0f1420;
         --color-panel: #151b2b;
         --color-panel-soft: #1b2236;
         --color-text: #e2e8f0;
         --color-muted: #8892a8;
-        --color-border: rgba(255,255,255,0.08);
+        --color-border: rgba(255, 255, 255, 0.08);
+        --color-shadow: rgba(0, 0, 0, 0.42);
+        --color-high: #ef4444;
+        --color-medium: #f97316;
+        --color-low: #8892a8;
+        --color-due-overdue: #f87171;
+        --status-done: #22c55e;
+        --status-in-progress: #3b82f6;
+        --status-blocked: #f59e0b;
+        --status-pending: #94a3b8;
+        --status-needs-review: #facc15;
+        --status-failed: #ef4444;
+        --status-todo: var(--status-pending);
+        --status-skipped: #64748b;
       }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }
@@ -1089,8 +1128,8 @@ PROJECT_TEMPLATE = """
         --color-panel-soft: #1b2236;
         --color-text: #e2e8f0;
         --color-muted: #8892a8;
-        --color-border: rgba(255,255,255,0.08);
-        --color-shadow: rgba(0,0,0,0.42);
+        --color-border: rgba(255, 255, 255, 0.08);
+        --color-shadow: rgba(0, 0, 0, 0.42);
         --color-high: #ef4444;
         --color-medium: #f97316;
         --color-low: #8892a8;
