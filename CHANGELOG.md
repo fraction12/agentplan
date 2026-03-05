@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.6.3 - 2026-03-05
+
+### Changed
+- **Dashboard architecture refactor** — monolithic `templates.py` (2400 lines) split into proper Flask structure:
+  - `templates/base.html` — shared layout (nav, head, CSS/JS links, block definitions)
+  - `templates/home.html`, `activity.html`, `agents.html`, `project.html` — page templates extending base
+  - `templates/ticket.html` — standalone ticket detail page
+  - `static/style.css` — single deduplicated stylesheet for all pages
+  - `static/dashboard.js` — shared JS utilities (toast, clock, SSE connection)
+  - `static/project.js` — project-specific JS (kanban, ticket panel, directory edit, chain controls)
+  - `static/agents.js` — agents page JS (edit row toggle)
+  - `constants.py` — Python constants (status labels, tag tones)
+- Routes use Flask `render_template()` instead of raw Jinja2 `Template()` strings
+- No visual or functional changes — pixel-identical output, all 216 tests passing
+- Zero new dependencies, zero build step, `pip install agentplan` still works
+
 ## v0.6.2 - 2026-03-05
 
 ### Added
