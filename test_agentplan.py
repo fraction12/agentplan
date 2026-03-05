@@ -1525,6 +1525,78 @@ def test_dashboard_api_stats_returns_json():
     assert isinstance(data["projects"], list)
 
 
+def test_dashboard_chain_start_and_stop_api():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Dashboard Chain API")
+
+    test_app = create_app()
+    client = test_app.test_client()
+
+    with patch("agentplan.dashboard.routes.subprocess.Popen") as mock_popen:
+        start_resp = client.post(
+            "/api/chain/dashboard-chain-api/start",
+            headers={"Origin": "http://localhost"},
+        )
+
+    assert start_resp.status_code == 200
+    assert start_resp.get_json()["ok"] is True
+    assert mock_popen.call_count == 1
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    state = conn.execute("SELECT status FROM chain_state WHERE project_id=1").fetchone()
+    conn.close()
+    assert state["status"] == "running"
+
+    stop_resp = client.post(
+        "/api/chain/dashboard-chain-api/stop",
+        headers={"Origin": "http://localhost"},
+    )
+    assert stop_resp.status_code == 200
+    assert stop_resp.get_json()["ok"] is True
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    state = conn.execute("SELECT status, pause_reason FROM chain_state WHERE project_id=1").fetchone()
+    conn.close()
+    assert state["status"] == "stopped"
+    assert state["pause_reason"] == "stop requested"
+
+
+def test_dashboard_review_panel_done_and_skip_actions():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Review Panel Actions")
+    cli("ticket", "add", "review-panel-actions", "Needs review")
+    cli("ticket", "add", "review-panel-actions", "Skip me")
+    cli("ticket", "start", "review-panel-actions", "1", "--agent", "dash")
+    cli("ticket", "review", "review-panel-actions", "1", "--reason", "qa check")
+
+    test_app = create_app()
+    client = test_app.test_client()
+
+    done_resp = client.post(
+        "/api/ticket/review-panel-actions/1/done",
+        headers={"Origin": "http://localhost"},
+    )
+    skip_resp = client.post(
+        "/api/ticket/review-panel-actions/2/skip",
+        headers={"Origin": "http://localhost"},
+    )
+
+    assert done_resp.status_code == 200
+    assert done_resp.get_json()["ok"] is True
+    assert skip_resp.status_code == 200
+    assert skip_resp.get_json()["ok"] is True
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute(
+        "SELECT num, status FROM tickets WHERE project_id=1 ORDER BY num"
+    ).fetchall()
+    conn.close()
+    assert rows[0]["status"] == "done"
+    assert rows[1]["status"] == "skipped"
+
+
 # ---------------------------------------------------------------------------
 # Ticket 4: Circular dependency detection
 # ---------------------------------------------------------------------------
@@ -2739,6 +2811,20 @@ def test_spawn_terminal_falls_back_to_terminal_when_iterm2_osascript_fails():
     assert "tell application \"Terminal\"" in second_script
 
 
+def test_spawn_terminal_returns_nonzero_when_iterm2_and_terminal_fail():
+    import agentplan.cli as agent_cli
+
+    with patch("agentplan.cli.detect_terminal_app", return_value="iterm2"), patch("agentplan.cli.subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            type("Result", (), {"returncode": 1, "stdout": "", "stderr": "iterm down"})(),
+            type("Result", (), {"returncode": 1, "stdout": "", "stderr": "terminal down"})(),
+        ]
+        rc = agent_cli.spawn_terminal("echo hello")
+
+    assert rc == 1
+    assert mock_run.call_count == 2
+
+
 def test_monitor_process_exits_when_pid_ends():
     import agentplan.cli as agent_cli
 
@@ -2843,6 +2929,24 @@ def test_chain_marks_ticket_failed_and_pauses_on_timeout():
     assert ticket["close_note"] == "timeout: no progress for 7s"
     assert state["status"] == "paused"
     assert state["pause_reason"] == "timeout: no progress for 7s"
+
+
+def test_chain_reentry_guard_blocks_second_run_when_running():
+    cli("create", "Chain Reentry Project")
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    conn.execute(
+        """
+        INSERT INTO chain_state (project_id, status, current_ticket_id, pause_reason, heartbeat_at, deadline_at, updated_at)
+        VALUES (1, 'running', NULL, NULL, NULL, NULL, '2026-03-05T00:00:00')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    out, err, code = cli("chain", "chain-reentry-project")
+    assert out == ""
+    assert code == 2
+    assert "already running" in err.lower()
 
 
 def test_log_heartbeat_resets_chain_deadline():
@@ -2996,6 +3100,49 @@ def test_auto_tag_unknown_role_response_is_skipped():
 
     assert code == 0
     assert "unknown role" in err.lower()
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    ticket = conn.execute("SELECT tags FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert ticket["tags"] == ""
+
+
+def test_auto_tag_handles_ai_tool_unavailable_file_not_found():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Auto Tag Tool Missing")
+    cli("role", "add", "coding")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="missing-binary --prompt {prompt}", roles="coding")
+    cli("ticket", "add", "auto-tag-tool-missing", "Build parser")
+
+    with patch("agentplan.cli.subprocess.run", side_effect=FileNotFoundError("missing-binary")):
+        out, err, code = cli("auto-tag", "auto-tag-tool-missing")
+
+    assert code == 0
+    assert "auto-tag failed" in err.lower()
+    assert out == ""
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    ticket = conn.execute("SELECT tags FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert ticket["tags"] == ""
+
+
+def test_auto_tag_handles_empty_or_malformed_model_output():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Auto Tag Malformed Output")
+    cli("role", "add", "coding")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="dummy --prompt {prompt} --ticket {ticket}", roles="coding")
+    cli("ticket", "add", "auto-tag-malformed-output", "Build parser")
+
+    with patch("agentplan.cli.subprocess.run") as mock_run:
+        mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": "```json\n{\"role\":\"coding\"}\n```", "stderr": ""})()
+        out, err, code = cli("auto-tag", "auto-tag-malformed-output")
+
+    assert code == 0
+    assert "unknown role" in err.lower()
+    assert out == ""
 
     conn = agentplan.get_connection("/tmp/test_agentplan.db")
     ticket = conn.execute("SELECT tags FROM tickets WHERE project_id=1 AND num=1").fetchone()

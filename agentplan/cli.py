@@ -684,11 +684,12 @@ def spawn_terminal(command: str, title: str = None) -> int:
     )
     try:
         result = _run_osascript(script)
-        if result.returncode != 0:
-            LOGGER.warning("Terminal osascript failed: %s", (result.stderr or "").strip())
+        if result.returncode == 0:
+            return 0
+        LOGGER.warning("Terminal osascript failed: %s", (result.stderr or "").strip())
     except Exception as exc:
         LOGGER.warning("Terminal osascript failed: %s", exc)
-    return 0
+    return 1
 
 
 def _get_ticket_status(project_slug, ticket_num):
@@ -740,6 +741,48 @@ def _get_exit_code_for_pid(pid):
         return None
 
 
+def _is_zombie_process(pid):
+    status_path = f"/proc/{pid}/status"
+    if not os.path.exists(status_path):
+        return False
+    try:
+        with open(status_path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("State:"):
+                    parts = line.split()
+                    return len(parts) >= 2 and parts[1].upper().startswith("Z")
+    except Exception as exc:
+        LOGGER.warning("Failed to inspect /proc status for pid %s: %s", pid, exc)
+    return False
+
+
+def _pid_is_alive(pid):
+    if pid <= 0:
+        return True
+
+    try:
+        waited_pid, _ = os.waitpid(pid, os.WNOHANG)
+        if waited_pid == pid:
+            return False
+    except ChildProcessError:
+        # Not our child process; fall back to non-blocking OS-level checks.
+        pass
+    except Exception as exc:
+        LOGGER.warning("Unexpected waitpid error for pid %s: %s", pid, exc)
+
+    if _is_zombie_process(pid):
+        return False
+
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except Exception as exc:
+        LOGGER.warning("Unexpected os.kill error for pid %s: %s", pid, exc)
+        return True
+
+
 def monitor_process(pid: int, project_slug: str, ticket_num: int, timeout_sec: int = 3600) -> dict:
     start = time.monotonic()
     last_heartbeat = start
@@ -780,15 +823,7 @@ def monitor_process(pid: int, project_slug: str, ticket_num: int, timeout_sec: i
             )
             last_heartbeat = now_mono
 
-        alive = True
-        if pid > 0:
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                alive = False
-            except Exception as exc:
-                LOGGER.warning("Unexpected os.kill error for pid %s: %s", pid, exc)
-                alive = True
+        alive = _pid_is_alive(pid)
 
         if not alive:
             exit_code = _get_exit_code_for_pid(pid)
@@ -987,6 +1022,14 @@ def cmd_chain(args):
             print("Chain marked stopped.")
         conn.close()
         return
+
+    state = db_get_chain_state(conn, proj["id"])
+    if state and (state.get("status") or "").lower() == "running":
+        conn.close()
+        fail(
+            f"Chain already running for project '{proj['slug']}'.",
+            suggestions=[f"Run `agentplan chain {proj['slug']} --status` to inspect the current run."],
+        )
 
     processed = 0
     _warn_if_missing_project_dir(proj)
