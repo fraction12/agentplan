@@ -649,32 +649,39 @@ def build_context_prompt(project, tickets, existing_context=None):
     )
 
 
-def _render_prompt_agent_command(template, prompt, project_slug, project_dir):
+def _render_command_template(template, project_slug="", ticket_ref="", ticket_id="", project_dir=""):
+    command = (template or "").strip()
+    return (
+        command.replace("{{ticket}}", str(ticket_ref))
+        .replace("{{project}}", str(project_slug))
+        .replace("{{ticket_id}}", str(ticket_id))
+        .replace("{{project_dir}}", shlex.quote(str(project_dir)))
+        .replace("{ticket}", str(ticket_ref))
+        .replace("{project}", str(project_slug))
+        .replace("{ticket_id}", str(ticket_id))
+        .replace("{project_dir}", shlex.quote(str(project_dir)))
+    )
+
+
+def _render_temp_prompt_command(base_cmd, prompt, project_slug, project_dir=None):
     import tempfile as _tempfile
-    # Write prompt to a temp file to avoid shell quoting/ARG_MAX issues
+
+    prompt_dir = project_dir or _tempfile.gettempdir()
     prompt_file = _tempfile.NamedTemporaryFile(
-        mode="w", suffix=".md", prefix=f"agentplan-{project_slug}-",
-        dir=project_dir, delete=False,
+        mode="w",
+        suffix=".md",
+        prefix=f"agentplan-{project_slug or 'prompt'}-",
+        dir=prompt_dir,
+        delete=False,
     )
     prompt_file.write(prompt)
     prompt_file.close()
-    prompt_file_path = prompt_file.name
-    prompt_file_quoted = shlex.quote(prompt_file_path)
+    prompt_file_quoted = shlex.quote(prompt_file.name)
 
-    command = (template or "").strip()
-
-    # Replace project placeholders directly
-    base_cmd = (
-        command.replace("{{project}}", str(project_slug))
-        .replace("{{project_dir}}", shlex.quote(project_dir))
-        .replace("{project}", str(project_slug))
-        .replace("{project_dir}", shlex.quote(project_dir))
+    has_placeholder = any(
+        p in base_cmd for p in ["{ticket}", "{prompt}", "{{ticket}}", "{{prompt}}"]
     )
-
-    has_placeholder = any(p in base_cmd for p in ["{ticket}", "{prompt}", "{{ticket}}", "{{prompt}}"])
-
     if has_placeholder:
-        # Strip prompt placeholder — we'll pass the temp file path instead
         stripped = (
             base_cmd.replace("{{ticket}}", "")
             .replace("{{prompt}}", "")
@@ -682,15 +689,29 @@ def _render_prompt_agent_command(template, prompt, project_slug, project_dir):
             .replace("{prompt}", "")
             .strip()
         )
-        # Run agent with prompt file as argument: `agent_cmd "$(cat /tmp/prompt.md)"`
-        # For agents that support it, pass as file-based prompt
-        rendered = f'prompt=$(cat {prompt_file_quoted}) && {stripped} "$prompt"'
+        target_cmd = stripped or "cat"
+        rendered = f'prompt=$(cat {prompt_file_quoted}) && {target_cmd} "$prompt"'
     else:
         rendered = f'prompt=$(cat {prompt_file_quoted}) && {base_cmd} "$prompt"'
 
-    # Clean up temp file after command finishes
     cleanup = f"rm -f {prompt_file_quoted}"
-    return f"cd {shlex.quote(project_dir)} && {rendered}; {cleanup}"
+    if project_dir:
+        return f"cd {shlex.quote(project_dir)} && {rendered}; {cleanup}"
+    return f"{rendered}; {cleanup}"
+
+
+def _render_prompt_agent_command(template, prompt, project_slug, project_dir):
+    base_cmd = _render_command_template(
+        template,
+        project_slug=project_slug,
+        project_dir=project_dir,
+    )
+    return _render_temp_prompt_command(
+        base_cmd,
+        prompt,
+        project_slug=project_slug,
+        project_dir=project_dir,
+    )
 
 
 def _warn_if_missing_project_dir(project):
