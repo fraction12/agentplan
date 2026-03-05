@@ -741,6 +741,48 @@ def _get_exit_code_for_pid(pid):
         return None
 
 
+def _is_zombie_process(pid):
+    status_path = f"/proc/{pid}/status"
+    if not os.path.exists(status_path):
+        return False
+    try:
+        with open(status_path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("State:"):
+                    parts = line.split()
+                    return len(parts) >= 2 and parts[1].upper().startswith("Z")
+    except Exception as exc:
+        LOGGER.warning("Failed to inspect /proc status for pid %s: %s", pid, exc)
+    return False
+
+
+def _pid_is_alive(pid):
+    if pid <= 0:
+        return True
+
+    try:
+        waited_pid, _ = os.waitpid(pid, os.WNOHANG)
+        if waited_pid == pid:
+            return False
+    except ChildProcessError:
+        # Not our child process; fall back to non-blocking OS-level checks.
+        pass
+    except Exception as exc:
+        LOGGER.warning("Unexpected waitpid error for pid %s: %s", pid, exc)
+
+    if _is_zombie_process(pid):
+        return False
+
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except Exception as exc:
+        LOGGER.warning("Unexpected os.kill error for pid %s: %s", pid, exc)
+        return True
+
+
 def monitor_process(pid: int, project_slug: str, ticket_num: int, timeout_sec: int = 3600) -> dict:
     start = time.monotonic()
     last_heartbeat = start
@@ -781,15 +823,7 @@ def monitor_process(pid: int, project_slug: str, ticket_num: int, timeout_sec: i
             )
             last_heartbeat = now_mono
 
-        alive = True
-        if pid > 0:
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                alive = False
-            except Exception as exc:
-                LOGGER.warning("Unexpected os.kill error for pid %s: %s", pid, exc)
-                alive = True
+        alive = _pid_is_alive(pid)
 
         if not alive:
             exit_code = _get_exit_code_for_pid(pid)
