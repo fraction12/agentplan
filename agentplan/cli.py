@@ -684,11 +684,12 @@ def spawn_terminal(command: str, title: str = None) -> int:
     )
     try:
         result = _run_osascript(script)
-        if result.returncode != 0:
-            LOGGER.warning("Terminal osascript failed: %s", (result.stderr or "").strip())
+        if result.returncode == 0:
+            return 0
+        LOGGER.warning("Terminal osascript failed: %s", (result.stderr or "").strip())
     except Exception as exc:
         LOGGER.warning("Terminal osascript failed: %s", exc)
-    return 0
+    return 1
 
 
 def _get_ticket_status(project_slug, ticket_num):
