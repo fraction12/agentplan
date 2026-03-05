@@ -1023,8 +1023,8 @@ def cmd_chain(args):
         conn.close()
         return
 
-    state = db_get_chain_state(conn, proj["id"])
-    if state and (state.get("status") or "").lower() == "running":
+    state = db_get_chain_state(conn, proj["id"]) or {}
+    if (state.get("status") or "").lower() == "running":
         conn.close()
         fail(
             f"Chain already running for project '{proj['slug']}'.",
