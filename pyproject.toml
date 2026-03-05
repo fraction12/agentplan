@@ -56,3 +56,6 @@ dashboard = ["flask>=3.0"]
 
 [tool.setuptools]
 packages = ["agentplan", "agentplan.dashboard"]
+
+[tool.setuptools.package-data]
+"agentplan.dashboard" = ["templates/*.html", "static/*.css", "static/*.js"]

@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.title }} · agentplan dashboard{% endblock %}
+{% block body_class %}dashboard-project{% endblock %}
+
+{% block topbar_left %}
+<div class="topbar-left">
+  <div>
+    <div class="brand">agentplan</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block topbar_nav %}
+<a href="{{ url_for('index') }}" class="btn-back">Home</a>
+<a href="{{ url_for('activity') }}" class="btn-back">Activity</a>
+<a href="{{ url_for('agents') }}" class="btn-back">Agents</a>
+{% endblock %}
+
+{% block topbar_right %}
+<div class="topbar-right">
+  <button id="chain-start-btn" class="btn btn-chain-start" type="button">▶ Start Work</button>
+  <button id="chain-stop-btn" class="btn btn-chain-stop" type="button">■ Stop</button>
+  <span id="project-clock" class="clock"></span>
+  <span class="sse-status"><span id="project-sse-dot" class="status-dot disconnected" aria-hidden="true"></span><span id="project-sse-label">connecting…</span></span>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1 class="project-title">{{ project.title }}</h1>
+<div class="project-dir-row" id="project-dir-row">
+  <span id="project-dir-display" class="project-dir">
+  {%- if project.dir -%}
+    <a href="file://{{ project.dir }}">{{ project.dir }}</a>
+  {%- else -%}
+    <span class="project-dir-empty">No directory set</span>
+  {%- endif -%}
+  </span>
+  <input id="project-dir-input" class="project-dir-input" name="directory" type="text" value="{{ project.dir or '' }}" placeholder="~/path/to/repo" hidden>
+  <button id="project-dir-edit-btn" class="btn btn-sm" type="button">Edit</button>
+  <button id="project-dir-save-btn" class="btn btn-sm btn-primary" type="button" hidden>Save</button>
+  <button id="project-dir-cancel-btn" class="btn btn-sm" type="button" hidden>Cancel</button>
+</div>
+<div id="project-dir-warning" class="project-dir-warning" {% if not directory_warning %}hidden{% endif %}>⚠ Linked directory does not exist on disk.</div>
+
+<div id="chain-status" class="chain-status">
+  <span id="chain-status-dot" class="chain-dot {{ chain.status if chain and chain.status else 'stopped' }}"></span>
+  <span id="chain-status-text">{{ chain_text }}</span>
+</div>
+
+<div class="project-meta">
+  <span>{{ done_count }}/{{ total_count }} done</span>
+</div>
+
+<details class="context-panel" aria-label="project context">
+  <summary>Project Context</summary>
+  <div class="context-body">
+  {% if context_payload.exists %}
+  <div class="context-content">{{ context_payload.html|safe }}</div>
+  {% else %}
+  <div class="context-empty">No context file yet. The first agent to work on this project will create one.</div>
+  {% endif %}
+  </div>
+</details>
+
+<form method="get" class="filters" aria-label="filters">
+  <select name="status" aria-label="Status filter">
+    <option value="" {{ "selected" if not filters.status else "" }}>All statuses</option>
+    {% for status in ["pending", "in-progress", "blocked", "needs-review", "failed", "done"] %}
+    <option value="{{ status }}" {{ "selected" if filters.status == status else "" }}>{{ status }}</option>
+    {% endfor %}
+  </select>
+  <select name="priority" aria-label="Priority filter">
+    <option value="" {{ "selected" if not filters.priority else "" }}>All priorities</option>
+    {% for priority in ["high", "medium", "low", "none"] %}
+    <option value="{{ priority }}" {{ "selected" if filters.priority == priority else "" }}>{{ priority | capitalize }}</option>
+    {% endfor %}
+  </select>
+  <select name="tag" aria-label="Tag filter">
+    <option value="" {{ "selected" if not filters.tag else "" }}>All tags</option>
+    {% for tag in available_tags %}
+    <option value="{{ tag }}" {{ "selected" if filters.tag == tag|lower else "" }}>{{ tag }}</option>
+    {% endfor %}
+  </select>
+  <div class="filter-actions">
+    <button class="btn btn-primary" type="submit">Apply filters</button>
+    <a class="btn" href="{{ url_for('project_detail', slug=project.slug) }}">Reset</a>
+  </div>
+</form>
+
+<section class="kanban-grid" aria-label="kanban board">
+  {% for status in status_order %}
+  <article class="kanban-column" data-status="{{ status }}">
+    <header class="kanban-column-header">
+      <h2 class="kanban-column-title">{{ status_labels[status] }}</h2>
+      <span class="kanban-count" data-count-for="{{ status }}">{{ grouped[status]|length }}</span>
+    </header>
+    <div class="kanban-column-body" data-column-body="{{ status }}">
+      {% if grouped[status] %}
+        {% for ticket in grouped[status] %}
+        <a class="ticket-link" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}" data-ticket-num="{{ ticket.num }}" data-ticket-status="{{ status }}" role="button" aria-label="Open ticket #{{ ticket.num }} details panel">
+          <article class="ticket-card priority-{{ ticket.priority|lower }} {{ "has-active-agent" if ticket.active_agent else "" }}">
+            <div class="ticket-head">
+              <div>
+                <div class="ticket-id">#{{ ticket.num }}</div>
+                <div class="ticket-title">{{ ticket.title }}</div>
+              </div>
+              {% if ticket.due_date %}
+              <div class="ticket-due {{ 'overdue' if ticket.is_overdue else '' }}">{{ ticket.due_date }}</div>
+              {% endif %}
+            </div>
+
+            <div class="pill-row">
+              <span class="priority-pill p-{{ ticket.priority|lower }}">{{ ticket.priority|lower }}</span>
+              {% for tag in (ticket.tags or []) %}
+              <span class="tag-pill tag-{{ ticket.tag_tones.get(tag, 'blue') }}">{{ tag }}</span>
+              {% endfor %}
+            </div>
+
+            {% if ticket.assignee %}
+            <div class="agent-row">
+              <span class="agent-avatar">{{ ticket.assignee_initials }}</span>
+              <span class="agent-name">{{ ticket.assignee }}</span>
+            </div>
+            {% endif %}
+
+            {% if ticket.subtask_total > 0 %}
+            <div class="progress-meta">
+              <span>subtasks</span>
+              <span>{{ ticket.subtask_done }}/{{ ticket.subtask_total }}</span>
+            </div>
+            <div class="mini-progress" role="img" aria-label="subtask progress">
+              <div class="mini-progress-value" style="--progress: {{ ticket.subtask_pct }}%;"></div>
+            </div>
+            {% endif %}
+          </article>
+        </a>
+        {% endfor %}
+      {% else %}
+        <p class="kanban-empty">No tickets.</p>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</section>
+<div id="ticket-panel-backdrop" class="ticket-panel-backdrop" hidden></div>
+<aside id="ticket-panel" class="ticket-panel" aria-hidden="true" aria-label="Ticket detail panel">
+  <header class="ticket-panel-header">
+    <div>
+      <div id="panel-ticket-id" class="ticket-panel-id">Ticket</div>
+      <h2 id="panel-ticket-title" class="ticket-panel-title">Loading…</h2>
+    </div>
+    <button id="ticket-panel-close" class="ticket-panel-close" type="button" aria-label="Close ticket detail">✕</button>
+  </header>
+  <div id="ticket-panel-content" class="ticket-panel-content"></div>
+</aside>
+<div id="toast-stack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.__projectPage = {
+    projectSlug: {{ project.slug|tojson }},
+    statusOrder: ["pending", "in-progress", "blocked", "needs-review", "failed", "done"],
+    filters: {{ filters|tojson }},
+    chainStatus: {{ (chain.status if chain else 'stopped')|tojson }},
+    chainCurrentTicketNum: {{ chain_current_ticket_num|tojson }},
+    chainPauseReason: {{ chain_pause_reason|tojson }},
+    projectDir: {{ (project.dir or "")|tojson }},
+  };
+</script>
+<script src="{{ url_for('static', filename='project.js') }}"></script>
+{% endblock %}

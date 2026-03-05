@@ -11,7 +11,7 @@ from datetime import datetime
 from functools import wraps
 from urllib.parse import urlparse
 
-from flask import Flask, abort, render_template_string, request, url_for
+from flask import Flask, abort, render_template, request, url_for
 
 from agentplan.db import (
     create_agent,
@@ -26,15 +26,10 @@ from agentplan.db import (
 )
 
 from .sse import sse_response
-from .templates import (
-    ACTIVITY_TEMPLATE,
-    AGENTS_TEMPLATE,
-    INDEX_TEMPLATE,
+from .constants import (
     KANBAN_STATUS_LABELS,
     KANBAN_STATUS_ORDER,
-    PROJECT_TEMPLATE,
     TAG_TONES,
-    TICKET_TEMPLATE,
 )
 
 def _db_path():
@@ -614,7 +609,12 @@ def _project_board_payload(slug, status_filter="", priority_filter="", tag_filte
     }
 
 def create_app():
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        template_folder="templates",
+        static_folder="static",
+        static_url_path="/static",
+    )
 
     @app.route("/")
     def index():
@@ -622,8 +622,8 @@ def create_app():
         projects = payload["projects"]
         active_projects = [p for p in projects if p["status"] != "completed" and p["status"] != "archived"]
         completed_projects = [p for p in projects if p["status"] == "completed"]
-        return render_template_string(
-            INDEX_TEMPLATE,
+        return render_template(
+            "home.html",
             projects=projects,
             active_projects=active_projects,
             completed_projects=completed_projects,
@@ -662,7 +662,7 @@ def create_app():
 
     @app.route("/activity")
     def activity():
-        return render_template_string(ACTIVITY_TEMPLATE)
+        return render_template("activity.html")
 
     @app.route("/agents")
     def agents():
@@ -672,8 +672,8 @@ def create_app():
             roles_data = list_roles(conn)
         finally:
             conn.close()
-        return render_template_string(
-            AGENTS_TEMPLATE,
+        return render_template(
+            "agents.html",
             agents=agents_data,
             roles=roles_data,
             detected_tools=_detect_tools_status(),
@@ -828,8 +828,8 @@ def create_app():
         else:
             chain_text = "Chain: idle"
 
-        return render_template_string(
-            PROJECT_TEMPLATE,
+        return render_template(
+            "project.html",
             project=project,
             grouped=grouped,
             status_order=KANBAN_STATUS_ORDER,
@@ -1050,8 +1050,8 @@ def create_app():
             for item in payload["audit_history"]
         ]
 
-        return render_template_string(
-            TICKET_TEMPLATE,
+        return render_template(
+            "ticket.html",
             project=project,
             ticket=payload,
             subtasks=payload["subtasks"],
