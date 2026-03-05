@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}agentplan{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body class="{% block body_class %}{% endblock %}">
+    <main class="page">
+      <header class="topbar">
+        <div class="brand">agentplan</div>
+        <nav class="topbar-nav">
+          <a class="top-link{% if active_page == 'home' %} active{% endif %}" href="{{ url_for('index') }}">Home</a>
+          <a class="top-link{% if active_page == 'activity' %} active{% endif %}" href="{{ url_for('activity') }}">Activity</a>
+          <a class="top-link{% if active_page == 'agents' %} active{% endif %}" href="{{ url_for('agents') }}">Agents</a>
+        </nav>
+        {% block topbar_right %}
+        <div class="topbar-right">
+          <span class="clock" id="live-clock">--:--:--</span>
+          <span class="sse-status"><span class="status-dot" id="sse-dot"></span><span id="sse-label">connecting…</span></span>
+        </div>
+        {% endblock %}
+      </header>
+      {% block content %}{% endblock %}
+    </main>
+    <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>
