@@ -600,28 +600,33 @@ def build_context_prompt(project, tickets, existing_context=None):
     project_slug = (project.get("slug") if hasattr(project, "get") else project["slug"]) if project else ""
     project_dir = (project.get("dir") if hasattr(project, "get") else project["dir"]) if project else ""
 
-    ticket_lines = []
+    status_buckets = ["pending", "in-progress", "blocked", "needs-review", "failed", "done"]
+    counts = {status: 0 for status in status_buckets}
+    active_ticket_lines = []
     for t in tickets or []:
         num = t.get("num") if hasattr(t, "get") else t["num"]
         title = t.get("title") if hasattr(t, "get") else t["title"]
         status = t.get("status") if hasattr(t, "get") else t["status"]
         priority = t.get("priority") if hasattr(t, "get") else t["priority"]
-        ticket_lines.append(
-            f"- #{num}: {title} [status={status}, priority={_priority_label(priority)}]"
-        )
-    if not ticket_lines:
-        ticket_lines = ["- (no tickets yet)"]
+        if status in counts:
+            counts[status] += 1
+        if status in {"pending", "in-progress"} and len(active_ticket_lines) < 10:
+            active_ticket_lines.append(
+                f"- #{num}: {title} [status={status}, priority={_priority_label(priority)}]"
+            )
+    if not active_ticket_lines:
+        active_ticket_lines = ["- (no open/in-progress tickets)"]
 
     context_section = "None found."
     mode_instruction = "Create .agentplan.md from scratch."
     if existing_context is None:
         mode_instruction = (
-            "Create .agentplan.md from scratch. There is no existing context; write a complete fresh version."
+            "Create from scratch."
         )
     else:
         context_section = existing_context
         mode_instruction = (
-            "Update and refresh the existing .agentplan.md using the latest codebase and ticket state."
+            "Preserve valid info, refresh stale sections."
         )
 
     return "\n".join(
@@ -631,19 +636,43 @@ def build_context_prompt(project, tickets, existing_context=None):
             f"Project slug: {project_slug}",
             f"Directory path: {project_dir}",
             "",
-            "Tickets:",
-            *ticket_lines,
+            "Ticket summary counts:",
+            f"- pending: {counts['pending']}",
+            f"- in-progress: {counts['in-progress']}",
+            f"- blocked: {counts['blocked']}",
+            f"- needs-review: {counts['needs-review']}",
+            f"- failed: {counts['failed']}",
+            f"- done: {counts['done']}",
+            "",
+            "Open/in-progress tickets (capped at 10):",
+            *active_ticket_lines,
             "",
             "Existing .agentplan.md content:",
             context_section,
             "",
             "Instructions:",
-            "- Scan the codebase in the linked directory.",
-            "- Understand the project structure and key files.",
-            "- Write a comprehensive `.agentplan.md` in the project root.",
-            "- Cover: project overview, directory structure, key files, conventions, whats in flight, hands-off zones.",
             f"- {mode_instruction}",
-            "- If existing context is present, preserve what is still correct and refresh stale sections.",
+            "- If an appended regenerate instruction says to rewrite from scratch, do a full rewrite.",
+            "- Investigate first by running local commands before writing.",
+            "",
+            "Investigation commands (run these):",
+            f"- agentplan ticket list {project_slug} --status open",
+            f"- agentplan ticket list {project_slug} --status in-progress",
+            f"- agentplan ticket list {project_slug} --status blocked",
+            "- ls -la",
+            "- rg --files | head -200",
+            "- Inspect project-specific key files before writing.",
+            "",
+            "Required output structure for `.agentplan.md` (use these exact section headers):",
+            "- Project Summary",
+            "- Current Objective",
+            "- Working Directory & Verify Commands",
+            "- Architecture Map",
+            "- Conventions & Guardrails",
+            "- Ticket Snapshot (open/in-progress)",
+            "- Agent Runbook",
+            "- Hands-Off Zones",
+            "- Last Updated + Generation Notes",
             "- Return after saving `.agentplan.md`.",
         ]
     )

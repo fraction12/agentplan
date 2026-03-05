@@ -1096,22 +1096,46 @@ def test_build_context_prompt_includes_required_sections():
     tickets = [
         {"num": 1, "title": "Setup", "status": "pending", "priority": "high"},
         {"num": 2, "title": "Ship", "status": "in-progress", "priority": "medium"},
+        {"num": 3, "title": "Fix blockers", "status": "blocked", "priority": "low"},
+        {"num": 4, "title": "Review PR", "status": "needs-review", "priority": "none"},
+        {"num": 5, "title": "Retriable failure", "status": "failed", "priority": "none"},
+        {"num": 6, "title": "Completed", "status": "done", "priority": "none"},
     ]
     prompt = agent_cli.build_context_prompt(project, tickets, existing_context="Existing content")
 
     assert "Project title: Prompt Project" in prompt
     assert "Project slug: prompt-project" in prompt
     assert "Directory path: /tmp/prompt-project" in prompt
+    assert "Ticket summary counts:" in prompt
+    assert "- pending: 1" in prompt
+    assert "- in-progress: 1" in prompt
+    assert "- blocked: 1" in prompt
+    assert "- needs-review: 1" in prompt
+    assert "- failed: 1" in prompt
+    assert "- done: 1" in prompt
+    assert "Open/in-progress tickets (capped at 10):" in prompt
     assert "- #1: Setup [status=pending, priority=high]" in prompt
     assert "- #2: Ship [status=in-progress, priority=medium]" in prompt
+    assert "- #3: Fix blockers [status=blocked, priority=low]" not in prompt
     assert "Existing .agentplan.md content:" in prompt
     assert "Existing content" in prompt
-    assert "project overview" in prompt
-    assert "directory structure" in prompt
-    assert "key files" in prompt
-    assert "conventions" in prompt
-    assert "whats in flight" in prompt
-    assert "hands-off zones" in prompt
+    assert "Investigation commands (run these):" in prompt
+    assert "agentplan ticket list prompt-project --status open" in prompt
+    assert "agentplan ticket list prompt-project --status in-progress" in prompt
+    assert "agentplan ticket list prompt-project --status blocked" in prompt
+    assert "ls -la" in prompt
+    assert "rg --files | head -200" in prompt
+    assert "Inspect project-specific key files before writing." in prompt
+    assert "Required output structure for `.agentplan.md`" in prompt
+    assert "- Project Summary" in prompt
+    assert "- Current Objective" in prompt
+    assert "- Working Directory & Verify Commands" in prompt
+    assert "- Architecture Map" in prompt
+    assert "- Conventions & Guardrails" in prompt
+    assert "- Ticket Snapshot (open/in-progress)" in prompt
+    assert "- Agent Runbook" in prompt
+    assert "- Hands-Off Zones" in prompt
+    assert "- Last Updated + Generation Notes" in prompt
 
 
 def test_build_context_prompt_handles_existing_context_vs_fresh():
@@ -1121,12 +1145,39 @@ def test_build_context_prompt_handles_existing_context_vs_fresh():
     tickets = [{"num": 1, "title": "Setup", "status": "pending", "priority": "none"}]
 
     fresh = agent_cli.build_context_prompt(project, tickets, existing_context=None)
-    assert "There is no existing context" in fresh
+    assert "Create from scratch." in fresh
     assert "None found." in fresh
 
     updated = agent_cli.build_context_prompt(project, tickets, existing_context="Old context")
-    assert "Update and refresh the existing .agentplan.md" in updated
+    assert "Preserve valid info, refresh stale sections." in updated
     assert "Old context" in updated
+    assert "If an appended regenerate instruction says to rewrite from scratch, do a full rewrite." in updated
+
+
+def test_build_context_prompt_caps_open_in_progress_ticket_dump():
+    import agentplan.cli as agent_cli
+
+    project = {"title": "Prompt Project", "slug": "prompt-project", "dir": "/tmp/prompt-project"}
+    tickets = []
+    for i in range(1, 13):
+        tickets.append(
+            {
+                "num": i,
+                "title": f"Pending {i}",
+                "status": "pending",
+                "priority": "none",
+            }
+        )
+    tickets.append({"num": 99, "title": "Blocked item", "status": "blocked", "priority": "none"})
+    prompt = agent_cli.build_context_prompt(project, tickets, existing_context=None)
+
+    assert "- pending: 12" in prompt
+    assert "- blocked: 1" in prompt
+    assert "- #1: Pending 1 [status=pending, priority=none]" in prompt
+    assert "- #10: Pending 10 [status=pending, priority=none]" in prompt
+    assert "- #11: Pending 11 [status=pending, priority=none]" not in prompt
+    assert "- #12: Pending 12 [status=pending, priority=none]" not in prompt
+    assert "Blocked item" not in prompt
 
 
 def test_context_command_includes_role_dependency_and_timeout():
