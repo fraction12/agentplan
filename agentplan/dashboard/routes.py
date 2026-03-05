@@ -3,8 +3,10 @@
 
 import html
 import json
+import logging
 import os
 import subprocess
+import threading
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -35,6 +37,96 @@ from .constants import (
 )
 
 _CONTEXT_PIDS = {}
+_CONTEXT_LOCK = threading.Lock()
+LOGGER = logging.getLogger(__name__)
+
+
+def _get_context_pid(slug):
+    value = _CONTEXT_PIDS.get(slug)
+    if isinstance(value, dict):
+        return value.get("pid")
+    return value
+
+
+def _set_context_state(slug, pid, running, exit_code=None):
+    with _CONTEXT_LOCK:
+        existing = _CONTEXT_PIDS.get(slug) if isinstance(_CONTEXT_PIDS.get(slug), dict) else {}
+        _CONTEXT_PIDS[slug] = {
+            "pid": pid,
+            "running": bool(running),
+            "exit_code": exit_code,
+            "started_at": existing.get("started_at") if existing else datetime.now().isoformat(timespec="seconds"),
+            "finished_at": None if running else datetime.now().isoformat(timespec="seconds"),
+        }
+
+
+def _get_exit_code_for_pid(pid):
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "exit_code=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    output = (result.stdout or "").strip()
+    if not output:
+        return None
+    try:
+        return int(output.splitlines()[0].strip())
+    except ValueError:
+        return None
+
+
+def _is_zombie_process(pid):
+    status_path = f"/proc/{pid}/status"
+    if not os.path.exists(status_path):
+        return False
+    try:
+        with open(status_path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("State:"):
+                    parts = line.split()
+                    return len(parts) >= 2 and parts[1].upper().startswith("Z")
+    except Exception:
+        return False
+    return False
+
+
+def _pid_is_running(pid):
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        waited_pid, _ = os.waitpid(pid, os.WNOHANG)
+        if waited_pid == pid:
+            return False
+    except ChildProcessError:
+        pass
+    except Exception:
+        pass
+    if _is_zombie_process(pid):
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except Exception:
+        return True
+
+
+def _monitor_context_process(slug, pid):
+    while _pid_is_running(pid):
+        time.sleep(2)
+    exit_code = _get_exit_code_for_pid(pid)
+    if exit_code in (0, None):
+        LOGGER.info("Context generation finished for %s (pid=%s)", slug, pid)
+    else:
+        LOGGER.error("Context generation failed for %s (pid=%s, exit_code=%s)", slug, pid, exit_code)
+    _set_context_state(slug, pid, running=False, exit_code=exit_code)
 
 def _db_path():
     return os.environ.get("AGENTPLAN_DB", os.path.expanduser("~/.agentplan/agentplan.db"))
@@ -995,7 +1087,14 @@ def create_app():
                 except OSError as exc:
                     return ({"error": f"failed to start context generation process: {exc}"}, 500)
 
-            _CONTEXT_PIDS[project["slug"]] = pid
+            _set_context_state(project["slug"], pid, running=True, exit_code=None)
+            if isinstance(pid, int) and pid > 0:
+                watcher = threading.Thread(
+                    target=_monitor_context_process,
+                    args=(project["slug"], pid),
+                    daemon=True,
+                )
+                watcher.start()
             return {"pid": pid, "status": "started"}
         finally:
             conn.close()
@@ -1010,16 +1109,11 @@ def create_app():
         finally:
             conn.close()
 
-        pid = _CONTEXT_PIDS.get(project["slug"])
-        running = False
-        if isinstance(pid, int) and pid > 0:
-            try:
-                os.kill(pid, 0)
-                running = True
-            except ProcessLookupError:
-                running = False
-            except Exception:
-                running = True
+        pid = _get_context_pid(project["slug"])
+        running = _pid_is_running(pid)
+        if isinstance(pid, int) and pid > 0 and not running:
+            exit_code = _get_exit_code_for_pid(pid)
+            _set_context_state(project["slug"], pid, running=False, exit_code=exit_code)
 
         context_path = _context_path_for_project(project)
         last_modified = None
