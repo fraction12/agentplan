@@ -697,8 +697,8 @@ ACTIVITY_TEMPLATE = """
           <a href="{{ url_for('agents') }}" class="top-link">Agents</a>
         </nav>
         <div class="topbar-right">
-          <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
           <span id="live-clock" class="clock">--:--:--</span>
+          <span class="sse-status"><span id="sse-dot" class="status-dot"></span><span id="sse-label">connecting…</span></span>
         </div>
       </header>
 
@@ -907,23 +907,23 @@ ACTIVITY_TEMPLATE = """
         setInterval(() => setClock(), 1000);
 
         if (!window.EventSource) {
-          setConnection(false, "reconnecting");
+          setConnection(false, "SSE unsupported");
           return;
         }
 
         const source = new EventSource("{{ url_for('events') }}");
-        source.addEventListener("open", () => setConnection(true, "live"));
+        source.addEventListener("open", () => setConnection(true, "connected"));
         source.addEventListener("activity_feed", (event) => {
           try {
             const payload = JSON.parse(event.data);
             applyActivity(payload);
             setClock(payload.server_time || null);
-            setConnection(true, "live");
+            setConnection(true, "connected");
           } catch (_err) {
-            setConnection(false, "reconnecting");
+            setConnection(false, "reconnecting…");
           }
         });
-        source.onerror = () => setConnection(false, "reconnecting");
+        source.onerror = () => setConnection(false, "reconnecting…");
       })();
     </script>
   </body>
