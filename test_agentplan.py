@@ -182,6 +182,25 @@ def test_create_project():
     assert "my-project" in out.lower()
 
 
+def test_create_project_with_dir_flag_persists_directory():
+    out, err, code = cli("create", "Dir Project", "--dir", "/tmp/agentplan-dir-project")
+    assert code == 0, err
+    assert "dir-project" in out.lower()
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT dir FROM projects WHERE slug='dir-project'").fetchone()
+    conn.close()
+    assert row["dir"] == "/tmp/agentplan-dir-project"
+
+
+def test_create_project_without_dir_flag_leaves_directory_empty():
+    cli("create", "No Dir Project")
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT dir FROM projects WHERE slug='no-dir-project'").fetchone()
+    conn.close()
+    assert row["dir"] is None
+
+
 def test_list_projects_after_create():
     cli("create", "Alpha Project")
     out, err, code = cli("list")
@@ -194,6 +213,13 @@ def test_status_project():
     out, err, code = cli("status", "beta-project")
     assert code == 0, err
     assert "beta" in out.lower()
+
+
+def test_status_shows_project_directory_when_linked():
+    cli("create", "Status Dir Project", "--dir", "/tmp/status-dir")
+    out, err, code = cli("status", "status-dir-project")
+    assert code == 0, err
+    assert "Directory: /tmp/status-dir" in out
 
 
 def test_missing_project_error_is_human_friendly_with_suggestion():
@@ -1045,6 +1071,37 @@ def test_context_command_uses_project_notes_for_working_dir():
     assert "DB: /tmp/test_agentplan.db" in out
 
 
+def test_context_command_project_mode_no_dir_set():
+    cli("create", "Project Context No Dir")
+    out, err, code = cli("context", "project-context-no-dir")
+    assert code == 0, err
+    assert "No directory linked to this project" in out
+
+
+def test_context_command_project_mode_file_missing():
+    os.makedirs("/tmp/project-context-missing", exist_ok=True)
+    cli("create", "Project Context Missing", "--dir", "/tmp/project-context-missing")
+    out, err, code = cli("context", "project-context-missing")
+    assert code == 0, err
+    assert "No .agentplan.md found in /tmp/project-context-missing" in out
+
+
+def test_context_command_project_mode_file_exists_and_regenerate():
+    os.makedirs("/tmp/project-context-exists", exist_ok=True)
+    context_file = "/tmp/project-context-exists/.agentplan.md"
+    Path(context_file).write_text("hello context", encoding="utf-8")
+    cli("create", "Project Context Exists", "--dir", "/tmp/project-context-exists")
+
+    out, err, code = cli("context", "project-context-exists")
+    assert code == 0, err
+    assert "hello context" in out
+
+    out2, err2, code2 = cli("context", "project-context-exists", "--regenerate")
+    assert code2 == 0, err2
+    assert "No .agentplan.md found in /tmp/project-context-exists" in out2
+    assert not os.path.exists(context_file)
+
+
 # ---------------------------------------------------------------------------
 # Shell completion
 # ---------------------------------------------------------------------------
@@ -1129,6 +1186,34 @@ def test_dashboard_project_detail_returns_ticket_titles():
     assert "Dashboard ticket one" in body
     assert "Dashboard ticket two" in body
 
+
+
+def test_dashboard_project_detail_shows_linked_directory_and_context_content():
+    from agentplan.dashboard import app
+
+    os.makedirs("/tmp/web-context", exist_ok=True)
+    Path("/tmp/web-context/.agentplan.md").write_text("# Context\n- Run tests", encoding="utf-8")
+    cli("create", "Web Context", "--dir", "/tmp/web-context")
+
+    client = app.test_client()
+    resp = client.get("/project/web-context")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "/tmp/web-context" in body
+    assert "Project Context" in body
+    assert "Run tests" in body
+
+
+def test_dashboard_project_detail_shows_no_directory_and_no_context_message():
+    from agentplan.dashboard import app
+
+    cli("create", "Web No Context")
+    client = app.test_client()
+    resp = client.get("/project/web-no-context")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "No directory linked" in body
+    assert "No context file yet. The first agent to work on this project will create one." in body
 
 
 def test_dashboard_project_detail_links_to_ticket_detail_view():
@@ -2562,6 +2647,45 @@ def test_route_terminal_spawns_rendered_agent_command():
     mock_spawn.assert_called_once_with("echo routing-terminal-project 1 routing-terminal-project 1", title="agentplan:dash")
 
 
+def test_route_terminal_injects_agentplan_md_content_when_present():
+    import agentplan.cli as agent_cli
+
+    os.makedirs("/tmp/routing-context", exist_ok=True)
+    Path("/tmp/routing-context/.agentplan.md").write_text("verify: pytest -q", encoding="utf-8")
+
+    cli("create", "Routing Context Project", "--dir", "/tmp/routing-context")
+    cli("role", "add", "backend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo {ticket}", roles="backend")
+    cli("ticket", "add", "routing-context-project", "Backend task", "--tag", "role:backend")
+
+    with patch("agentplan.cli.spawn_terminal") as mock_spawn:
+        out, err, code = cli("route", "routing-context-project", "1", "--terminal")
+
+    assert code == 0, err
+    assert out.strip() == "dash"
+    cmd = mock_spawn.call_args.args[0]
+    assert "verify: pytest -q" in cmd
+    assert "[Project Context from .agentplan.md]" in cmd
+
+
+def test_route_terminal_instructs_context_creation_when_missing():
+    import agentplan.cli as agent_cli
+
+    os.makedirs("/tmp/routing-context-missing", exist_ok=True)
+    cli("create", "Routing Context Missing", "--dir", "/tmp/routing-context-missing")
+    cli("role", "add", "backend")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="echo {ticket}", roles="backend")
+    cli("ticket", "add", "routing-context-missing", "Backend task", "--tag", "role:backend")
+
+    with patch("agentplan.cli.spawn_terminal") as mock_spawn:
+        out, err, code = cli("route", "routing-context-missing", "1", "--terminal")
+
+    assert code == 0, err
+    cmd = mock_spawn.call_args.args[0]
+    assert "No .agentplan.md found in project directory" in cmd
+    assert "create .agentplan.md" in cmd
+
+
 def test_detect_terminal_prefers_iterm2_when_running():
     import agentplan.cli as agent_cli
 
@@ -2756,6 +2880,57 @@ def test_project_default_timeout_applies_to_chain_when_ticket_timeout_missing():
 
     assert code == 0, err
     assert "timed out (9s)" in out
+
+
+def test_chain_warns_when_linked_dir_missing():
+    cli("create", "Chain Missing Dir", "--dir", "/tmp/does-not-exist-agentplan")
+    cli("ticket", "add", "chain-missing-dir", "Task")
+    with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
+         patch("agentplan.cli.spawn_terminal", return_value=999), \
+         patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "failed", "timed_out": False}):
+        out, err, code = cli("chain", "chain-missing-dir", "--default-agent", "dash")
+
+    assert code == 0, err
+    assert "Warning: linked project directory does not exist: /tmp/does-not-exist-agentplan" in out
+
+
+def test_chain_no_warning_when_dir_not_set():
+    cli("create", "Chain No Dir")
+    cli("ticket", "add", "chain-no-dir", "Task")
+    with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
+         patch("agentplan.cli.spawn_terminal", return_value=999), \
+         patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "failed", "timed_out": False}):
+        out, err, code = cli("chain", "chain-no-dir", "--default-agent", "dash")
+
+    assert code == 0, err
+    assert "linked project directory does not exist" not in out
+
+
+def test_chain_injects_agentplan_md_content_in_spawned_command():
+    os.makedirs("/tmp/chain-context", exist_ok=True)
+    Path("/tmp/chain-context/.agentplan.md").write_text("verify: python3 -m pytest", encoding="utf-8")
+    cli("create", "Chain Context", "--dir", "/tmp/chain-context")
+    cli("ticket", "add", "chain-context", "Task")
+    with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
+         patch("agentplan.cli.spawn_terminal", return_value=999) as mock_spawn, \
+         patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "failed", "timed_out": False}):
+        out, err, code = cli("chain", "chain-context", "--default-agent", "dash")
+
+    assert code == 0, err
+    assert "verify: python3 -m pytest" in mock_spawn.call_args.args[0]
+
+
+def test_chain_injects_create_context_instruction_when_file_missing():
+    os.makedirs("/tmp/chain-context-missing", exist_ok=True)
+    cli("create", "Chain Context Missing", "--dir", "/tmp/chain-context-missing")
+    cli("ticket", "add", "chain-context-missing", "Task")
+    with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
+         patch("agentplan.cli.spawn_terminal", return_value=999) as mock_spawn, \
+         patch("agentplan.cli._monitor_chain_ticket", return_value={"ticket_status": "failed", "timed_out": False}):
+        out, err, code = cli("chain", "chain-context-missing", "--default-agent", "dash")
+
+    assert code == 0, err
+    assert "No .agentplan.md found in project directory" in mock_spawn.call_args.args[0]
 
 
 # ---------------------------------------------------------------------------

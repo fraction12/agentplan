@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read-only web dashboard for agentplan projects and tickets."""
 
+import html
 import json
 import os
 import subprocess
@@ -83,6 +84,64 @@ def _detect_tools_status():
 
 def _parse_roles_from_form(form):
     return [value.strip() for value in form.getlist("roles") if value.strip()]
+
+
+def _context_path_for_project(project):
+    project_dir = project["dir"] if "dir" in project.keys() else None
+    if not project_dir:
+        return None
+    return os.path.join(project_dir, ".agentplan.md")
+
+
+def _markdown_to_html(md_text):
+    if not md_text:
+        return ""
+    lines = md_text.splitlines()
+    rendered = []
+    in_list = False
+    for raw in lines:
+        line = raw.rstrip()
+        esc = html.escape(line)
+        if line.startswith("# "):
+            if in_list:
+                rendered.append("</ul>")
+                in_list = False
+            rendered.append(f"<h3>{html.escape(line[2:])}</h3>")
+        elif line.startswith("## "):
+            if in_list:
+                rendered.append("</ul>")
+                in_list = False
+            rendered.append(f"<h4>{html.escape(line[3:])}</h4>")
+        elif line.startswith("- "):
+            if not in_list:
+                rendered.append("<ul>")
+                in_list = True
+            rendered.append(f"<li>{html.escape(line[2:])}</li>")
+        elif line.strip() == "":
+            if in_list:
+                rendered.append("</ul>")
+                in_list = False
+            rendered.append("<br>")
+        else:
+            if in_list:
+                rendered.append("</ul>")
+                in_list = False
+            rendered.append(f"<p>{esc}</p>")
+    if in_list:
+        rendered.append("</ul>")
+    return "\n".join(rendered)
+
+
+def _project_context_payload(project):
+    context_path = _context_path_for_project(project)
+    if not context_path or not os.path.exists(context_path):
+        return {"exists": False, "html": "", "raw": ""}
+    try:
+        with open(context_path, "r", encoding="utf-8") as f:
+            raw = f.read()
+    except Exception:
+        return {"exists": False, "html": "", "raw": ""}
+    return {"exists": True, "html": _markdown_to_html(raw), "raw": raw}
 
 
 def _fetch_projects_with_stats(conn):
@@ -676,7 +735,7 @@ def create_app():
 
         conn = get_connection(_db_path())
         try:
-            project = conn.execute("SELECT id, slug, title, status FROM projects WHERE slug=?", (slug,)).fetchone()
+            project = conn.execute("SELECT id, slug, title, status, dir FROM projects WHERE slug=?", (slug,)).fetchone()
             if not project:
                 abort(404)
             rows = conn.execute(
@@ -716,6 +775,8 @@ def create_app():
                 subtask_progress = {
                     r["ticket_id"]: {"done": int(r["done"] or 0), "total": int(r["total"] or 0)} for r in progress_rows
                 }
+
+            context_payload = _project_context_payload(project)
 
             chain = get_chain_state(conn, project["id"]) or {}
             chain_current_ticket_num = None
@@ -780,6 +841,7 @@ def create_app():
             chain_current_ticket_num=chain_current_ticket_num,
             chain_pause_reason=chain_pause_reason,
             chain_text=chain_text,
+            context_payload=context_payload,
         )
 
     @app.route("/api/chain/<slug>/start", methods=["POST"])
@@ -787,9 +849,11 @@ def create_app():
     def api_chain_start(slug):
         conn = get_connection(_db_path())
         try:
-            project = conn.execute("SELECT id, slug FROM projects WHERE slug=?", (slug,)).fetchone()
+            project = conn.execute("SELECT id, slug, dir FROM projects WHERE slug=?", (slug,)).fetchone()
             if not project:
                 abort(404)
+            if project["dir"] and not os.path.isdir(project["dir"]):
+                print(f"Warning: linked project directory does not exist: {project['dir']}")
             state = get_chain_state(conn, project["id"]) or {}
             if (state.get("status") or "").lower() == "running":
                 return ({"error": "chain already running"}, 409)

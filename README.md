@@ -41,6 +41,13 @@ No SDK. No framework. No Python dependencies beyond stdlib.
 pip install agentplan
 ```
 
+## What's New in v0.6
+
+- **Project Directories** — `agentplan create --dir ~/path` links a project to a codebase
+- **`.agentplan.md` Context Files** — per-project context injected into every agent turn. First agent auto-generates it by scanning the project.
+- **`agentplan context`** — view or regenerate a project's context file
+- **Dashboard Context Panel** — collapsible panel showing the context file on each project page
+
 ## What's New in v0.5
 
 - **Roles & Agent Registry** — Define roles (coding, research, writing), register agents with command templates, and route tickets to the right agent automatically
@@ -158,6 +165,31 @@ agentplan hook add myproject --event on-complete --type webhook --target 'https:
 # Chain to the next agent automatically
 agentplan hook add myproject --event on-complete --type chain --target 'agentplan claim myproject --agent next-agent'
 ```
+
+## Project Context
+
+Link a project to a codebase and let agents understand the project automatically.
+
+```bash
+# Create a project linked to a directory
+agentplan create "Build my app" --dir ~/Documents/Projects/my-app \
+  --ticket "Set up database schema" \
+  --ticket "Build API endpoints"
+
+# First agent turn auto-generates .agentplan.md by scanning the project
+# View the context file
+agentplan context build-my-app
+
+# Reset it if the project evolves
+agentplan context build-my-app --regenerate
+```
+
+The `.agentplan.md` file lives in your project root (like `.claude.md` or `AGENTS.md`) and contains:
+- Verify command (`npm test`, `python -m pytest`, etc.)
+- Key conventions agents should follow
+- Hands-off zones (files not to modify)
+
+Every agent that works on the project gets this context injected automatically.
 
 ## Stale Claim Handling
 

@@ -66,6 +66,7 @@ def init_db(conn):
             title TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'active',
             notes TEXT,
+            dir TEXT,
             timeout_sec INTEGER,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
@@ -228,6 +229,12 @@ def init_db(conn):
         conn.execute("SELECT priority FROM agents LIMIT 0")
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE agents ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+
+    # Project-level directory link
+    try:
+        conn.execute("SELECT dir FROM projects LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE projects ADD COLUMN dir TEXT")
 
     # Project-level timeout default (seconds)
     try:

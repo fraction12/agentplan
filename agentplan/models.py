@@ -16,6 +16,7 @@ class Project:
     title: str
     status: str
     notes: Optional[str]
+    dir: Optional[str]
     timeout_sec: Optional[int]
     created_at: str
     updated_at: str
@@ -28,6 +29,7 @@ class Project:
             title=str(row["title"]),
             status=str(row["status"]),
             notes=row["notes"],
+            dir=row["dir"] if "dir" in row else None,
             timeout_sec=row["timeout_sec"] if "timeout_sec" in row else None,
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),

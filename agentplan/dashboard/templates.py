@@ -1102,7 +1102,10 @@ PROJECT_TEMPLATE = """
       .topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
       .topbar-nav { display: inline-flex; gap: 8px; justify-self: center; }
       .brand { font-family: var(--font-body); font-weight: var(--fw-card-title); font-size: var(--fs-card-title); }
-      .project-title { margin: 0 0 12px; font-family: var(--font-heading); font-size: var(--fs-h1); font-weight: var(--fw-h1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .project-title { margin: 0 0 6px; font-family: var(--font-heading); font-size: var(--fs-h1); font-weight: var(--fw-h1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .project-dir { margin: 0 0 10px; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-muted); }
+      .project-dir a { color: #93c5fd; text-decoration: none; }
+      .project-dir a:hover { text-decoration: underline; }
       .project-code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.08em; }
       .topbar-right { display: flex; align-items: center; gap: 12px; justify-self: end; color: var(--color-muted); font-family: var(--font-body); font-size: var(--fs-body); }
       .sse-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-small); color: var(--color-muted); }
@@ -1136,6 +1139,14 @@ PROJECT_TEMPLATE = """
       .btn-back.active { color: var(--color-text); font-weight: var(--fw-nav); text-decoration: underline; }
 
       .project-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--color-muted); font-family: var(--font-body); font-weight: var(--fw-body); font-size: var(--fs-small); }
+      .context-panel { margin: 0 0 16px; border: 1px solid var(--color-border); border-radius: 10px; background: rgba(255,255,255,0.02); }
+      .context-panel summary { padding: 12px; cursor: pointer; font-size: var(--fs-h2); font-family: var(--font-heading); font-weight: var(--fw-heading); list-style: none; display: flex; align-items: center; gap: 8px; }
+      .context-panel summary::before { content: "▸"; transition: transform 0.2s; }
+      .context-panel[open] summary::before { transform: rotate(90deg); }
+      .context-panel summary::-webkit-details-marker { display: none; }
+      .context-panel .context-body { padding: 0 12px 12px; }
+      .context-content { font-size: var(--fs-body); line-height: 1.45; }
+      .context-empty { color: var(--color-muted); font-size: var(--fs-small); }
       .legend-strip {
         display: flex;
         flex-wrap: wrap;
@@ -1439,6 +1450,11 @@ PROJECT_TEMPLATE = """
       </header>
 
       <h1 class="project-title">{{ project.title }}</h1>
+      {% if project.dir %}
+      <div class="project-dir"><a href="file://{{ project.dir }}">{{ project.dir }}</a></div>
+      {% else %}
+      <div class="project-dir">No directory linked</div>
+      {% endif %}
 
       <div id="chain-status" class="chain-status">
         <span id="chain-status-dot" class="chain-dot {{ chain.status if chain and chain.status else 'stopped' }}"></span>
@@ -1449,7 +1465,16 @@ PROJECT_TEMPLATE = """
         <span>{{ done_count }}/{{ total_count }} done</span>
       </div>
 
-      
+      <details class="context-panel" aria-label="project context">
+        <summary>Project Context</summary>
+        <div class="context-body">
+        {% if context_payload.exists %}
+        <div class="context-content">{{ context_payload.html|safe }}</div>
+        {% else %}
+        <div class="context-empty">No context file yet. The first agent to work on this project will create one.</div>
+        {% endif %}
+        </div>
+      </details>
 
       <form method="get" class="filters" aria-label="filters">
         <select name="status" aria-label="Status filter">

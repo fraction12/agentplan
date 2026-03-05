@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.6.0 - 2026-03-05
+
+### Added
+- **Project directories** — `agentplan create --dir ~/path/to/project` links a project to a codebase
+- **`.agentplan.md` context files** — per-project context that gets injected into every agent turn (working dir, verify commands, conventions, hands-off zones)
+- **Auto-context generation** — if no `.agentplan.md` exists, agents are instructed to create one by scanning the project before starting work
+- **`agentplan context` command** — view the project's `.agentplan.md`, with `--regenerate` to reset it
+- **Dashboard: project directory** — shown in the project page top bar
+- **Dashboard: Project Context panel** — collapsible section rendering `.agentplan.md` as formatted markdown
+- **Directory validation** — chain controller warns if linked directory doesn't exist on disk
+- 200 tests (was 186)
+
+### Changed
+- Dashboard context panel is collapsible (collapsed by default) to save space
+- System prompt injection now includes `.agentplan.md` content when available
+
 ## v0.5.0 - 2026-03-04
 
 ### Added

@@ -53,7 +53,7 @@ from agentplan.db import (
     is_valid_iso_local_timestamp,
 )
 
-__version__ = "0.5.1"
+__version__ = "0.6.0"
 
 # ---------------------------------------------------------------------------
 # Input validation limits
@@ -551,6 +551,49 @@ def _infer_working_dir(project_notes):
     return os.environ.get("AGENTPLAN_WORKDIR") or os.getcwd()
 
 
+def _project_context_file_path(project):
+    project_dir = (project.get("dir") if hasattr(project, "get") else project["dir"]) if project else None
+    if not project_dir:
+        return None
+    return os.path.join(project_dir, ".agentplan.md")
+
+
+def _read_project_context_file(project):
+    path = _project_context_file_path(project)
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return None
+
+
+def _project_prompt_context(project):
+    project_dir = (project.get("dir") if hasattr(project, "get") else project["dir"]) if project else None
+    if not project_dir:
+        return ""
+
+    context = _read_project_context_file(project)
+    if context:
+        return (
+            "\n\n[Project Context from .agentplan.md]\n"
+            f"{context}\n"
+            "[End Project Context]\n"
+        )
+
+    return (
+        "\n\nNo .agentplan.md found in project directory. Before starting work, scan the project and create "
+        ".agentplan.md with: verify command, key conventions, and anything future agents should know.\n"
+    )
+
+
+def _warn_if_missing_project_dir(project):
+    project_dir = (project.get("dir") if hasattr(project, "get") else project["dir"]) if project else None
+    if project_dir and not os.path.isdir(project_dir):
+        print(f"Warning: linked project directory does not exist: {project_dir}")
+
+
 def _iterm2_running():
     try:
         result = subprocess.run(["pgrep", "-x", "iTerm2"], capture_output=True, text=True)
@@ -782,7 +825,7 @@ def _next_chain_candidate(conn, project_id):
     return items[0] if items else None
 
 
-def _render_agent_command(template, ticket, project):
+def _render_agent_command(template, ticket, project, extra_context=""):
     try:
         project_slug = project["slug"]
     except Exception:
@@ -795,7 +838,7 @@ def _render_agent_command(template, ticket, project):
 
     ticket_ref = f"{project_slug} {ticket_num}"
     command = template or ""
-    return (
+    rendered = (
         command.replace("{{ticket}}", ticket_ref)
         .replace("{{project}}", str(project_slug))
         .replace("{{ticket_id}}", str(ticket_num))
@@ -803,6 +846,9 @@ def _render_agent_command(template, ticket, project):
         .replace("{project}", str(project_slug))
         .replace("{ticket_id}", str(ticket_num))
     )
+    if extra_context:
+        rendered = f"{rendered}\n{extra_context.strip()}"
+    return rendered
 
 
 def _mark_ticket_failed_for_timeout(conn, project, ticket, timeout_sec):
@@ -943,6 +989,7 @@ def cmd_chain(args):
         return
 
     processed = 0
+    _warn_if_missing_project_dir(proj)
     db_set_chain_state(conn, proj["id"], "running", current_ticket_id=None, pause_reason=None)
     print(f"Starting chain for project '{proj['slug']}'")
 
@@ -975,7 +1022,12 @@ def cmd_chain(args):
         if timeout_sec is None:
             timeout_sec = 3600
 
-        command = _render_agent_command(agent.get("command_template"), ticket, proj)
+        command = _render_agent_command(
+            agent.get("command_template"),
+            ticket,
+            proj,
+            extra_context=_project_prompt_context(proj),
+        )
         deadline_preview = (datetime.now() + timedelta(seconds=timeout_sec)).strftime("%Y-%m-%dT%H:%M:%S")
         start_msg = f"chain-start: ticket #{ticket['num']} timeout={timeout_sec}s deadline={deadline_preview}"
         conn.execute(
@@ -1019,56 +1071,78 @@ def cmd_chain(args):
 def cmd_context(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
-    ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
 
-    role = _extract_role_from_tags(ticket["tags"]) or "unassigned"
-    deps = json.loads(ticket["depends_on"] or "[]")
+    if args.ticket_id:
+        ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
 
-    dep_lines = []
-    for dep_num in deps:
-        dep_ticket = db_resolve_ticket(conn, proj["id"], dep_num)
-        if dep_ticket:
-            dep_lines.append(f"  #{dep_ticket['num']}: {dep_ticket['title']} [{dep_ticket['status']}]")
-        else:
-            dep_lines.append(f"  #{dep_num}: (missing ticket) [unknown]")
-    if not dep_lines:
-        dep_lines = ["  (none)"]
+        role = _extract_role_from_tags(ticket["tags"]) or "unassigned"
+        deps = json.loads(ticket["depends_on"] or "[]")
 
-    agent_name = args.agent or "<name>"
-    workdir = _infer_working_dir(proj["notes"])
-    _, db_path = get_db_path()
-    claim_timeout = (
-        f"{ticket['claim_timeout']} seconds"
-        if ticket["claim_timeout"] is not None
-        else "not set"
-    )
+        dep_lines = []
+        for dep_num in deps:
+            dep_ticket = db_resolve_ticket(conn, proj["id"], dep_num)
+            if dep_ticket:
+                dep_lines.append(f"  #{dep_ticket['num']}: {dep_ticket['title']} [{dep_ticket['status']}]")
+            else:
+                dep_lines.append(f"  #{dep_num}: (missing ticket) [unknown]")
+        if not dep_lines:
+            dep_lines = ["  (none)"]
 
-    lines = [
-        "=== AGENTPLAN CONTEXT BLOCK ===",
-        f"Project: {proj['slug']} ({proj['title']}) [{proj['status']}]",
-        f"Ticket: #{ticket['num']} — {ticket['title']}",
-        f"Priority: {_priority_label(ticket['priority'])}",
-        f"Status: {ticket['status']}",
-        f"Role: {role}",
-        f"Tags: {ticket['tags'] or '(none)'}",
-        f"Description: {ticket['description'] or '(none)'}",
-        "",
-        "Dependencies:",
-        *dep_lines,
-        "",
-        "Commands:",
-        f"  agentplan ticket start {proj['slug']} {ticket['num']} --agent {agent_name}",
-        f"  agentplan ticket done {proj['slug']} {ticket['num']} --agent {agent_name}",
-        f"  agentplan ticket block {proj['slug']} {ticket['num']} --reason \"...\"",
-        f"  agentplan ticket fail {proj['slug']} {ticket['num']} --reason \"...\"",
-        f"  agentplan log {proj['slug']} {ticket['num']} \"message\"",
-        "",
-        f"Working dir: {workdir}",
-        f"DB: {db_path}",
-        f"Claim timeout: {claim_timeout}",
-        "==============================",
-    ]
-    print("\n".join(lines))
+        agent_name = args.agent or "<name>"
+        workdir = _infer_working_dir(proj["notes"])
+        _, db_path = get_db_path()
+        claim_timeout = (
+            f"{ticket['claim_timeout']} seconds"
+            if ticket["claim_timeout"] is not None
+            else "not set"
+        )
+
+        lines = [
+            "=== AGENTPLAN CONTEXT BLOCK ===",
+            f"Project: {proj['slug']} ({proj['title']}) [{proj['status']}]",
+            f"Ticket: #{ticket['num']} — {ticket['title']}",
+            f"Priority: {_priority_label(ticket['priority'])}",
+            f"Status: {ticket['status']}",
+            f"Role: {role}",
+            f"Tags: {ticket['tags'] or '(none)'}",
+            f"Description: {ticket['description'] or '(none)'}",
+            "",
+            "Dependencies:",
+            *dep_lines,
+            "",
+            "Commands:",
+            f"  agentplan ticket start {proj['slug']} {ticket['num']} --agent {agent_name}",
+            f"  agentplan ticket done {proj['slug']} {ticket['num']} --agent {agent_name}",
+            f"  agentplan ticket block {proj['slug']} {ticket['num']} --reason \"...\"",
+            f"  agentplan ticket fail {proj['slug']} {ticket['num']} --reason \"...\"",
+            f"  agentplan log {proj['slug']} {ticket['num']} \"message\"",
+            "",
+            f"Working dir: {workdir}",
+            f"DB: {db_path}",
+            f"Claim timeout: {claim_timeout}",
+            "==============================",
+        ]
+        print("\n".join(lines))
+        conn.close()
+        return
+
+    project_dir = proj["dir"] if "dir" in proj.keys() else None
+    if not project_dir:
+        print("No directory linked to this project")
+        conn.close()
+        return
+
+    context_path = os.path.join(project_dir, ".agentplan.md")
+    if getattr(args, "regenerate", False) and os.path.exists(context_path):
+        os.remove(context_path)
+
+    if not os.path.exists(context_path):
+        print(f"No .agentplan.md found in {project_dir}")
+        conn.close()
+        return
+
+    with open(context_path, "r", encoding="utf-8") as f:
+        print(f.read().rstrip())
     conn.close()
 
 
@@ -1087,7 +1161,12 @@ def cmd_route(args):
     if getattr(args, "terminal_pref", None):
         os.environ["AGENTPLAN_TERMINAL"] = args.terminal_pref
     if getattr(args, "terminal", False):
-        command = _render_agent_command(agent.get("command_template"), ticket, proj)
+        command = _render_agent_command(
+            agent.get("command_template"),
+            ticket,
+            proj,
+            extra_context=_project_prompt_context(proj),
+        )
         pid = spawn_terminal(command, title=f"agentplan:{agent['name']}")
         if getattr(args, "monitor", False):
             def _monitor_runner():
@@ -1262,8 +1341,8 @@ def cmd_create(args):
     conn = _ensure(get_connection())
     slug = unique_slug(conn, slugify(args.title))
     conn.execute(
-        "INSERT INTO projects (slug, title, notes, timeout_sec) VALUES (?,?,?,?)",
-        (slug, args.title, args.notes, timeout_sec),
+        "INSERT INTO projects (slug, title, notes, dir, timeout_sec) VALUES (?,?,?,?,?)",
+        (slug, args.title, args.notes, args.dir, timeout_sec),
     )
     pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     n = 0
@@ -1509,7 +1588,12 @@ def _fire_chain_hook(project_slug, default_agent_name=None):
         if not agent:
             return
 
-        command = _render_agent_command(agent.get("command_template"), ticket, proj)
+        command = _render_agent_command(
+            agent.get("command_template"),
+            ticket,
+            proj,
+            extra_context=_project_prompt_context(proj),
+        )
         spawn_terminal(command, title=f"agentplan:{agent['name']}")
     finally:
         chain_conn.close()
@@ -1923,7 +2007,7 @@ def cmd_status(args):
         if fmt == "json":
             data = {
                 "id": p["id"], "slug": p["slug"], "title": p["title"],
-                "status": p["status"], "notes": p["notes"],
+                "status": p["status"], "notes": p["notes"], "dir": p["dir"] if "dir" in p.keys() else None,
                 "done": done_count, "total": total,
                 "blocked": blocked_count,
                 "failed": failed_count,
@@ -1977,6 +2061,8 @@ def cmd_status(args):
         summary += f"[{next_ticket['num']}] {next_ticket['title']}" if next_ticket else "none"
         print(summary)
         print(f"{p['title']} [{p['status']}] — {done_count}/{total} done")
+        if p["dir"] if "dir" in p.keys() else None:
+            print(f"Directory: {p['dir']}")
         for t in tickets:
             blocked = _is_blocked(t, done_nums)
             icon = _ticket_icon(t["status"], blocked)
@@ -2648,6 +2734,7 @@ def build_parser():
     c.add_argument("title")
     c.add_argument("--ticket", action="append", help="Add inline ticket(s)")
     c.add_argument("--notes")
+    c.add_argument("--dir", help="Link this project to a local directory")
     c.add_argument("--timeout", type=int, help="Default per-ticket timeout in seconds for this project")
 
     tp = sub.add_parser("ticket", help="Manage tickets")
@@ -2746,10 +2833,11 @@ def build_parser():
     hs.add_argument("project")
     hs.add_argument("ticket_id")
 
-    ctx = sub.add_parser("context", help="Generate system prompt injection block for an agent turn")
+    ctx = sub.add_parser("context", help="Show linked .agentplan.md or generate ticket context block")
     ctx.add_argument("project")
-    ctx.add_argument("ticket_id")
+    ctx.add_argument("ticket_id", nargs="?")
     ctx.add_argument("--agent", help="Agent name for command templates")
+    ctx.add_argument("--regenerate", action="store_true", help="Delete existing .agentplan.md so it is recreated on next agent run")
 
     rt = sub.add_parser("route", help="Route a ticket to an agent by role tags")
     rt.add_argument("project")
