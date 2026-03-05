@@ -1,0 +1,64 @@
+name: agentplan-run-chain
+description: Run a headless agentplan chain in CI and publish a run summary
+inputs:
+  project-slug:
+    description: Project slug to execute (example: my-project)
+    required: true
+  max-tickets:
+    description: Optional maximum number of tickets to process in this run
+    required: false
+    default: ""
+  timeout:
+    description: Optional per-ticket timeout override in seconds
+    required: false
+    default: ""
+outputs:
+  chain-status:
+    description: Final chain status
+    value: ${{ steps.run.outputs.chain-status }}
+runs:
+  using: composite
+  steps:
+    - name: Run chain (headless)
+      id: run
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        slug="${{ inputs.project-slug }}"
+        max_tickets="${{ inputs.max-tickets }}"
+        timeout_sec="${{ inputs.timeout }}"
+
+        args=("$slug")
+        if [ -n "$max_tickets" ]; then
+          args+=("--max-tickets" "$max_tickets")
+        fi
+        if [ -n "$timeout_sec" ]; then
+          args+=("--timeout" "$timeout_sec")
+        fi
+
+        AGENTPLAN_CI=1 agentplan chain "${args[@]}" | tee /tmp/agentplan-chain.log
+        agentplan chain "$slug" --status | tee /tmp/agentplan-chain-status.log
+
+        chain_status="$(awk -F': ' '/^Chain status:/{print $2; exit}' /tmp/agentplan-chain-status.log || true)"
+        chain_status="${chain_status:-unknown}"
+        echo "chain-status=$chain_status" >> "$GITHUB_OUTPUT"
+
+        {
+          echo "## agentplan run-chain"
+          echo ""
+          echo "- Project: \`$slug\`"
+          echo "- Max tickets: \`${max_tickets:-unbounded}\`"
+          echo "- Timeout override: \`${timeout_sec:-default}\`"
+          echo "- Final chain status: \`$chain_status\`"
+          echo ""
+          echo "### Chain Output"
+          echo '```text'
+          cat /tmp/agentplan-chain.log
+          echo '```'
+          echo ""
+          echo "### Chain Status"
+          echo '```text'
+          cat /tmp/agentplan-chain-status.log
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
