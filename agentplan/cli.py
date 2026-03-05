@@ -988,6 +988,14 @@ def cmd_chain(args):
         conn.close()
         return
 
+    state = db_get_chain_state(conn, proj["id"]) or {}
+    if (state.get("status") or "").lower() == "running":
+        conn.close()
+        fail(
+            f"Chain for project '{proj['slug']}' is already running.",
+            suggestions=["Use `agentplan chain <project> --status` or `--stop` before starting a new run."],
+        )
+
     processed = 0
     _warn_if_missing_project_dir(proj)
     db_set_chain_state(conn, proj["id"], "running", current_ticket_id=None, pause_reason=None)

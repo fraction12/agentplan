@@ -3139,3 +3139,23 @@ def test_chain_max_tickets_limits_processing():
     assert code == 0, err
     assert mock_spawn.call_count == 1
     assert "Reached --max-tickets=1" in out
+
+
+def test_chain_rejects_reentry_when_already_running():
+    cli("create", "Chain Reentry Project")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    conn.execute(
+        "INSERT INTO chain_state (project_id, status, current_ticket_id, pause_reason, heartbeat_at, deadline_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+        (1, "running", None, None, None, None, "2026-01-01T00:00:00"),
+    )
+    conn.commit()
+    conn.close()
+
+    with patch("agentplan.cli.spawn_terminal") as mock_spawn:
+        out, err, code = cli("chain", "chain-reentry-project")
+
+    assert code == 2
+    assert out == ""
+    assert "already running" in err.lower()
+    assert mock_spawn.call_count == 0
