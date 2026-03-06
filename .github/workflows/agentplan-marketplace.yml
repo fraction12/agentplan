@@ -18,13 +18,12 @@ on:
         default: "1800"
         type: string
 
-concurrency:
-  group: agentplan-${{ github.repository }}-${{ inputs.project_slug }}
-  cancel-in-progress: false
-
 jobs:
   chain:
     runs-on: ubuntu-latest
+    concurrency:
+      group: agentplan-${{ github.repository }}-${{ github.event.inputs.project_slug || 'manual' }}
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write
