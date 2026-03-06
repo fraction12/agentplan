@@ -70,6 +70,19 @@ def test_help_exits_zero():
     assert code == 0
 
 
+def test_issue_and_artifact_help_exits_zero():
+    out_issue, err_issue, code_issue = cli("issue", "--help")
+    assert code_issue == 0
+    assert err_issue == ""
+    assert "import" in out_issue
+
+    out_artifact, err_artifact, code_artifact = cli("artifact", "--help")
+    assert code_artifact == 0
+    assert err_artifact == ""
+    assert "status" in out_artifact
+    assert "verify" in out_artifact
+
+
 def test_version():
     out, _, code = cli("version")
     assert code == 0
@@ -3084,8 +3097,11 @@ def test_route_no_match_no_default():
     cli("ticket", "add", "routing-no-match-project", "Frontend task", "--tag", "role:frontend")
 
     out, err, code = cli("route", "routing-no-match-project", "1")
-    assert code == 0, err
-    assert out.strip() == "No agent found for ticket #1"
+    assert code == 2
+    assert out == ""
+    assert "No routeable agent for ticket #1 in project 'routing-no-match-project'." in err
+    assert "Retry with a fallback" in err
+    assert "agentplan role list" in err
 
 
 def test_render_agent_command_replaces_all_placeholder_variants():
@@ -3263,6 +3279,27 @@ def test_monitor_process_exits_when_pid_ends():
     assert result["pid"] == 12345
     assert result["timed_out"] is False
     assert result["exit_code"] == 0
+
+
+def test_monitor_chain_ticket_uses_pid_liveness_helper():
+    import agentplan.cli as agent_cli
+
+    os.makedirs("/tmp/chain-pid-liveness", exist_ok=True)
+    cli("create", "Chain PID Liveness", "--dir", "/tmp/chain-pid-liveness")
+    cli("ticket", "add", "chain-pid-liveness", "Task")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    proj = conn.execute("SELECT * FROM projects WHERE id=1").fetchone()
+    ticket = conn.execute("SELECT * FROM tickets WHERE id=1").fetchone()
+    try:
+        with patch("agentplan.cli._pid_is_alive", return_value=False) as mock_pid_alive:
+            result = agent_cli._monitor_chain_ticket(conn, proj, ticket, pid=12345, timeout_sec=30)
+    finally:
+        conn.close()
+
+    assert mock_pid_alive.call_count == 1
+    assert result["timed_out"] is False
+    assert result["ticket_status"] == "pending"
 
 
 def test_monitor_process_detects_timeout():
@@ -3527,6 +3564,31 @@ def test_chain_ci_mode_uses_headless_subprocess_not_terminal():
     assert mock_spawn.call_count == 0
     assert mock_popen.call_count == 1
     assert mock_monitor.call_args.args[3] == 2222
+
+
+def test_chain_fail_fast_when_no_routeable_agent_in_ci():
+    os.makedirs("/tmp/chain-no-route", exist_ok=True)
+    cli("create", "Chain No Route", "--dir", "/tmp/chain-no-route")
+    cli("role", "add", "backend")
+    cli("role", "add", "frontend")
+    cli("agent", "add", "backend-only", "--command", "echo run {ticket}", "--roles", "backend")
+    cli("ticket", "add", "chain-no-route", "Frontend task", "--tag", "role:frontend")
+
+    with patch.dict(os.environ, {"AGENTPLAN_CI": "1"}, clear=False):
+        out, err, code = cli("chain", "chain-no-route", "--max-tickets", "1")
+
+    assert code == 2
+    assert "No routeable agent for ticket #1 in project 'chain-no-route'." in err
+    assert "agentplan chain chain-no-route --default-agent <agent-name>" in err
+    assert "agentplan role list" in err
+    assert out.startswith("Starting chain for project 'chain-no-route'")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    state = conn.execute("SELECT status, current_ticket_id, pause_reason FROM chain_state WHERE project_id=1").fetchone()
+    conn.close()
+    assert state["status"] == "paused"
+    assert state["current_ticket_id"] == 1
+    assert state["pause_reason"] == "no routeable agent for ticket #1"
 
 
 # ---------------------------------------------------------------------------

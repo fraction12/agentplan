@@ -21,6 +21,9 @@ def test_marketplace_run_chain_action_forces_ci_and_emits_summary():
     assert "chain-pause-reason" in content
     assert "max-runtime" in content
     assert "max-budget-usd" in content
+    assert "PIPESTATUS" in content
+    assert "Chain exit code" in content
+    assert "::error::agentplan chain failed" in content
 
 
 def test_marketplace_workflow_template_has_concurrency_guard():

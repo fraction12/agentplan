@@ -62,8 +62,12 @@ runs:
           args+=("--cost-per-ticket-usd" "$cost_per_ticket_usd")
         fi
 
-        AGENTPLAN_CI=1 agentplan chain "${args[@]}" | tee /tmp/agentplan-chain.log
-        agentplan chain "$slug" --status | tee /tmp/agentplan-chain-status.log
+        set +e
+        AGENTPLAN_CI=1 agentplan chain "${args[@]}" 2>&1 | tee /tmp/agentplan-chain.log
+        chain_exit="${PIPESTATUS[0]}"
+        set -e
+
+        agentplan chain "$slug" --status 2>&1 | tee /tmp/agentplan-chain-status.log
 
         chain_status="$(awk -F': ' '/^Chain status:/{print $2; exit}' /tmp/agentplan-chain-status.log || true)"
         chain_status="${chain_status:-unknown}"
@@ -81,6 +85,7 @@ runs:
           echo "- Max runtime: \`${max_runtime:-none}\`"
           echo "- Max budget (USD): \`${max_budget_usd:-none}\`"
           echo "- Cost/ticket (USD): \`${cost_per_ticket_usd:-0}\`"
+          echo "- Chain exit code: \`$chain_exit\`"
           echo "- Final chain status: \`$chain_status\`"
           echo "- Pause reason: \`${chain_pause_reason:-none}\`"
           echo ""
@@ -94,3 +99,8 @@ runs:
           cat /tmp/agentplan-chain-status.log
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "$chain_exit" -ne 0 ]; then
+          echo "::error::agentplan chain failed (exit $chain_exit). See Chain Output and chain-pause-reason for routing/action details."
+          exit "$chain_exit"
+        fi
