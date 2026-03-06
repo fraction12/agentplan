@@ -7,6 +7,9 @@
   <a href="https://pypi.org/project/agentplan/"><img src="https://img.shields.io/pypi/v/agentplan" alt="PyPI version"></a>
   <a href="https://pypi.org/project/agentplan/"><img src="https://img.shields.io/pypi/dm/agentplan" alt="PyPI downloads"></a>
   <a href="https://pepy.tech/projects/agentplan"><img src="https://img.shields.io/pepy/dt/agentplan" alt="Total Downloads"></a>
+  <a href="https://github.com/fraction12/agentplan/actions/workflows/ci.yml"><img src="https://github.com/fraction12/agentplan/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/fraction12/agentplan/actions/workflows/codeql.yml"><img src="https://github.com/fraction12/agentplan/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="https://securityscorecards.dev/viewer/?uri=github.com/fraction12/agentplan"><img src="https://api.securityscorecards.dev/projects/github.com/fraction12/agentplan/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
   <a href="https://github.com/fraction12/agentplan"><img src="https://img.shields.io/github/stars/fraction12/agentplan" alt="GitHub stars"></a>
 </p>
@@ -14,6 +17,8 @@
 <p align="center"><em>agentplan is used in production AI agent pipelines. <a href="https://pypistats.org/packages/agentplan">Downloads trending on PyPI.</a></em></p>
 
 <p align="center">
+  <a href="#marketplace--actions">Marketplace & Actions</a> ·
+  <a href="#trust--security">Trust & Security</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#the-agent-loop">The Agent Loop</a> ·
   <a href="#roles--routing">Roles & Routing</a> ·
@@ -40,6 +45,47 @@ No SDK. No framework. No Python dependencies beyond stdlib.
 ```bash
 pip install agentplan
 ```
+
+## Marketplace & Actions
+
+Marketplace-ready composite actions live in this repository.
+
+| Action | Description | Documentation |
+|---|---|---|
+| `actions/setup` | Install `agentplan` from PyPI and output resolved version | [`actions/setup/README.md`](actions/setup/README.md) |
+| `actions/run-chain` | Execute `agentplan chain` in CI-safe mode and publish summary | [`actions/run-chain/README.md`](actions/run-chain/README.md) |
+
+Current captured dashboard screenshots for listing assets:
+- [`docs/marketplace/screenshots/01-dashboard-overview.png`](docs/marketplace/screenshots/01-dashboard-overview.png)
+- [`docs/marketplace/screenshots/02-ticket-kanban.png`](docs/marketplace/screenshots/02-ticket-kanban.png)
+- [`docs/marketplace/screenshots/03-chain-status.png`](docs/marketplace/screenshots/03-chain-status.png)
+
+## Trust & Security
+
+Policy and support links:
+- Support: [`docs/marketplace/support.md`](docs/marketplace/support.md)
+- Security policy: [`docs/security/security.md`](docs/security/security.md)
+- Privacy statement: [`docs/security/privacy.md`](docs/security/privacy.md)
+- Secure self-hosted deployment guidance: [`docs/security/self-hosted-dashboard-secure-deployment.md`](docs/security/self-hosted-dashboard-secure-deployment.md)
+
+### Compatibility Matrix
+
+| Surface | Supported | Notes |
+|---|---|---|
+| GitHub Actions runner | `ubuntu-latest` | Fully supported and validated in workflow templates |
+| GitHub Actions runner | `macos-latest`, `windows-latest` | Should work for `actions/setup`; `actions/run-chain` assumes `bash` shell |
+| Python runtime | 3.10+ | `agentplan` package requirement |
+| Dashboard mode | optional (`agentplan[dashboard]`) | Not required for headless chain workflows |
+
+### Secrets Contract
+
+| Secret / Token | Required | Used by | Purpose |
+|---|---|---|---|
+| `GITHUB_TOKEN` | Conditional | `.github/workflows/agentplan-marketplace.yml` issue import step | Read labeled issues into `agentplan` tickets |
+| `GITHUB_TOKEN` | Conditional | `actions/run-chain` (indirect) | Needed only if your chain commands call GitHub APIs |
+| Additional provider keys (for your agents) | Operator-defined | Your registered agent command templates/hooks | External model or webhook integrations configured by you |
+
+`agentplan` actions do not require any hard-coded third-party secrets by default.
 
 ## What's New in v0.6
 
@@ -118,8 +164,8 @@ agentplan role add research --description "Research and analysis"
 agentplan role add writing --description "Documentation"
 
 # Register agents with command templates
-agentplan agent add codex --command 'codex exec {ticket}' --roles coding
-agentplan agent add claude --command 'claude -m {ticket}' --roles research,writing
+agentplan agent add codex --command 'codex exec --skip-git-repo-check -m gpt-5 "{ticket}"' --roles coding
+agentplan agent add claude --command 'claude --print "{ticket}"' --roles research,writing
 
 # Tag tickets with roles
 agentplan ticket add myproject "Build auth middleware" --tag role:coding
@@ -146,8 +192,8 @@ agentplan init
 Multiple agents can handle the same role. Priority controls which one gets picked:
 
 ```bash
-agentplan agent add codex --command 'codex exec {ticket}' --roles coding --priority 1
-agentplan agent add claude --command 'claude -m {ticket}' --roles coding --priority 2
+agentplan agent add codex --command 'codex exec --skip-git-repo-check -m gpt-5 "{ticket}"' --roles coding --priority 1
+agentplan agent add claude --command 'claude --print "{ticket}"' --roles coding --priority 2
 # codex gets coding tickets first (lower number = higher priority)
 ```
 
