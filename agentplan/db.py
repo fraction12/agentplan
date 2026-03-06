@@ -163,6 +163,33 @@ def init_db(conn):
             deadline_at TEXT,
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
         );
+        CREATE TABLE IF NOT EXISTS claim_locks (
+            project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+            lock_owner TEXT NOT NULL,
+            lock_acquired_at TEXT NOT NULL,
+            lock_expires_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS issue_sync_map (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            repo TEXT NOT NULL,
+            issue_number INTEGER NOT NULL,
+            issue_url TEXT NOT NULL,
+            issue_state TEXT NOT NULL,
+            last_synced_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
+            UNIQUE(project_id, repo, issue_number),
+            UNIQUE(ticket_id)
+        );
+        CREATE TABLE IF NOT EXISTS runtime_artifacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            artifact_type TEXT NOT NULL,
+            path TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_artifacts_project_type ON runtime_artifacts(project_id, artifact_type);
     """
     )
 
@@ -223,6 +250,48 @@ def init_db(conn):
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
         )
         """)
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS claim_locks (
+            project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+            lock_owner TEXT NOT NULL,
+            lock_acquired_at TEXT NOT NULL,
+            lock_expires_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS issue_sync_map (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            repo TEXT NOT NULL,
+            issue_number INTEGER NOT NULL,
+            issue_url TEXT NOT NULL,
+            issue_state TEXT NOT NULL,
+            last_synced_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
+            UNIQUE(project_id, repo, issue_number),
+            UNIQUE(ticket_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS runtime_artifacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            artifact_type TEXT NOT NULL,
+            path TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+        )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_artifacts_project_type ON runtime_artifacts(project_id, artifact_type)"
+    )
 
 
     try:

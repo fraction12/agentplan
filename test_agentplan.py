@@ -3406,7 +3406,12 @@ def test_project_default_timeout_applies_to_chain_when_ticket_timeout_missing():
 
 
 def test_chain_warns_when_linked_dir_missing():
-    cli("create", "Chain Missing Dir", "--dir", "/tmp/does-not-exist-agentplan")
+    import shutil
+    import tempfile
+
+    missing_dir = tempfile.mkdtemp(prefix="agentplan-missing-dir-")
+    shutil.rmtree(missing_dir)
+    cli("create", "Chain Missing Dir", "--dir", missing_dir)
     cli("ticket", "add", "chain-missing-dir", "Task")
     with patch("agentplan.cli.db_route_ticket", return_value={"name": "dash", "command_template": "echo run {ticket}"}), \
          patch("agentplan.cli.spawn_terminal", return_value=999), \
@@ -3414,7 +3419,7 @@ def test_chain_warns_when_linked_dir_missing():
         out, err, code = cli("chain", "chain-missing-dir", "--default-agent", "dash")
 
     assert code == 0, err
-    assert "Warning: linked project directory does not exist: /tmp/does-not-exist-agentplan" in out
+    assert f"Warning: linked project directory does not exist: {missing_dir}" in out
 
 
 def test_chain_no_warning_when_dir_not_set():
@@ -3778,7 +3783,7 @@ def test_chain_max_tickets_limits_processing():
 
     assert code == 0, err
     assert mock_spawn.call_count == 1
-    assert "Reached --max-tickets=1" in out
+    assert "Stopped: max tickets reached (1/1)." in out
 
 
 def test_chain_rejects_reentry_when_already_running():
@@ -3799,3 +3804,216 @@ def test_chain_rejects_reentry_when_already_running():
     assert out == ""
     assert "already running" in err.lower()
     assert mock_spawn.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Marketplace Phase 1 remaining tickets (#15-#19)
+# ---------------------------------------------------------------------------
+
+def test_issue_import_creates_ticket_and_mapping():
+    cli("create", "Issue Import Project")
+
+    class FakeResp:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def read(self):
+            return json.dumps(self.payload).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    pages = [
+        [
+            {"number": 12, "title": "Import me", "body": "Issue body", "state": "open", "html_url": "https://github.com/acme/repo/issues/12"},
+            {"number": 99, "title": "PR", "pull_request": {"url": "https://api.github.com/pulls/99"}},
+        ],
+        [],
+    ]
+
+    with patch("agentplan.cli.urllib.request.urlopen", side_effect=[FakeResp(pages[0]), FakeResp(pages[1])]):
+        out, err, code = cli(
+            "issue", "import", "issue-import-project",
+            "--repo", "acme/repo",
+            "--token", "tkn",
+            "--label", "agentplan",
+        )
+
+    assert code == 0, err
+    assert "imported=1" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    ticket = conn.execute("SELECT num, title, tags FROM tickets WHERE project_id=1 ORDER BY num").fetchone()
+    mapping = conn.execute("SELECT repo, issue_number FROM issue_sync_map WHERE project_id=1").fetchone()
+    conn.close()
+    assert ticket["num"] == 1
+    assert ticket["title"] == "Import me"
+    assert "github-issue" in ticket["tags"]
+    assert mapping["repo"] == "acme/repo"
+    assert mapping["issue_number"] == 12
+
+
+def test_issue_import_is_idempotent_and_updates_existing_ticket():
+    cli("create", "Issue Import Update")
+
+    class FakeResp:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def read(self):
+            return json.dumps(self.payload).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    first = [{"number": 7, "title": "Old title", "body": "A", "state": "open", "html_url": "https://github.com/acme/repo/issues/7"}]
+    second = [{"number": 7, "title": "New title", "body": "B", "state": "open", "html_url": "https://github.com/acme/repo/issues/7"}]
+
+    with patch("agentplan.cli.urllib.request.urlopen", side_effect=[FakeResp(first), FakeResp([])]):
+        cli("issue", "import", "issue-import-update", "--repo", "acme/repo", "--token", "tkn")
+    with patch("agentplan.cli.urllib.request.urlopen", side_effect=[FakeResp(second), FakeResp([])]):
+        out, err, code = cli("issue", "import", "issue-import-update", "--repo", "acme/repo", "--token", "tkn")
+
+    assert code == 0, err
+    assert "updated=1" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute("SELECT num, title FROM tickets WHERE project_id=1 ORDER BY num").fetchall()
+    conn.close()
+    assert len(rows) == 1
+    assert rows[0]["title"] == "New title"
+
+
+def test_pr_automate_dry_run_prints_schema():
+    os.makedirs("/tmp/pr-auto-dry", exist_ok=True)
+    cli("create", "PR Auto Dry", "--dir", "/tmp/pr-auto-dry")
+    cli("ticket", "add", "pr-auto-dry", "Implement import adapter")
+
+    with patch("agentplan.cli.shutil.which", return_value="/usr/bin/fake"):
+        out, err, code = cli("pr", "automate", "pr-auto-dry", "--ticket-id", "1", "--dry-run")
+
+    assert code == 0, err
+    assert "agentplan/pr-auto-dry/t1-implement-import-adapter" in out
+    assert "agentplan(pr-auto-dry): ticket #1 Implement import adapter" in out
+
+
+def test_pr_automate_creates_pr_when_none_exists():
+    os.makedirs("/tmp/pr-auto-live", exist_ok=True)
+    cli("create", "PR Auto Live", "--dir", "/tmp/pr-auto-live")
+    cli("ticket", "add", "pr-auto-live", "Add guardrails")
+
+    calls = []
+
+    def fake_run(argv, cwd=None, capture_output=True, text=True):
+        calls.append(list(argv))
+        cmd = " ".join(argv)
+        if argv[:3] == ["git", "diff", "--cached"]:
+            return type("R", (), {"returncode": 1, "stdout": "", "stderr": ""})()
+        if cmd.startswith("gh pr list"):
+            return type("R", (), {"returncode": 0, "stdout": "[]", "stderr": ""})()
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with patch("agentplan.cli.shutil.which", return_value="/usr/bin/fake"), \
+         patch("agentplan.cli.subprocess.run", side_effect=fake_run):
+        out, err, code = cli("pr", "automate", "pr-auto-live", "--ticket-id", "1", "--base", "main")
+
+    assert code == 0, err
+    assert "Created PR for branch" in out
+    assert any(cmd[:2] == ["git", "commit"] for cmd in calls)
+    assert any(cmd[:3] == ["gh", "pr", "create"] for cmd in calls)
+
+
+def test_artifact_verify_detects_tampering():
+    os.makedirs("/tmp/artifact-verify", exist_ok=True)
+    cli("create", "Artifact Verify", "--dir", "/tmp/artifact-verify")
+    out_chain, err_chain, code_chain = cli("chain", "artifact-verify")
+    assert code_chain == 0, err_chain
+    assert "Chain complete" in out_chain
+
+    artifact_path = Path("/tmp/artifact-verify/.agentplan/artifacts/chain-state.json")
+    assert artifact_path.exists()
+    artifact_path.write_text('{"tampered":true}', encoding="utf-8")
+
+    out, err, code = cli("artifact", "verify", "artifact-verify")
+    assert out == ""
+    assert code == 2
+    assert "integrity check failed" in err.lower()
+
+
+def test_chain_guardrail_max_runtime_stops_with_reason():
+    os.makedirs("/tmp/guardrail-runtime", exist_ok=True)
+    cli("create", "Guardrail Runtime", "--dir", "/tmp/guardrail-runtime")
+    cli("ticket", "add", "guardrail-runtime", "T1")
+
+    with patch("agentplan.cli.time.monotonic", side_effect=[0.0, 2.0]):
+        out, err, code = cli("chain", "guardrail-runtime", "--max-runtime", "1")
+
+    assert code == 0, err
+    assert "Stopped: max runtime reached (2s/1s)." in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    state = conn.execute("SELECT status, pause_reason FROM chain_state WHERE project_id=1").fetchone()
+    conn.close()
+    assert state["status"] == "stopped"
+    assert "max runtime reached" in state["pause_reason"]
+
+
+def test_chain_guardrail_budget_stops_with_reason():
+    os.makedirs("/tmp/guardrail-budget", exist_ok=True)
+    cli("create", "Guardrail Budget", "--dir", "/tmp/guardrail-budget")
+    cli("ticket", "add", "guardrail-budget", "T1")
+
+    out, err, code = cli(
+        "chain",
+        "guardrail-budget",
+        "--max-budget-usd",
+        "1",
+        "--cost-per-ticket-usd",
+        "2",
+    )
+    assert code == 0, err
+    assert "Stopped: budget cap reached" in out
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    state = conn.execute("SELECT status, pause_reason FROM chain_state WHERE project_id=1").fetchone()
+    conn.close()
+    assert state["status"] == "stopped"
+    assert "budget cap reached" in state["pause_reason"]
+
+
+def test_claim_lock_acquire_release_cycle():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Claim Lock Project")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    acquired_a = agent_cli._acquire_claim_lock(conn, 1, "owner-a", ttl_sec=30, wait_sec=0)
+    acquired_b = agent_cli._acquire_claim_lock(conn, 1, "owner-b", ttl_sec=30, wait_sec=0)
+    agent_cli._release_claim_lock(conn, 1, "owner-a")
+    acquired_b_after = agent_cli._acquire_claim_lock(conn, 1, "owner-b", ttl_sec=30, wait_sec=0)
+    conn.rollback()
+    conn.close()
+
+    assert acquired_a is True
+    assert acquired_b is False
+    assert acquired_b_after is True
+
+
+def test_claim_returns_none_when_lock_unavailable():
+    import agentplan.cli as agent_cli
+
+    cli("create", "Claim Lock Busy")
+    cli("ticket", "add", "claim-lock-busy", "T1")
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    with patch("agentplan.cli._acquire_claim_lock", return_value=False):
+        row = agent_cli._claim_next_ticket(conn, 1, started_by="dash")
+    conn.close()
+
+    assert row is None
