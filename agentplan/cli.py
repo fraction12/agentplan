@@ -1365,14 +1365,7 @@ def _monitor_chain_ticket(conn, project, ticket, pid, timeout_sec):
                 "timed_out": True,
             }
 
-        alive = True
-        if pid > 0:
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                alive = False
-            except Exception:
-                alive = True
+        alive = _pid_is_alive(pid) if pid > 0 else True
 
         if not alive:
             refreshed = conn.execute("SELECT * FROM tickets WHERE id=?", (ticket["id"],)).fetchone()
@@ -1552,10 +1545,17 @@ def cmd_chain(args):
 
         agent = db_route_ticket(conn, ticket, default_agent_name=args.default_agent)
         if not agent:
-            reason = f"no agent found for ticket #{ticket['num']}"
-            print(f"Pausing chain: {reason}")
+            reason = f"no routeable agent for ticket #{ticket['num']}"
             _set_chain_state_with_artifact(conn, proj, "paused", current_ticket_id=ticket["id"], pause_reason=reason)
-            break
+            conn.close()
+            fail(
+                f"No routeable agent for ticket #{ticket['num']} in project '{proj['slug']}'.",
+                suggestions=[
+                    f"Set a fallback agent for chain runs: `agentplan chain {proj['slug']} --default-agent <agent-name>`.",
+                    f"Tag ticket #{ticket['num']} with a role mapped to an agent (for example: `agentplan ticket edit {proj['slug']} {ticket['num']} --tag role:backend`).",
+                    "Inspect routing config with: `agentplan role list` and `agentplan agent list`.",
+                ],
+            )
 
         timeout_sec = _effective_ticket_timeout_sec(proj, ticket, override_timeout=chain_timeout_override)
         if timeout_sec is None:
@@ -1771,8 +1771,14 @@ def cmd_route(args):
     conn.close()
 
     if not agent:
-        print(f"No agent found for ticket #{ticket['num']}")
-        return
+        fail(
+            f"No routeable agent for ticket #{ticket['num']} in project '{proj['slug']}'.",
+            suggestions=[
+                f"Retry with a fallback: `agentplan route {proj['slug']} {ticket['num']} --default-agent <agent-name>`.",
+                f"Assign a role tag that matches a registered agent (for example: `agentplan ticket edit {proj['slug']} {ticket['num']} --tag role:backend`).",
+                "Inspect routing config with: `agentplan role list` and `agentplan agent list`.",
+            ],
+        )
 
     print(agent["name"])
     if getattr(args, "terminal_pref", None):
