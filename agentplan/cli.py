@@ -2,6 +2,7 @@
 """agentplan — Project management CLI for AI agents."""
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -14,7 +15,9 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
 from datetime import datetime, timedelta
 
 from agentplan.db import (
@@ -173,12 +176,18 @@ TOP_LEVEL_COMMANDS = [
     "auto-tag",
     "chain",
     "project",
+    "issue",
+    "pr",
+    "artifact",
 ]
 TICKET_COMMANDS = ["add", "update", "edit", "done", "skip", "start", "block", "fail", "review", "list"]
 SUBTASK_COMMANDS = ["add", "done", "list"]
 ROLE_COMMANDS = ["list", "add", "remove", "update"]
 HOOK_COMMANDS = ["add", "list", "remove"]
 AGENT_COMMANDS = ["add", "list", "remove", "update"]
+ISSUE_COMMANDS = ["import"]
+PR_COMMANDS = ["automate"]
+ARTIFACT_COMMANDS = ["status", "verify"]
 PROJECT_TOP_LEVEL_COMMANDS = {
     "status",
     "next",
@@ -199,6 +208,11 @@ PROJECT_TOP_LEVEL_COMMANDS = {
     "chain",
     "project",
 }
+
+CHAIN_DEFAULT_MAX_TICKETS = 50
+CHAIN_HARD_MAX_TICKETS = 500
+CLAIM_LOCK_TTL_SEC = 20
+CLAIM_LOCK_WAIT_SEC = 3
 
 
 class CliError(Exception):
@@ -521,6 +535,27 @@ def _completion_suggestions(words, current):
             return _completion_filter(AGENT_COMMANDS, current)
         return []
 
+    if command == "issue":
+        if len(words) == 1:
+            return _completion_filter(ISSUE_COMMANDS, current)
+        if len(words) == 2 and words[1] in ISSUE_COMMANDS:
+            return _completion_filter(_completion_project_slugs(), current)
+        return []
+
+    if command == "pr":
+        if len(words) == 1:
+            return _completion_filter(PR_COMMANDS, current)
+        if len(words) == 2 and words[1] in PR_COMMANDS:
+            return _completion_filter(_completion_project_slugs(), current)
+        return []
+
+    if command == "artifact":
+        if len(words) == 1:
+            return _completion_filter(ARTIFACT_COMMANDS, current)
+        if len(words) == 2 and words[1] in ARTIFACT_COMMANDS:
+            return _completion_filter(_completion_project_slugs(), current)
+        return []
+
     if command in PROJECT_TOP_LEVEL_COMMANDS and len(words) == 1:
         return _completion_filter(_completion_project_slugs(), current)
 
@@ -750,6 +785,187 @@ def _warn_if_missing_project_dir(project):
         print(f"Warning: linked project directory does not exist: {project_dir}")
 
 
+def _timestamp_after_seconds(seconds):
+    return (datetime.now() + timedelta(seconds=int(seconds))).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _runtime_artifact_path(project, artifact_type):
+    project_dir = (project.get("dir") if hasattr(project, "get") else project["dir"]) if project else None
+    if not project_dir:
+        return None
+    artifact_dir = os.path.join(project_dir, ".agentplan", "artifacts")
+    os.makedirs(artifact_dir, exist_ok=True)
+    return os.path.join(artifact_dir, f"{artifact_type}.json")
+
+
+def _persist_runtime_artifact(conn, project, artifact_type, payload):
+    artifact_path = _runtime_artifact_path(project, artifact_type)
+    if not artifact_path:
+        return None
+    payload_with_meta = dict(payload or {})
+    payload_with_meta["recorded_at"] = _now()
+    encoded = json.dumps(payload_with_meta, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    digest = hashlib.sha256(encoded).hexdigest()
+    tmp_path = f"{artifact_path}.tmp.{uuid.uuid4().hex}"
+    with open(tmp_path, "wb") as f:
+        f.write(encoded)
+    os.replace(tmp_path, artifact_path)
+    conn.execute(
+        """
+        INSERT INTO runtime_artifacts (project_id, artifact_type, path, sha256, recorded_at)
+        VALUES (?,?,?,?,?)
+        ON CONFLICT(project_id, artifact_type) DO UPDATE SET
+          path=excluded.path,
+          sha256=excluded.sha256,
+          recorded_at=excluded.recorded_at
+        """,
+        (project["id"], artifact_type, artifact_path, digest, _now()),
+    )
+    conn.commit()
+    return {"path": artifact_path, "sha256": digest}
+
+
+def _load_runtime_artifact(conn, project, artifact_type):
+    row = conn.execute(
+        """
+        SELECT * FROM runtime_artifacts
+        WHERE project_id=? AND artifact_type=?
+        """,
+        (project["id"], artifact_type),
+    ).fetchone()
+    if not row:
+        return None
+    path = row["path"]
+    if not path or not os.path.isfile(path):
+        return {"ok": False, "error": f"artifact file missing: {path}"}
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except OSError as exc:
+        return {"ok": False, "error": f"failed reading artifact: {exc}"}
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != row["sha256"]:
+        return {"ok": False, "error": "sha256 mismatch", "expected": row["sha256"], "actual": digest}
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        return {"ok": False, "error": f"invalid artifact json: {exc}"}
+    return {"ok": True, "path": path, "sha256": digest, "payload": payload}
+
+
+def _set_chain_state_with_artifact(
+    conn,
+    project,
+    status,
+    current_ticket_id=None,
+    pause_reason=None,
+    heartbeat_at=None,
+    deadline_at=None,
+    stop_reason=None,
+):
+    db_set_chain_state(
+        conn,
+        project["id"],
+        status,
+        current_ticket_id=current_ticket_id,
+        pause_reason=pause_reason,
+        heartbeat_at=heartbeat_at,
+        deadline_at=deadline_at,
+    )
+    payload = {
+        "project_id": project["id"],
+        "project_slug": project["slug"],
+        "status": status,
+        "current_ticket_id": current_ticket_id,
+        "pause_reason": pause_reason,
+        "heartbeat_at": heartbeat_at,
+        "deadline_at": deadline_at,
+        "stop_reason": stop_reason,
+    }
+    try:
+        _persist_runtime_artifact(conn, project, "chain-state", payload)
+    except OSError as exc:
+        print(f"Warning: failed writing runtime artifact: {exc}", file=sys.stderr)
+
+
+def _acquire_claim_lock(conn, project_id, owner, ttl_sec=CLAIM_LOCK_TTL_SEC, wait_sec=CLAIM_LOCK_WAIT_SEC):
+    deadline = time.monotonic() + max(float(wait_sec), 0.0)
+    while True:
+        now_ts = _now()
+        expires_ts = _timestamp_after_seconds(ttl_sec)
+        updated = conn.execute(
+            """
+            INSERT INTO claim_locks (project_id, lock_owner, lock_acquired_at, lock_expires_at)
+            VALUES (?,?,?,?)
+            ON CONFLICT(project_id) DO UPDATE SET
+              lock_owner=excluded.lock_owner,
+              lock_acquired_at=excluded.lock_acquired_at,
+              lock_expires_at=excluded.lock_expires_at
+            WHERE claim_locks.lock_expires_at <= excluded.lock_acquired_at
+               OR claim_locks.lock_owner = excluded.lock_owner
+            """,
+            (project_id, owner, now_ts, expires_ts),
+        ).rowcount
+        if updated == 1:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def _release_claim_lock(conn, project_id, owner):
+    conn.execute("DELETE FROM claim_locks WHERE project_id=? AND lock_owner=?", (project_id, owner))
+
+
+def _http_json_get(url, token):
+    req = urllib.request.Request(url)
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("User-Agent", "agentplan/issue-import")
+    req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _fetch_github_issues(repo, label, state, token):
+    issues = []
+    for page in range(1, 11):
+        query = urllib.parse.urlencode(
+            {
+                "state": state,
+                "per_page": 100,
+                "page": page,
+                "labels": label,
+            }
+        )
+        url = f"https://api.github.com/repos/{repo}/issues?{query}"
+        batch = _http_json_get(url, token)
+        if not isinstance(batch, list):
+            fail("GitHub API returned an unexpected issues payload.")
+        if not batch:
+            break
+        for item in batch:
+            if item.get("pull_request"):
+                continue
+            issues.append(item)
+        if len(batch) < 100:
+            break
+    return issues
+
+
+def _slugify_branch_part(value, fallback):
+    part = slugify(value or "")
+    return part or fallback
+
+
+def _run_cmd(argv, cwd=None, capture_output=True):
+    return subprocess.run(
+        argv,
+        cwd=cwd,
+        capture_output=capture_output,
+        text=True,
+    )
+
+
 def _iterm2_running():
     try:
         result = subprocess.run(["pgrep", "-x", "iTerm2"], capture_output=True, text=True)
@@ -775,6 +991,24 @@ def _iterm2_installed():
 def _terminal_preference(explicit=None):
     pref = (explicit or os.environ.get("AGENTPLAN_TERMINAL", "auto") or "auto").strip().lower()
     return pref if pref in TERMINAL_CHOICES else "auto"
+
+
+def _is_ci_mode():
+    raw = (os.environ.get("AGENTPLAN_CI") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _spawn_headless_subprocess(command, cwd=None):
+    return subprocess.Popen(
+        command,
+        shell=True,
+        executable="/bin/bash",
+        cwd=cwd,
+        stdout=None,
+        stderr=None,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 def detect_terminal_app(preference=None):
@@ -1092,9 +1326,9 @@ def _monitor_chain_ticket(conn, project, ticket, pid, timeout_sec):
     now_dt = datetime.now()
     deadline_dt = now_dt + timedelta(seconds=timeout_sec)
 
-    db_set_chain_state(
+    _set_chain_state_with_artifact(
         conn,
-        project["id"],
+        project,
         "running",
         current_ticket_id=ticket["id"],
         pause_reason=None,
@@ -1114,9 +1348,9 @@ def _monitor_chain_ticket(conn, project, ticket, pid, timeout_sec):
         if latest_hb and latest_hb > now_dt:
             now_dt = latest_hb
             deadline_dt = now_dt + timedelta(seconds=timeout_sec)
-            db_set_chain_state(
+            _set_chain_state_with_artifact(
                 conn,
-                project["id"],
+                project,
                 "running",
                 current_ticket_id=ticket["id"],
                 pause_reason=None,
@@ -1154,6 +1388,41 @@ def cmd_chain(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     chain_timeout_override = _validate_timeout_sec(getattr(args, "timeout", None))
+    run_started_at = time.monotonic()
+    max_tickets = args.max_tickets
+    if max_tickets is None:
+        env_cap = (os.environ.get("AGENTPLAN_MAX_TICKETS_PER_RUN") or "").strip()
+        if env_cap:
+            try:
+                max_tickets = int(env_cap)
+            except ValueError:
+                conn.close()
+                fail("AGENTPLAN_MAX_TICKETS_PER_RUN must be an integer.")
+        else:
+            max_tickets = CHAIN_DEFAULT_MAX_TICKETS
+    if max_tickets <= 0:
+        conn.close()
+        fail("--max-tickets must be a positive integer.")
+    if max_tickets > CHAIN_HARD_MAX_TICKETS:
+        conn.close()
+        fail(
+            f"--max-tickets exceeds hard cap ({CHAIN_HARD_MAX_TICKETS}).",
+            suggestions=[f"Use a value between 1 and {CHAIN_HARD_MAX_TICKETS}."],
+        )
+    max_runtime_sec = getattr(args, "max_runtime", None)
+    if max_runtime_sec is not None and max_runtime_sec <= 0:
+        conn.close()
+        fail("--max-runtime must be a positive integer.")
+    max_budget_usd = getattr(args, "max_budget", None)
+    if max_budget_usd is not None and max_budget_usd <= 0:
+        conn.close()
+        fail("--max-budget-usd must be a positive number.")
+    cost_per_ticket_usd = getattr(args, "cost_per_ticket", 0.0)
+    if cost_per_ticket_usd is None:
+        cost_per_ticket_usd = 0.0
+    if cost_per_ticket_usd < 0:
+        conn.close()
+        fail("--cost-per-ticket-usd cannot be negative.")
 
     if getattr(args, "status", False):
         state = db_get_chain_state(conn, proj["id"])
@@ -1176,16 +1445,23 @@ def cmd_chain(args):
     if getattr(args, "stop", False):
         state = db_get_chain_state(conn, proj["id"])
         if state and state.get("status") == "running":
-            db_set_chain_state(
+            _set_chain_state_with_artifact(
                 conn,
-                proj["id"],
+                proj,
                 "stopped",
                 current_ticket_id=state.get("current_ticket_id"),
                 pause_reason="stop requested",
+                stop_reason="stop requested",
             )
             print("Chain stop requested. Will stop after current ticket.")
         else:
-            db_set_chain_state(conn, proj["id"], "stopped", pause_reason="stop requested")
+            _set_chain_state_with_artifact(
+                conn,
+                proj,
+                "stopped",
+                pause_reason="stop requested",
+                stop_reason="stop requested",
+            )
             print("Chain marked stopped.")
         conn.close()
         return
@@ -1207,32 +1483,78 @@ def cmd_chain(args):
 
     processed = 0
     _warn_if_missing_project_dir(proj)
-    db_set_chain_state(conn, proj["id"], "running", current_ticket_id=None, pause_reason=None)
+    _set_chain_state_with_artifact(conn, proj, "running", current_ticket_id=None, pause_reason=None)
     print(f"Starting chain for project '{proj['slug']}'")
 
     while True:
-        if args.max_tickets is not None and processed >= args.max_tickets:
-            print(f"Reached --max-tickets={args.max_tickets}; stopping run.")
-            db_set_chain_state(conn, proj["id"], "stopped", current_ticket_id=None, pause_reason="max tickets reached")
+        if processed >= max_tickets:
+            reason = f"max tickets reached ({processed}/{max_tickets})"
+            print(f"Stopped: {reason}.")
+            _set_chain_state_with_artifact(
+                conn,
+                proj,
+                "stopped",
+                current_ticket_id=None,
+                pause_reason=reason,
+                stop_reason=reason,
+            )
             break
 
         state = db_get_chain_state(conn, proj["id"])
         if state and state.get("status") == "stopped" and processed > 0:
             print("Chain stop acknowledged.")
-            db_set_chain_state(conn, proj["id"], "stopped", current_ticket_id=None, pause_reason="stop requested")
+            _set_chain_state_with_artifact(
+                conn,
+                proj,
+                "stopped",
+                current_ticket_id=None,
+                pause_reason="stop requested",
+                stop_reason="stop requested",
+            )
             break
+
+        elapsed_sec = int(time.monotonic() - run_started_at)
+        if max_runtime_sec is not None and elapsed_sec >= max_runtime_sec:
+            reason = f"max runtime reached ({elapsed_sec}s/{max_runtime_sec}s)"
+            print(f"Stopped: {reason}.")
+            _set_chain_state_with_artifact(
+                conn,
+                proj,
+                "stopped",
+                current_ticket_id=None,
+                pause_reason=reason,
+                stop_reason=reason,
+            )
+            break
+
+        if max_budget_usd is not None:
+            projected = (processed + 1) * float(cost_per_ticket_usd)
+            if projected > float(max_budget_usd):
+                reason = (
+                    f"budget cap reached (projected ${projected:.2f} > max ${float(max_budget_usd):.2f})"
+                )
+                print(f"Stopped: {reason}.")
+                _set_chain_state_with_artifact(
+                    conn,
+                    proj,
+                    "stopped",
+                    current_ticket_id=None,
+                    pause_reason=reason,
+                    stop_reason=reason,
+                )
+                break
 
         ticket = _next_chain_candidate(conn, proj["id"])
         if not ticket:
             print("No more unblocked tickets. Chain complete.")
-            db_set_chain_state(conn, proj["id"], "done", current_ticket_id=None, pause_reason=None)
+            _set_chain_state_with_artifact(conn, proj, "done", current_ticket_id=None, pause_reason=None)
             break
 
         agent = db_route_ticket(conn, ticket, default_agent_name=args.default_agent)
         if not agent:
             reason = f"no agent found for ticket #{ticket['num']}"
             print(f"Pausing chain: {reason}")
-            db_set_chain_state(conn, proj["id"], "paused", current_ticket_id=ticket["id"], pause_reason=reason)
+            _set_chain_state_with_artifact(conn, proj, "paused", current_ticket_id=ticket["id"], pause_reason=reason)
             break
 
         timeout_sec = _effective_ticket_timeout_sec(proj, ticket, override_timeout=chain_timeout_override)
@@ -1255,7 +1577,18 @@ def cmd_chain(args):
         conn.commit()
 
         print(f"→ Ticket #{ticket['num']} via agent '{agent['name']}' (timeout {timeout_sec}s)")
-        pid = spawn_terminal(command, title=f"agentplan:{agent['name']}")
+        if _is_ci_mode():
+            try:
+                proc = _spawn_headless_subprocess(command, cwd=project_dir)
+            except OSError as exc:
+                reason = f"failed to start headless agent command: {exc}"
+                print(f"Paused: {reason}")
+                _set_chain_state_with_artifact(conn, proj, "paused", current_ticket_id=ticket["id"], pause_reason=reason)
+                break
+            pid = proc.pid
+            print(f"Started headless agent command (pid={pid})")
+        else:
+            pid = spawn_terminal(command, title=f"agentplan:{agent['name']}")
 
         result = _monitor_chain_ticket(conn, proj, ticket, pid, timeout_sec=timeout_sec)
         refreshed = conn.execute("SELECT * FROM tickets WHERE id=?", (ticket["id"],)).fetchone()
@@ -1264,24 +1597,24 @@ def cmd_chain(args):
         if result.get("timed_out"):
             reason = _mark_ticket_failed_for_timeout(conn, proj, refreshed or ticket, timeout_sec)
             print(f"Paused: ticket #{ticket['num']} timed out ({timeout_sec}s)")
-            db_set_chain_state(conn, proj["id"], "paused", current_ticket_id=ticket["id"], pause_reason=reason)
+            _set_chain_state_with_artifact(conn, proj, "paused", current_ticket_id=ticket["id"], pause_reason=reason)
             break
 
         if status == "done":
             processed += 1
             print(f"✓ Ticket #{ticket['num']} done; continuing")
-            db_set_chain_state(conn, proj["id"], "running", current_ticket_id=None, pause_reason=None)
+            _set_chain_state_with_artifact(conn, proj, "running", current_ticket_id=None, pause_reason=None)
             continue
 
         if status in {"blocked", "failed", "needs-review"}:
             reason = f"ticket #{ticket['num']} ended as {status}"
             print(f"Paused: {reason}")
-            db_set_chain_state(conn, proj["id"], "paused", current_ticket_id=ticket["id"], pause_reason=reason)
+            _set_chain_state_with_artifact(conn, proj, "paused", current_ticket_id=ticket["id"], pause_reason=reason)
             break
 
         reason = f"ticket #{ticket['num']} ended with status {status}"
         print(f"Paused: {reason}")
-        db_set_chain_state(conn, proj["id"], "paused", current_ticket_id=ticket["id"], pause_reason=reason)
+        _set_chain_state_with_artifact(conn, proj, "paused", current_ticket_id=ticket["id"], pause_reason=reason)
         break
 
     conn.close()
@@ -1390,6 +1723,19 @@ def cmd_context(args):
         proj["slug"],
         project_dir,
     )
+    if _is_ci_mode():
+        try:
+            proc = _spawn_headless_subprocess(command, cwd=project_dir)
+        except OSError as exc:
+            conn.close()
+            fail(
+                f"Failed to start context generation: {exc}",
+                suggestions=["Check the agent command template and project directory permissions."],
+            )
+        print(f"Started context generation with agent '{writer_agent['name']}' (headless, pid={proc.pid}).")
+        conn.close()
+        return
+
     spawn_result = spawn_terminal(command, title=f"agentplan:{writer_agent['name']}")
     if spawn_result == 0:
         print(f"Started context generation with agent '{writer_agent['name']}' in terminal.")
@@ -2062,8 +2408,13 @@ def _reap_expired_claims(conn, project_id):
 def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
     """Atomically claim the next unblocked pending ticket for a project."""
     tag_filter = (tag or "").strip().lower()
+    lock_owner = f"pid-{os.getpid()}-thr-{threading.get_ident()}"
     conn.execute("BEGIN IMMEDIATE")
     try:
+        if not _acquire_claim_lock(conn, project_id, lock_owner):
+            conn.rollback()
+            return None
+
         _reap_expired_claims(conn, project_id)
 
         tickets = conn.execute(
@@ -2078,6 +2429,7 @@ def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
         ]
         candidates = _sort_next_items(candidates)
         if not candidates:
+            _release_claim_lock(conn, project_id, lock_owner)
             conn.rollback()
             return None
 
@@ -2090,11 +2442,13 @@ def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
             (started_by, claimed_at, chosen["id"]),
         ).rowcount
         if updated != 1:
+            _release_claim_lock(conn, project_id, lock_owner)
             conn.rollback()
             return None
 
         _record_ticket_history(conn, chosen["id"], chosen["status"], "started")
         conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), project_id))
+        _release_claim_lock(conn, project_id, lock_owner)
         claimed = conn.execute("SELECT * FROM tickets WHERE id=?", (chosen["id"],)).fetchone()
         conn.commit()
         return claimed
@@ -2530,9 +2884,9 @@ def cmd_log(args):
             deadline_dt = now_dt + timedelta(seconds=timeout_sec)
             state = db_get_chain_state(conn, proj["id"])
             if state:
-                db_set_chain_state(
+                _set_chain_state_with_artifact(
                     conn,
-                    proj["id"],
+                    proj,
                     state["status"],
                     current_ticket_id=state.get("current_ticket_id"),
                     pause_reason=state.get("pause_reason"),
@@ -2996,6 +3350,252 @@ def cmd_agent_update(args):
     conn.close()
 
 
+def cmd_issue_import(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    repo = (args.repo or os.environ.get("GITHUB_REPOSITORY") or "").strip()
+    token = (args.token or os.environ.get("GITHUB_TOKEN") or "").strip()
+    if not repo:
+        conn.close()
+        fail("GitHub repo is required (use --repo or GITHUB_REPOSITORY).")
+    if "/" not in repo:
+        conn.close()
+        fail("GitHub repo must be in OWNER/REPO format.")
+    if not token:
+        conn.close()
+        fail("GitHub token is required (use --token or GITHUB_TOKEN).")
+
+    try:
+        issues = _fetch_github_issues(repo, args.label, args.state, token)
+    except urllib.error.HTTPError as exc:
+        conn.close()
+        fail(f"GitHub API request failed: HTTP {exc.code}.")
+    except urllib.error.URLError as exc:
+        conn.close()
+        fail(f"GitHub API request failed: {exc.reason}.")
+
+    imported = 0
+    updated = 0
+    skipped = 0
+    for issue in issues:
+        issue_number = int(issue.get("number"))
+        issue_title = (issue.get("title") or "").strip() or f"Issue #{issue_number}"
+        issue_body = (issue.get("body") or "").strip()
+        issue_url = issue.get("html_url") or f"https://github.com/{repo}/issues/{issue_number}"
+        issue_state = (issue.get("state") or "open").strip().lower()
+
+        existing = conn.execute(
+            """
+            SELECT * FROM issue_sync_map
+            WHERE project_id=? AND repo=? AND issue_number=?
+            """,
+            (proj["id"], repo, issue_number),
+        ).fetchone()
+
+        description = (
+            f"Imported from GitHub issue {repo}#{issue_number}\n"
+            f"Source: {issue_url}\n\n"
+            f"{issue_body}"
+        ).strip()
+        tags = _parse_tags(f"github-issue,github:{repo.lower()},issue:{issue_number}")
+
+        if existing:
+            if args.dry_run:
+                print(f"[dry-run] would sync existing issue #{issue_number} -> ticket #{existing['ticket_id']}")
+                skipped += 1
+                continue
+            conn.execute(
+                """
+                UPDATE tickets
+                SET title=?, description=?
+                WHERE id=?
+                """,
+                (issue_title, description, existing["ticket_id"]),
+            )
+            conn.execute(
+                """
+                UPDATE issue_sync_map
+                SET issue_state=?, issue_url=?, last_synced_at=?
+                WHERE id=?
+                """,
+                (issue_state, issue_url, _now(), existing["id"]),
+            )
+            updated += 1
+            continue
+
+        if args.dry_run:
+            print(f"[dry-run] would import issue #{issue_number}: {issue_title}")
+            skipped += 1
+            continue
+
+        next_num = _next_ticket_num(conn, proj["id"])
+        conn.execute(
+            """
+            INSERT INTO tickets (
+                project_id, num, title, description, status, priority, tags, depends_on, notes, created_at
+            )
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+            """,
+            (proj["id"], next_num, issue_title, description, "pending", "none", tags, "[]", None, _now()),
+        )
+        ticket_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            """
+            INSERT INTO issue_sync_map (project_id, ticket_id, repo, issue_number, issue_url, issue_state, last_synced_at)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (proj["id"], ticket_id, repo, issue_number, issue_url, issue_state, _now()),
+        )
+        _record_ticket_history(conn, ticket_id, None, "imported-from-github-issue")
+        imported += 1
+
+    conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
+    conn.commit()
+    conn.close()
+    print(
+        f"Issue import complete for {repo} label={args.label}: "
+        f"imported={imported}, updated={updated}, skipped={skipped}."
+    )
+
+
+def _ensure_command_available(binary, install_hint):
+    if shutil.which(binary):
+        return
+    fail(
+        f"Required command '{binary}' is not available on PATH.",
+        suggestions=[install_hint],
+    )
+
+
+def cmd_pr_automate(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
+    conn.close()
+
+    project_dir = (proj["dir"] if "dir" in proj.keys() else None) or ""
+    if not project_dir:
+        fail(f"No directory linked to project '{proj['slug']}'.")
+
+    _ensure_command_available("git", "Install git and retry.")
+    _ensure_command_available("gh", "Install GitHub CLI (`gh`) and authenticate with `gh auth login`.")
+
+    branch_part = _slugify_branch_part(ticket["title"], f"ticket-{ticket['num']}")
+    branch_name = f"agentplan/{proj['slug']}/t{ticket['num']}-{branch_part}"[:120]
+    commit_msg = f"agentplan({proj['slug']}): ticket #{ticket['num']} {ticket['title']}"
+    pr_title = f"[agentplan] {proj['slug']} ticket #{ticket['num']}: {ticket['title']}"
+    pr_body = "\n".join(
+        [
+            "## Summary",
+            f"- Project: `{proj['slug']}`",
+            f"- Ticket: `#{ticket['num']}`",
+            f"- Title: {ticket['title']}",
+            "",
+            "## Agentplan Context",
+            f"- Generated by `agentplan pr automate {proj['slug']} --ticket-id {ticket['num']}`",
+        ]
+    )
+
+    commands = [
+        ["git", "checkout", "-B", branch_name],
+        ["git", "add", "-A"],
+        ["git", "diff", "--cached", "--quiet"],
+    ]
+    if args.dry_run:
+        print("PR automation plan:")
+        print(f"- branch: {branch_name}")
+        print(f"- commit: {commit_msg}")
+        print(f"- title: {pr_title}")
+        print(f"- base: {args.base}")
+        for cmd in commands:
+            print(f"  $ {' '.join(shlex.quote(c) for c in cmd)}")
+        print(f"  $ gh pr list --head {branch_name} --state open --json number,url")
+        print("  $ gh pr create|edit ...")
+        return
+
+    checkout = _run_cmd(commands[0], cwd=project_dir)
+    if checkout.returncode != 0:
+        fail(f"git checkout failed: {(checkout.stderr or checkout.stdout or '').strip()}")
+
+    add = _run_cmd(commands[1], cwd=project_dir)
+    if add.returncode != 0:
+        fail(f"git add failed: {(add.stderr or add.stdout or '').strip()}")
+
+    staged_check = _run_cmd(commands[2], cwd=project_dir, capture_output=False)
+    has_staged_changes = staged_check.returncode != 0
+    if has_staged_changes:
+        commit = _run_cmd(["git", "commit", "-m", commit_msg], cwd=project_dir)
+        if commit.returncode != 0:
+            fail(f"git commit failed: {(commit.stderr or commit.stdout or '').strip()}")
+        push = _run_cmd(["git", "push", "-u", "origin", branch_name], cwd=project_dir)
+        if push.returncode != 0:
+            fail(f"git push failed: {(push.stderr or push.stdout or '').strip()}")
+
+    existing_pr = _run_cmd(
+        ["gh", "pr", "list", "--head", branch_name, "--state", "open", "--json", "number,url"],
+        cwd=project_dir,
+    )
+    if existing_pr.returncode != 0:
+        fail(f"gh pr list failed: {(existing_pr.stderr or existing_pr.stdout or '').strip()}")
+
+    pr_rows = []
+    try:
+        pr_rows = json.loads((existing_pr.stdout or "[]").strip() or "[]")
+    except json.JSONDecodeError:
+        pr_rows = []
+
+    if pr_rows:
+        number = str(pr_rows[0]["number"])
+        edit = _run_cmd(
+            ["gh", "pr", "edit", number, "--title", pr_title, "--body", pr_body, "--base", args.base],
+            cwd=project_dir,
+        )
+        if edit.returncode != 0:
+            fail(f"gh pr edit failed: {(edit.stderr or edit.stdout or '').strip()}")
+        print(f"Updated PR #{number} for branch '{branch_name}'.")
+        return
+
+    create = _run_cmd(
+        ["gh", "pr", "create", "--title", pr_title, "--body", pr_body, "--base", args.base, "--head", branch_name],
+        cwd=project_dir,
+    )
+    if create.returncode != 0:
+        fail(f"gh pr create failed: {(create.stderr or create.stdout or '').strip()}")
+    print(f"Created PR for branch '{branch_name}'.")
+
+
+def cmd_artifact_status(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    data = _load_runtime_artifact(conn, proj, "chain-state")
+    if not data:
+        conn.close()
+        print("No runtime artifact found.")
+        return
+    if not data.get("ok"):
+        conn.close()
+        print(f"Artifact status: invalid ({data.get('error')})")
+        sys.exit(1)
+    payload = data["payload"]
+    print(f"Artifact path: {data['path']}")
+    print(f"Artifact sha256: {data['sha256']}")
+    print(f"Chain status: {payload.get('status') or 'unknown'}")
+    print(f"Recorded at: {payload.get('recorded_at') or '(none)'}")
+    conn.close()
+
+
+def cmd_artifact_verify(args):
+    conn = _ensure(get_connection())
+    proj = resolve_project(conn, args.project)
+    data = _load_runtime_artifact(conn, proj, "chain-state")
+    conn.close()
+    if not data:
+        fail("No runtime artifact found for this project.")
+    if not data.get("ok"):
+        fail(f"Runtime artifact integrity check failed: {data.get('error')}")
+    print(f"Integrity OK: {data['path']} ({data['sha256']})")
+
+
 # CLI parser
 # ---------------------------------------------------------------------------
 
@@ -3166,6 +3766,40 @@ def build_parser():
     ch.add_argument("--default-agent", dest="default_agent", help="Fallback agent name if no role match")
     ch.add_argument("--max-tickets", type=int, help="Maximum tickets to process this run")
     ch.add_argument("--timeout", type=int, help="Override per-ticket timeout in seconds")
+    ch.add_argument("--max-runtime", type=int, help="Maximum runtime in seconds for this run")
+    ch.add_argument("--max-budget-usd", dest="max_budget", type=float, help="Budget cap in USD for this run")
+    ch.add_argument(
+        "--cost-per-ticket-usd",
+        dest="cost_per_ticket",
+        type=float,
+        default=0.0,
+        help="Estimated USD cost per processed ticket (used with --max-budget-usd)",
+    )
+
+    issue = sub.add_parser("issue", help="GitHub issue adapters")
+    issue_sub = issue.add_subparsers(dest="issue_command")
+    issue_import = issue_sub.add_parser("import", help="Import GitHub issues into project tickets")
+    issue_import.add_argument("project")
+    issue_import.add_argument("--repo", help="GitHub repo in owner/repo format (defaults to GITHUB_REPOSITORY)")
+    issue_import.add_argument("--label", default="agentplan", help="GitHub label to sync (default: agentplan)")
+    issue_import.add_argument("--state", choices=["open", "closed", "all"], default="open")
+    issue_import.add_argument("--token", help="GitHub token (defaults to GITHUB_TOKEN)")
+    issue_import.add_argument("--dry-run", action="store_true")
+
+    pr = sub.add_parser("pr", help="Pull request automation")
+    pr_sub = pr.add_subparsers(dest="pr_command")
+    pr_auto = pr_sub.add_parser("automate", help="Create/update branch, commit and PR for one ticket")
+    pr_auto.add_argument("project")
+    pr_auto.add_argument("--ticket-id", required=True)
+    pr_auto.add_argument("--base", default="main", help="PR base branch (default: main)")
+    pr_auto.add_argument("--dry-run", action="store_true")
+
+    artifact = sub.add_parser("artifact", help="Runtime artifacts")
+    artifact_sub = artifact.add_subparsers(dest="artifact_command")
+    artifact_status = artifact_sub.add_parser("status", help="Show runtime artifact summary")
+    artifact_status.add_argument("project")
+    artifact_verify = artifact_sub.add_parser("verify", help="Verify runtime artifact integrity")
+    artifact_verify.add_argument("project")
 
     sp = sub.add_parser("subtask", help="Manage ticket subtasks")
     sps = sp.add_subparsers(dest="subtask_command")
@@ -3278,6 +3912,19 @@ AGENT_DISPATCH = {
     "update": cmd_agent_update,
 }
 
+ISSUE_DISPATCH = {
+    "import": cmd_issue_import,
+}
+
+PR_DISPATCH = {
+    "automate": cmd_pr_automate,
+}
+
+ARTIFACT_DISPATCH = {
+    "status": cmd_artifact_status,
+    "verify": cmd_artifact_verify,
+}
+
 
 def main():
     parser = build_parser()
@@ -3309,6 +3956,18 @@ def main():
             if not getattr(args, "agent_command", None):
                 parser.parse_args(["agent", "--help"])
             AGENT_DISPATCH[args.agent_command](args)
+        elif args.command == "issue":
+            if not getattr(args, "issue_command", None):
+                parser.parse_args(["issue", "--help"])
+            ISSUE_DISPATCH[args.issue_command](args)
+        elif args.command == "pr":
+            if not getattr(args, "pr_command", None):
+                parser.parse_args(["pr", "--help"])
+            PR_DISPATCH[args.pr_command](args)
+        elif args.command == "artifact":
+            if not getattr(args, "artifact_command", None):
+                parser.parse_args(["artifact", "--help"])
+            ARTIFACT_DISPATCH[args.artifact_command](args)
         else:
             DISPATCH[args.command](args)
     except CliError as e:

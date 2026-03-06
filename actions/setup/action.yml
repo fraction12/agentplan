@@ -1,0 +1,43 @@
+name: agentplan-setup
+description: Install agentplan from PyPI and expose the resolved version
+inputs:
+  version:
+    description: Optional agentplan version to install (example: 0.6.4). Leave empty for latest.
+    required: false
+    default: ""
+outputs:
+  agentplan-version:
+    description: Installed agentplan version
+    value: ${{ steps.detect-version.outputs.agentplan-version }}
+runs:
+  using: composite
+  steps:
+    - name: Install agentplan
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        if [ -n "${{ inputs.version }}" ]; then
+          python -m pip install "agentplan==${{ inputs.version }}"
+        else
+          python -m pip install agentplan
+        fi
+
+    - name: Validate installed version
+      id: detect-version
+      shell: bash
+      run: |
+        set -euo pipefail
+        INSTALLED_VERSION="$(python - <<'PY'
+import agentplan
+print(agentplan.__version__)
+PY
+)"
+
+        if [ -n "${{ inputs.version }}" ] && [ "$INSTALLED_VERSION" != "${{ inputs.version }}" ]; then
+          echo "Expected agentplan version '${{ inputs.version }}' but found '$INSTALLED_VERSION'." >&2
+          exit 1
+        fi
+
+        echo "agentplan-version=$INSTALLED_VERSION" >> "$GITHUB_OUTPUT"
+        echo "Installed agentplan version: $INSTALLED_VERSION"

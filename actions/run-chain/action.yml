@@ -1,0 +1,96 @@
+name: agentplan-run-chain
+description: Run a headless agentplan chain in CI and publish a run summary
+inputs:
+  project-slug:
+    description: Project slug to execute (example: my-project)
+    required: true
+  max-tickets:
+    description: Optional maximum number of tickets to process in this run
+    required: false
+    default: ""
+  timeout:
+    description: Optional per-ticket timeout override in seconds
+    required: false
+    default: ""
+  max-runtime:
+    description: Optional maximum runtime in seconds for this run
+    required: false
+    default: ""
+  max-budget-usd:
+    description: Optional run budget cap in USD
+    required: false
+    default: ""
+  cost-per-ticket-usd:
+    description: Estimated USD cost per processed ticket (used with max-budget-usd)
+    required: false
+    default: "0"
+outputs:
+  chain-status:
+    description: Final chain status
+    value: ${{ steps.run.outputs.chain-status }}
+  chain-pause-reason:
+    description: Pause/stop reason from chain status (if present)
+    value: ${{ steps.run.outputs.chain-pause-reason }}
+runs:
+  using: composite
+  steps:
+    - name: Run chain (headless)
+      id: run
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        slug="${{ inputs.project-slug }}"
+        max_tickets="${{ inputs.max-tickets }}"
+        timeout_sec="${{ inputs.timeout }}"
+        max_runtime="${{ inputs.max-runtime }}"
+        max_budget_usd="${{ inputs.max-budget-usd }}"
+        cost_per_ticket_usd="${{ inputs.cost-per-ticket-usd }}"
+
+        args=("$slug")
+        if [ -n "$max_tickets" ]; then
+          args+=("--max-tickets" "$max_tickets")
+        fi
+        if [ -n "$timeout_sec" ]; then
+          args+=("--timeout" "$timeout_sec")
+        fi
+        if [ -n "$max_runtime" ]; then
+          args+=("--max-runtime" "$max_runtime")
+        fi
+        if [ -n "$max_budget_usd" ]; then
+          args+=("--max-budget-usd" "$max_budget_usd")
+          args+=("--cost-per-ticket-usd" "$cost_per_ticket_usd")
+        fi
+
+        AGENTPLAN_CI=1 agentplan chain "${args[@]}" | tee /tmp/agentplan-chain.log
+        agentplan chain "$slug" --status | tee /tmp/agentplan-chain-status.log
+
+        chain_status="$(awk -F': ' '/^Chain status:/{print $2; exit}' /tmp/agentplan-chain-status.log || true)"
+        chain_status="${chain_status:-unknown}"
+        chain_pause_reason="$(awk -F': ' '/^Pause reason:/{print $2; exit}' /tmp/agentplan-chain-status.log || true)"
+        chain_pause_reason="${chain_pause_reason:-}"
+        echo "chain-status=$chain_status" >> "$GITHUB_OUTPUT"
+        echo "chain-pause-reason=$chain_pause_reason" >> "$GITHUB_OUTPUT"
+
+        {
+          echo "## agentplan run-chain"
+          echo ""
+          echo "- Project: \`$slug\`"
+          echo "- Max tickets: \`${max_tickets:-unbounded}\`"
+          echo "- Timeout override: \`${timeout_sec:-default}\`"
+          echo "- Max runtime: \`${max_runtime:-none}\`"
+          echo "- Max budget (USD): \`${max_budget_usd:-none}\`"
+          echo "- Cost/ticket (USD): \`${cost_per_ticket_usd:-0}\`"
+          echo "- Final chain status: \`$chain_status\`"
+          echo "- Pause reason: \`${chain_pause_reason:-none}\`"
+          echo ""
+          echo "### Chain Output"
+          echo '```text'
+          cat /tmp/agentplan-chain.log
+          echo '```'
+          echo ""
+          echo "### Chain Status"
+          echo '```text'
+          cat /tmp/agentplan-chain-status.log
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
