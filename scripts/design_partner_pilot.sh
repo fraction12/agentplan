@@ -3,7 +3,7 @@ set -euo pipefail
 
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT_DIR="docs/marketplace/pilot-runs"
-OUT_FILE="$OUT_DIR/letterhead-pilot-$TS.md"
+OUT_FILE="$OUT_DIR/design-partner-pilot-$TS.md"
 mkdir -p "$OUT_DIR"
 
 START="$(date +%s)"
@@ -17,7 +17,7 @@ END="$(date +%s)"
 DURATION="$((END - START))"
 
 {
-  echo "# Letterhead Pilot Run"
+  echo "# Design Partner Pilot Run"
   echo
   echo "- Timestamp: $TS"
   echo "- Project: $1"

@@ -10,7 +10,7 @@ This folder contains the Phase 1 listing assets and operator docs for the `agent
 - Privacy statement: `docs/security/privacy.md`
 - Secure dashboard deployment: `docs/security/self-hosted-dashboard-secure-deployment.md`
 - Reverse proxy auth examples: `docs/security/reverse-proxy-auth-examples.md`
-- Letterhead pilot checklist: `docs/marketplace/letterhead-pilot-checklist.md`
+- Design Partner pilot checklist: `docs/marketplace/design-partner-pilot-checklist.md`
 
 ## Listing metadata checklist
 - Product name: `agentplan`

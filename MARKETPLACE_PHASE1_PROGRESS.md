@@ -10,7 +10,7 @@
 - [x] #18 Concurrency controls (workflow concurrency + claim locking + tests)
 - [x] #19 Guardrails (max tickets/run, max runtime, budget caps + explicit stop reasons)
 - [x] #20 Marketplace listing kit (quickstart, screenshot placeholders, support/security/privacy docs)
-- [x] #21 Letterhead pilot script (E2E checklist + metrics capture)
+- [x] #21 Design Partner pilot script (E2E checklist + metrics capture)
 - [x] #22 Self-hosted dashboard secure deployment guide
 - [x] #23 Reverse-proxy auth examples (Caddy/Nginx/Cloudflare Access)
 
@@ -44,13 +44,13 @@
   - `docs/marketplace/README.md`
   - `docs/marketplace/quickstart.md`
   - `docs/marketplace/support.md`
-  - `docs/marketplace/letterhead-pilot-checklist.md`
+  - `docs/marketplace/design-partner-pilot-checklist.md`
   - `docs/marketplace/screenshots/*` placeholders
   - `docs/security/security.md`
   - `docs/security/privacy.md`
   - `docs/security/self-hosted-dashboard-secure-deployment.md`
   - `docs/security/reverse-proxy-auth-examples.md`
-  - `scripts/letterhead_pilot.sh`
+  - `scripts/design_partner_pilot.sh`
 
 ## Tests
 - Updated and expanded `test_agentplan.py` coverage for:

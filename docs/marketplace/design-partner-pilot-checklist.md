@@ -1,4 +1,4 @@
-# Letterhead Pilot Checklist
+# Design Partner Pilot Checklist
 
 ## E2E validation
 - [ ] Setup action installs expected version (`actions/setup`).
@@ -16,4 +16,4 @@
 - stop/pause reason (if any)
 - count of failed workflows
 
-Use `scripts/letterhead_pilot.sh` to capture this into a timestamped report.
+Use `scripts/design_partner_pilot.sh` to capture this into a timestamped report.
