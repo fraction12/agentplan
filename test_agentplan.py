@@ -1575,7 +1575,7 @@ def test_dashboard_project_directory_api_crud():
     assert set_resp.status_code == 200
     set_payload = set_resp.get_json()
     assert set_payload["ok"] is True
-    assert set_payload["directory"] == "/tmp/web-dir-api-a"
+    assert set_payload["directory"] == os.path.realpath("/tmp/web-dir-api-a")
     assert set_payload["exists_on_disk"] is True
 
     update_resp = client.post(
@@ -1585,7 +1585,7 @@ def test_dashboard_project_directory_api_crud():
     )
     assert update_resp.status_code == 200
     update_payload = update_resp.get_json()
-    assert update_payload["directory"] == "/tmp/web-dir-api-b"
+    assert update_payload["directory"] == os.path.realpath("/tmp/web-dir-api-b")
     assert update_payload["exists_on_disk"] is False
 
     clear_resp = client.post(
@@ -1810,7 +1810,8 @@ def test_db_file_permissions():
     import stat
     import tempfile
 
-    tmp_path = tempfile.mktemp(suffix=".db")
+    tmp_dir = tempfile.mkdtemp()
+    tmp_path = os.path.join(tmp_dir, "test_perms.db")
     old_db = os.environ.get("AGENTPLAN_DB")
     try:
         os.environ["AGENTPLAN_DB"] = tmp_path
@@ -1830,6 +1831,8 @@ def test_db_file_permissions():
             f = tmp_path + ext
             if os.path.exists(f):
                 os.remove(f)
+        if os.path.isdir(tmp_dir):
+            os.rmdir(tmp_dir)
 
 
 # ---------------------------------------------------------------------------
