@@ -5,7 +5,7 @@ This folder contains the Phase 1 listing assets and operator docs for the `agent
 ## Quick links
 - Quickstart: `docs/marketplace/quickstart.md`
 - Support URL content: `docs/marketplace/support.md`
-- Screenshots placeholders: `docs/marketplace/screenshots/`
+- Screenshots: `docs/marketplace/screenshots/`
 - Security policy: `docs/security/security.md`
 - Privacy statement: `docs/security/privacy.md`
 - Secure dashboard deployment: `docs/security/self-hosted-dashboard-secure-deployment.md`
@@ -18,4 +18,9 @@ This folder contains the Phase 1 listing assets and operator docs for the `agent
 - Support URL: point to `docs/marketplace/support.md` content (or your hosted equivalent)
 - Privacy policy URL: point to `docs/security/privacy.md` content (or your hosted equivalent)
 - Security policy URL: point to `docs/security/security.md` content (or your hosted equivalent)
-- Screenshots: replace placeholders in `docs/marketplace/screenshots/` with product captures
+- Screenshots: use captured files in `docs/marketplace/screenshots/`
+
+## Screenshot assets
+- `docs/marketplace/screenshots/01-dashboard-overview.png`
+- `docs/marketplace/screenshots/02-ticket-kanban.png`
+- `docs/marketplace/screenshots/03-chain-status.png`

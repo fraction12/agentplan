@@ -95,8 +95,8 @@ agentplan role add coding --description "Code implementation"
 agentplan role add research --description "Research tasks"
 
 # Register agents with command templates and roles
-agentplan agent add codex --command 'codex exec {ticket}' --roles coding --priority 1
-agentplan agent add claude --command 'claude -m {ticket}' --roles research,writing --priority 2
+agentplan agent add codex --command 'codex exec --skip-git-repo-check -m gpt-5 "{ticket}"' --roles coding --priority 1
+agentplan agent add claude --command 'claude --print "{ticket}"' --roles research,writing --priority 2
 
 # Tag tickets → agentplan routes to the right agent
 agentplan ticket edit myproject 1 --tag role:coding

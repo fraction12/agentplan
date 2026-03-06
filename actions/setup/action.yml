@@ -9,6 +9,9 @@ outputs:
   agentplan-version:
     description: Installed agentplan version
     value: ${{ steps.detect-version.outputs.agentplan-version }}
+branding:
+  icon: download
+  color: blue
 runs:
   using: composite
   steps:

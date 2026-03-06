@@ -327,8 +327,8 @@ Invalid transitions are rejected with an error message showing allowed transitio
 agentplan init
 agentplan role add coding
 agentplan role add research
-agentplan agent add codex --command 'codex exec {ticket}' --roles coding --priority 1
-agentplan agent add claude --command 'claude -m {ticket}' --roles research --priority 2
+agentplan agent add codex --command 'codex exec --skip-git-repo-check -m gpt-5 "{ticket}"' --roles coding --priority 1
+agentplan agent add claude --command 'claude --print "{ticket}"' --roles research --priority 2
 ```
 
 ### Example 2: Autonomous build loop

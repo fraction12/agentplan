@@ -31,6 +31,9 @@ outputs:
   chain-pause-reason:
     description: Pause/stop reason from chain status (if present)
     value: ${{ steps.run.outputs.chain-pause-reason }}
+branding:
+  icon: play-circle
+  color: green
 runs:
   using: composite
   steps:
