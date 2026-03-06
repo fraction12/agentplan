@@ -3666,7 +3666,7 @@ def test_auto_tag_handles_ai_tool_unavailable_file_not_found():
 
     cli("create", "Auto Tag Tool Missing")
     cli("role", "add", "coding")
-    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="missing-binary --prompt {prompt}", roles="coding")
+    _run_agent_cmd(agent_cli.cmd_agent_add, name="dash", command="missing-binary --prompt {prompt} --ticket {ticket}", roles="coding")
     cli("ticket", "add", "auto-tag-tool-missing", "Build parser")
 
     with patch("agentplan.cli.subprocess.run", side_effect=FileNotFoundError("missing-binary")):
