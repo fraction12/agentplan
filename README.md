@@ -14,7 +14,7 @@
   <a href="https://github.com/fraction12/agentplan"><img src="https://img.shields.io/github/stars/fraction12/agentplan" alt="GitHub stars"></a>
 </p>
 
-<p align="center"><em>agentplan is used in production AI agent pipelines. <a href="https://pypistats.org/packages/agentplan">Downloads trending on PyPI.</a></em></p>
+<p align="center"><em>Zero dependencies. 242 tests. Used in production AI agent pipelines. <a href="https://pypistats.org/packages/agentplan">Downloads trending on PyPI.</a></em></p>
 
 <p align="center">
   <a href="#marketplace--actions">Marketplace & Actions</a> ·
@@ -87,22 +87,23 @@ Policy and support links:
 
 `agentplan` actions do not require any hard-coded third-party secrets by default.
 
+## What's New in v0.7
+
+- **GitHub Marketplace Actions** — `actions/setup` and `actions/run-chain` for CI/CD integration
+- **CI/Headless Mode** — Run chains in GitHub Actions with `AGENTPLAN_CI=1`
+- **Issue Import** — `agentplan issue import` pulls labeled GitHub issues into tickets
+- **Artifact Tracking** — Runtime artifact integrity verification
+- **Security Hardening** — OpenSSF Scorecard compliance, hash-pinned dependencies, trusted PyPI publishing, branch protection, Dependabot
+- **242 tests** covering all features
+
 ## What's New in v0.6
 
 - **Project Directories** — `agentplan create --dir ~/path` links a project to a codebase
-- **`.agentplan.md` Context Files** — per-project context injected into every agent turn. First agent auto-generates it by scanning the project.
-- **`agentplan context`** — view or regenerate a project's context file
-- **Dashboard Context Panel** — collapsible panel showing the context file on each project page
-
-## What's New in v0.5
-
-- **Roles & Agent Registry** — Define roles (coding, research, writing), register agents with command templates, and route tickets to the right agent automatically
-- **Event Hooks** — Fire webhooks, commands, or agent chains when tickets complete
-- **Stale Claim Handling** — Claim timeouts, automatic reaping of expired claims
-- **Expanded State Machine** — `blocked`, `failed`, `needs-review` states with validated transitions
-- **Dashboard Control Plane** — Start Work / Stop buttons, real-time progress, Agents management page, review panel for failed tickets
-- **Auto-Detection** — `agentplan init` scans for installed AI tools (Claude, Codex, Aider, Cursor, OpenClaw)
-- **186 tests** covering all features
+- **Agent-Powered Context** — context generation via writer agent with structured investigation prompts
+- **`.agentplan.md` Context Files** — per-project context injected into every agent turn
+- **Dashboard Refactor** — proper Flask templates + static assets, context generation UI with polling
+- **Directory Guards** — hard-error on missing project dirs, editable directory field in dashboard
+- **Chain Reliability** — re-entry guards, state rollback, zombie PID detection, spawn failure handling
 
 ## Quickstart
 
