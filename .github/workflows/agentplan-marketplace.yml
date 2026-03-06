@@ -21,9 +21,6 @@ on:
 jobs:
   chain:
     runs-on: ubuntu-latest
-    concurrency:
-      group: agentplan-${{ github.repository }}-${{ github.event.inputs.project_slug || 'manual' }}
-      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write
@@ -42,12 +39,11 @@ jobs:
         uses: ./actions/setup
 
       - name: Import labeled issues into agentplan
-        if: ${{ secrets.GITHUB_TOKEN != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          agentplan issue import "${{ inputs.project_slug }}" --label agentplan --state open
+          agentplan issue import "${{ inputs.project_slug }}" --label agentplan --state open || true
 
       - name: Run chain
         id: run-chain
