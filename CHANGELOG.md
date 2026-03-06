@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.7.0 - 2026-03-05
+
+### Added
+- GitHub Marketplace Phase 1 foundation:
+  - `actions/setup` and `actions/run-chain` with documented inputs/outputs
+  - `.github/workflows/agentplan-marketplace.yml` starter workflow
+  - CI/headless execution mode for chain/context via `AGENTPLAN_CI=1`
+- Issue import + runtime artifacts command surfaces:
+  - `agentplan issue import ...`
+  - `agentplan artifact status|verify ...`
+- One-way GitHub Issue → ticket import adapter and mapping storage
+- PR automation scaffolding with deterministic naming/logging conventions
+- Runtime artifact integrity tracking and verification support
+- Marketplace docs pack:
+  - `docs/marketplace/quickstart.md`
+  - `docs/marketplace/support.md`
+  - `docs/marketplace/submission-readiness-report.md`
+  - real screenshot assets for listing
+- Security/trust docs and deployment hardening guides:
+  - privacy, security posture, reverse proxy auth examples, secure self-hosted dashboard guide
+- New CI quality workflows for trust badges:
+  - `ci.yml`, `codeql.yml`, `scorecard.yml`
+
+### Changed
+- Context generation prompt now investigation-driven and AGENTS.md-style:
+  - compact status summaries + capped active-ticket list
+  - explicit discovery command instructions
+  - strict structured `.agentplan.md` output contract
+- Prompt handoff for spawned agents now uses robust temp-file + bash variable pattern across paths
+- Chain/headless monitoring and routing error messages hardened for CI UAT scenarios
+- Marketplace/readme docs updated with action-first installation path and trust links
+- Terminology normalized from partner-specific naming to generic “design partner” references
+
+### Tests
+- Expanded suite to cover marketplace actions, routing/guardrails, issue/artifact surfaces, and CI chain behavior
+- 242 tests passing
+
 ## v0.6.4 - 2026-03-05
 
 ### Added
