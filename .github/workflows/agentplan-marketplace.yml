@@ -1,0 +1,64 @@
+name: agentplan-marketplace
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_slug:
+        description: "agentplan project slug"
+        required: true
+        type: string
+      max_tickets:
+        description: "max tickets this run"
+        required: false
+        default: "5"
+        type: string
+      max_runtime:
+        description: "max runtime (seconds)"
+        required: false
+        default: "1800"
+        type: string
+
+concurrency:
+  group: agentplan-${{ github.repository }}-${{ inputs.project_slug }}
+  cancel-in-progress: false
+
+jobs:
+  chain:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup agentplan
+        id: setup-agentplan
+        uses: ./actions/setup
+
+      - name: Import labeled issues into agentplan
+        if: ${{ secrets.GITHUB_TOKEN != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          agentplan issue import "${{ inputs.project_slug }}" --label agentplan --state open
+
+      - name: Run chain
+        id: run-chain
+        uses: ./actions/run-chain
+        with:
+          project-slug: ${{ inputs.project_slug }}
+          max-tickets: ${{ inputs.max_tickets }}
+          max-runtime: ${{ inputs.max_runtime }}
+
+      - name: Echo outputs
+        run: |
+          echo "chain-status=${{ steps.run-chain.outputs.chain-status }}"
+          echo "chain-pause-reason=${{ steps.run-chain.outputs.chain-pause-reason }}"

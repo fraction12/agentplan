@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#f8f4ec"/>
+  <rect x="40" y="40" width="1200" height="640" rx="16" fill="#ffffff" stroke="#dfd3be"/>
+  <text x="80" y="110" font-size="36" fill="#5a4631" font-family="Helvetica, Arial, sans-serif">Screenshot Placeholder 02</text>
+  <text x="80" y="160" font-size="24" fill="#7c6650" font-family="Helvetica, Arial, sans-serif">Ticket board and workflow</text>
+</svg>
