@@ -21,6 +21,9 @@ on:
 jobs:
   chain:
     runs-on: ubuntu-latest
+    concurrency:
+      group: agentplan-${{ github.repository }}-marketplace
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write

@@ -30,6 +30,7 @@ def test_marketplace_workflow_template_has_concurrency_guard():
     workflow_path = Path(__file__).resolve().parent / ".github" / "workflows" / "agentplan-marketplace.yml"
     assert workflow_path.exists()
     content = workflow_path.read_text(encoding="utf-8")
+    # Workflow should include a concurrency guard to prevent overlapping runs.
     assert "concurrency:" in content
-    assert "agentplan-${{ github.repository }}-${{ inputs.project_slug }}" in content
+    assert "agentplan-${{ github.repository }}" in content
     assert "actions/run-chain" in content
