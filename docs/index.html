@@ -191,7 +191,7 @@
 
   <div class="trust-bar">
     <div class="container">
-      <p>1,100+ installs &nbsp;·&nbsp; Works with Claude Code, Codex, OpenClaw, and any CLI-capable agent &nbsp;·&nbsp; v0.5 now with roles, hooks & routing</p>
+      <p>Zero dependencies &nbsp;·&nbsp; 242 tests &nbsp;·&nbsp; Works with Claude Code, Codex, OpenClaw & any CLI agent &nbsp;·&nbsp; Now with GitHub Actions, CI/CD, and project context</p>
     </div>
   </div>
 
@@ -268,9 +268,41 @@
         <div class="feature-card">
           <span class="feature-icon">🔍</span>
           <h3>Auto-Detection</h3>
-          <p>Scans your system for installed AI tools and registers them automatically on init.</p>
+          <p>Scans for installed AI tools and registers them. Auto-generates project context by scanning your codebase.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">📄</span>
+          <h3>Project Context</h3>
+          <p>Link projects to codebases. Agents auto-generate .agentplan.md context files — like CLAUDE.md, but for your task queue.</p>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section class="section section-alt">
+    <div class="container">
+      <h2 class="section-heading">Ship to CI/CD in minutes</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">01</div>
+          <div class="step-code">uses: fraction12/agentplan/actions/setup@v0.7.1</div>
+          <h3>Setup Action</h3>
+          <p>Install agentplan in any GitHub Actions workflow with a single line.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">02</div>
+          <div class="step-code">agentplan issue import my-project --label agentplan</div>
+          <h3>Import Issues</h3>
+          <p>Pull labeled GitHub issues directly into your agentplan project as tickets.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">03</div>
+          <div class="step-code">uses: fraction12/agentplan/actions/run-chain@v0.7.1</div>
+          <h3>Run Chain</h3>
+          <p>Execute your agent chain headlessly in CI. Publishes a run summary to the workflow.</p>
+        </div>
+      </div>
+      <p style="font-family:'Inter',ui-sans-serif,sans-serif;color:var(--muted);font-size:0.9rem;margin-top:24px;"><a href="https://github.com/fraction12/agentplan/tree/main/docs/marketplace" target="_blank" rel="noopener" style="color:var(--text);">See the full Marketplace documentation &rarr;</a></p>
     </div>
   </section>
 
@@ -373,6 +405,20 @@
     </div>
   </section>
 
+  <section class="section">
+    <div class="container">
+      <h2 class="section-heading">Trusted &amp; Secure</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <a href="https://securityscorecards.dev/viewer/?uri=github.com/fraction12/agentplan" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;">
+          <img src="https://api.securityscorecards.dev/projects/github.com/fraction12/agentplan/badge" alt="OpenSSF Scorecard" style="height:20px;" />
+        </a>
+        <span style="font-family:'Inter',ui-sans-serif,sans-serif;font-size:0.85rem;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:6px 12px;">CodeQL scanned</span>
+        <span style="font-family:'Inter',ui-sans-serif,sans-serif;font-size:0.85rem;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:6px 12px;">Hash-pinned dependencies</span>
+        <span style="font-family:'Inter',ui-sans-serif,sans-serif;font-size:0.85rem;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:6px 12px;">Trusted PyPI publishing</span>
+      </div>
+    </div>
+  </section>
+
   <section class="cta-section">
     <div class="container">
       <h2>Get started in 30 seconds</h2>
@@ -398,6 +444,7 @@
           <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">GitHub</a>
           <a href="https://pypi.org/project/agentplan/" target="_blank" rel="noopener">PyPI</a>
           <a href="https://github.com/fraction12/agentplan/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://github.com/fraction12/agentplan/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a>
         </div>
         <div class="footer-col">
           <h4>Meta</h4>
@@ -432,7 +479,9 @@
         { command: 'agentplan claim sprint-1 --agent codex --timeout 30', output: ['▶ Claimed ticket #1: Build API → in-progress (by codex, expires in 30m)'] },
         { command: 'agentplan ticket done sprint-1 1 --agent codex', output: ['✓ Ticket #1: Build API → done (by codex)'], success: true },
         { command: 'agentplan hook add sprint-1 --event on-complete --type command --target \'echo {ticket} shipped!\'', output: ['Added hook #1 to project sprint-1 (command on-complete).'] },
-        { command: 'agentplan status sprint-1', output: ['1/3 done, 0 blocked, next: [2] Write tests, [3] Research caching'] }
+        { command: 'agentplan status sprint-1', output: ['1/3 done, 0 blocked, next: [2] Write tests, [3] Research caching'] },
+        { command: 'agentplan issue import sprint-1 --label agentplan --state open', output: ['Imported 3 issues from GitHub → sprint-1'] },
+        { command: 'agentplan context sprint-1', output: ['Generated .agentplan.md (1.2KB) — architecture, conventions, verify command'] }
       ];
 
       const state = { running: false, paused: false, started: false, timer: null, observerFired: false };
