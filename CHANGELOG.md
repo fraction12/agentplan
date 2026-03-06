@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.7.1 - 2026-03-06
+
+### Changed
+- README updated with v0.7 feature highlights and consolidated v0.6 section
+- All GitHub Actions pinned to commit SHAs (not tag objects) for OpenSSF compliance
+- All pip CI dependencies hash-pinned with `--require-hashes`
+- Top-level `permissions: read-all` on all workflows
+
+### Added
+- `SECURITY.md` with vulnerability disclosure policy and timeline
+- `.github/dependabot.yml` for automated pip + actions updates
+- `publish.yml` workflow for trusted PyPI publishing via OIDC (tag-triggered)
+- `requirements/test.txt` and `requirements/publish.txt` with SHA-256 hashes
+- GitHub Releases for v0.5.0, v0.6.0, v0.6.4, v0.7.0
+- Branch protection on `main` (force push, deletion, status checks)
+
+### Fixed
+- Scorecard action SHA was tag object, not commit — caused imposter commit failure
+- `test_auto_tag_handles_ai_tool_unavailable_file_not_found` missing `{ticket}` placeholder — passed locally (claude fallback) but failed in CI
+
 ## v0.7.0 - 2026-03-05
 
 ### Added
