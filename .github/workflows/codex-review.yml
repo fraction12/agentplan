@@ -1,0 +1,30 @@
+name: codex-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions: read-all
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Codex Review
+        uses: openai/codex-action@086169432f1d2ab2f4057540b1754d550f6a1189 # v1
+        with:
+          codex_api_key: ${{ secrets.OPENAI_API_KEY }}
+          task: |
+            Review this pull request. Check for:
+            - Correctness and potential bugs
+            - Security issues
+            - Code style consistency
+            Post an approving review if the changes look good, or request changes with specific feedback.
