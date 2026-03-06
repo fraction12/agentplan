@@ -974,8 +974,9 @@ def create_app():
                     stdin=subprocess.DEVNULL,
                     start_new_session=True,
                 )
-            except OSError as exc:
-                return ({"error": f"failed to start chain process: {exc}"}, 500)
+            except OSError:
+                LOGGER.exception("failed to start chain process")
+                return ({"error": "failed to start chain process"}, 500)
             set_chain_state(conn, project["id"], "running")
             return {"ok": True}
         finally:
@@ -998,8 +999,28 @@ def create_app():
     @_require_local_origin
     def api_project_directory(slug):
         payload = request.get_json(silent=True) or {}
-        raw_dir = (payload.get("directory") or "").strip()
+        raw_directory = payload.get("directory")
+        if raw_directory and not isinstance(raw_directory, str):
+            abort(400)
+
+        raw_dir = raw_directory.strip() if isinstance(raw_directory, str) else ""
         directory = os.path.expanduser(raw_dir) if raw_dir else None
+        directory = os.path.realpath(directory) if directory else directory
+
+        sensitive_dirs = {
+            "/",
+            "/bin",
+            "/dev",
+            "/etc",
+            "/proc",
+            "/sbin",
+            "/sys",
+            "/usr/bin",
+            "/usr/sbin",
+            "/var/root",
+        }
+        if directory and directory in sensitive_dirs:
+            return ({"error": "directory points to a sensitive system path"}, 400)
 
         conn = get_connection(_db_path())
         try:
@@ -1084,8 +1105,9 @@ def create_app():
                         start_new_session=True,
                     )
                     pid = proc.pid
-                except OSError as exc:
-                    return ({"error": f"failed to start context generation process: {exc}"}, 500)
+                except OSError:
+                    LOGGER.exception("failed to start context generation process")
+                    return ({"error": "failed to start context generation process"}, 500)
 
             _set_context_state(project["slug"], pid, running=True, exit_code=None)
             if isinstance(pid, int) and pid > 0:
