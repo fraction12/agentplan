@@ -43,15 +43,15 @@
     const showReviewActions = data.status === "failed" || data.status === "needs-review";
     panelContent.innerHTML = `
       <section class="panel-block">
-        <h3>Title <button class="ticket-panel-edit-btn" onclick="editTicketField(${esc(data.num)}, 'title', ${JSON.stringify(data.title || '').replace(/</g,'&lt;')})">✎</button></h3>
+        <h3>Title <button class="ticket-panel-edit-btn" data-edit-field="title" data-edit-num="${esc(data.num)}">✎</button></h3>
         <p class="panel-description">${esc(data.title || "")}</p>
       </section>
       <section class="panel-block">
-        <h3>Description <button class="ticket-panel-edit-btn" onclick="editTicketField(${esc(data.num)}, 'description', ${JSON.stringify(data.description || '').replace(/</g,'&lt;')})">✎</button></h3>
+        <h3>Description <button class="ticket-panel-edit-btn" data-edit-field="description" data-edit-num="${esc(data.num)}">✎</button></h3>
         <p class="panel-description">${esc(data.description || "No description.")}</p>
       </section>
       <section class="panel-block">
-        <h3>Priority <button class="ticket-panel-edit-btn" onclick="editTicketField(${esc(data.num)}, 'priority', '${esc(data.priority || 'none')}')">✎</button></h3>
+        <h3>Priority <button class="ticket-panel-edit-btn" data-edit-field="priority" data-edit-num="${esc(data.num)}">✎</button></h3>
         <p class="panel-description">${esc((data.priority || 'none'))}</p>
       </section>
       <section class="panel-block">
@@ -492,9 +492,21 @@
     });
   }
 
-  // ── Edit Ticket (in panel) ──
-  window.editTicketField = async function(ticketNum, field, currentValue) {
-    const newValue = prompt(`Edit ${field}:`, currentValue || "");
+  // ── Edit Ticket (in panel via data attributes) ──
+  let _panelData = null;
+  const _origRenderPanel = renderPanel;
+  renderPanel = function(data) {
+    _panelData = data;
+    _origRenderPanel(data);
+  };
+
+  panelContent.addEventListener("click", async (evt) => {
+    const btn = evt.target.closest("[data-edit-field]");
+    if (!btn || !_panelData) return;
+    const field = btn.dataset.editField;
+    const ticketNum = btn.dataset.editNum;
+    const currentValue = _panelData[field] || "";
+    const newValue = prompt(`Edit ${field}:`, currentValue);
     if (newValue === null || newValue === currentValue) return;
     try {
       const resp = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/${ticketNum}/edit`, {
@@ -505,12 +517,12 @@
       const data = await resp.json();
       if (data.ok) {
         showToast(`Ticket #${ticketNum} updated`);
-        openPanel(ticketNum);
+        loadTicket(ticketNum);
       } else {
         showToast(data.error || "Failed to update", "error");
       }
     } catch (err) {
       showToast("Network error", "error");
     }
-  };
+  });
 })();

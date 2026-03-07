@@ -3121,6 +3121,9 @@ def cmd_dashboard(args):
 
     if getattr(args, "background", False):
         import sys
+        if not hasattr(os, "fork"):
+            print("Error: --background requires a POSIX system (macOS/Linux). On Windows, run the dashboard in a separate terminal.", file=sys.stderr)
+            sys.exit(1)
         pid = os.fork()
         if pid > 0:
             print(f"Dashboard running in background (pid {pid}) at http://{args.host}:{args.port}")
@@ -3163,8 +3166,8 @@ def cmd_setup(args):
   │                                                            │
   │  Copy the agentplan skill to Codex:                        │
   │                                                            │
-  │    mkdir -p ~/.codex/skills                                │
-  │    cp -r plugins/claude-code ~/.codex/skills/agentplan     │
+  │    mkdir -p ~/.codex/skills/agentplan                      │
+  │    cp plugins/codex/SKILL.md ~/.codex/skills/agentplan/    │
   │                                                            │
   │  Codex 0.110.0+ will load the skill automatically.        │
   │                                                            │
