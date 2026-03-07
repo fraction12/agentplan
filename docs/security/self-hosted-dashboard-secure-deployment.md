@@ -1,5 +1,7 @@
 # Self-Hosted Dashboard Secure Deployment Guide
 
+> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+
 ## Baseline
 1. Bind dashboard to localhost only:
    - `agentplan dashboard --host 127.0.0.1 --port 5001`

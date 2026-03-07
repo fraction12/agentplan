@@ -1,5 +1,7 @@
 # Privacy
 
+> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+
 `agentplan` stores project and ticket metadata in SQLite. In CI workflows, logs may include project slugs, ticket titles, and execution status.
 
 ## Data stored locally

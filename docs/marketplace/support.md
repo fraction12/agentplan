@@ -1,5 +1,7 @@
 # Support
 
+> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+
 ## Contact
 - Primary: open a GitHub issue in this repository.
 - Escalation: open a discussion labeled `support`.
