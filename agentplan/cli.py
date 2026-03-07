@@ -3232,6 +3232,7 @@ def _setup_claude_marketplace(source_dir):
                 print("  ✓ Updated agentplan plugin in Claude Code")
             else:
                 print(f"  ⚠ Plugin install: {stderr}")
+                return False
     except Exception as e:
         print(f"  ⚠ Could not install plugin: {e}")
         return False
@@ -3273,9 +3274,7 @@ def cmd_setup(args):
         if installed:
             return
         elif tool:
-            print(f"\n  Installing agentplan plugin for {tool}...\n")
-            # Retry with explicit tool
-            cmd_setup(args)
+            print(f"\n  ✗ Failed to install agentplan plugin for {tool}.\n")
             return
 
     header = """
