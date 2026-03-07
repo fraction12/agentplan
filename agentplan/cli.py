@@ -3142,69 +3142,83 @@ def cmd_dashboard(args):
 
 
 
+def _get_plugin_dir():
+    """Get the path to bundled plugin files inside the installed package."""
+    return os.path.join(os.path.dirname(__file__), "plugins")
+
+
+def _install_plugin(source_dir, dest_dir, label):
+    """Copy plugin files from package to destination."""
+    import shutil
+    if not os.path.isdir(source_dir):
+        print(f"  ✗ Plugin files not found at {source_dir}")
+        return False
+    if os.path.exists(dest_dir):
+        shutil.rmtree(dest_dir)
+    shutil.copytree(source_dir, dest_dir)
+    print(f"  ✓ Installed agentplan plugin to {dest_dir}")
+    return True
+
+
 def cmd_setup(args):
     tool = getattr(args, "tool", None)
+    install = getattr(args, "install", False)
+    plugin_dir = _get_plugin_dir()
 
-    claude_instructions = """
-  ╭─ Claude Code ──────────────────────────────────────────────╮
-  │                                                            │
-  │  Install the agentplan plugin:                             │
-  │                                                            │
-  │    /install-plugin github:fraction12/agentplan             │
-  │                                                            │
-  │  Or manually copy the plugin:                              │
-  │                                                            │
-  │    cp -r plugins/claude-code ~/.claude/plugins/agentplan   │
-  │                                                            │
-  │  Then every Claude Code session will know agentplan.       │
-  │  Try: /agentplan:plan to create a project from chat.       │
-  │                                                            │
-  ╰────────────────────────────────────────────────────────────╯"""
+    if install or tool:
+        # Auto-install mode
+        installed = False
+        if tool == "claude" or (install and tool is None):
+            src = os.path.join(plugin_dir, "claude-code")
+            dst = os.path.expanduser("~/.claude/plugins/agentplan")
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if _install_plugin(src, dst, "Claude Code"):
+                installed = True
+                print("  → Restart Claude Code to load the plugin.")
+                print("  → Try: /agentplan:plan to create a project from chat.\n")
 
-    codex_instructions = """
-  ╭─ Codex CLI ────────────────────────────────────────────────╮
-  │                                                            │
-  │  Copy the agentplan skill to Codex:                        │
-  │                                                            │
-  │    mkdir -p ~/.codex/skills/agentplan                      │
-  │    cp plugins/codex/SKILL.md ~/.codex/skills/agentplan/    │
-  │                                                            │
-  │  Codex 0.110.0+ will load the skill automatically.        │
-  │                                                            │
-  ╰────────────────────────────────────────────────────────────╯"""
+        if tool == "codex" or (install and tool is None):
+            src = os.path.join(plugin_dir, "codex")
+            dst = os.path.expanduser("~/.codex/skills/agentplan")
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if _install_plugin(src, dst, "Codex"):
+                installed = True
+                print("  → Codex will load the skill automatically.\n")
 
-    openclaw_instructions = """
-  ╭─ OpenClaw ─────────────────────────────────────────────────╮
-  │                                                            │
-  │  Install the agentplan skill:                              │
-  │                                                            │
-  │    clawhub install agentplan                               │
-  │                                                            │
-  │  Or copy to your workspace skills:                         │
-  │                                                            │
-  │    cp -r plugins/claude-code                               │
-  │       ~/.openclaw/workspace/skills/agentplan               │
-  │                                                            │
-  ╰────────────────────────────────────────────────────────────╯"""
+        if tool == "openclaw" or (install and tool is None):
+            src = os.path.join(plugin_dir, "claude-code")
+            dst = os.path.expanduser("~/.openclaw/workspace/skills/agentplan")
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if _install_plugin(src, dst, "OpenClaw"):
+                installed = True
+                print("  → OpenClaw will load the skill automatically.\n")
+
+        if installed:
+            return
+        elif tool:
+            print(f"\n  Installing agentplan plugin for {tool}...\n")
+            # Retry with explicit tool
+            cmd_setup(args)
+            return
 
     header = """
   ┌──────────────────────────────────────────────────────────┐
   │  agentplan — Asana for AI Agents                         │
   │                                                          │
   │  Step 1: pip install agentplan          ✓ done           │
-  │  Step 2: Install the skill on your AI tool (see below)   │
+  │  Step 2: Install the plugin (run one of the below)       │
   │  Step 3: Tell your AI to plan something!                 │
-  └──────────────────────────────────────────────────────────┘"""
+  └──────────────────────────────────────────────────────────┘
 
+  Install the plugin for your AI tool:
+
+    agentplan setup claude       # installs to ~/.claude/plugins/
+    agentplan setup codex        # installs to ~/.codex/skills/
+    agentplan setup openclaw     # installs to ~/.openclaw/workspace/skills/
+
+  Quick start: tell your AI "plan a new project" and it handles the rest.
+"""
     print(header)
-    if tool == "claude" or tool is None:
-        print(claude_instructions)
-    if tool == "codex" or tool is None:
-        print(codex_instructions)
-    if tool == "openclaw" or tool is None:
-        print(openclaw_instructions)
-
-    print("\n  Quick start: tell your AI \"plan a new project\" and it handles the rest.\n")
 
 
 def cmd_completion(args):

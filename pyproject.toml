@@ -55,7 +55,14 @@ dev = [
 dashboard = ["flask>=3.0"]
 
 [tool.setuptools]
-packages = ["agentplan", "agentplan.dashboard"]
+packages = ["agentplan", "agentplan.dashboard", "agentplan.plugins"]
 
 [tool.setuptools.package-data]
 "agentplan.dashboard" = ["templates/*.html", "static/*.css", "static/*.js"]
+"agentplan.plugins" = [
+    "claude-code/.claude-plugin/*.json",
+    "claude-code/rules/*.md",
+    "claude-code/skills/**/*.md",
+    "claude-code/README.md",
+    "codex/*.md",
+]
