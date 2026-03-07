@@ -762,7 +762,18 @@ def create_app():
 
     @app.route("/agents")
     def agents():
-        abort(404)
+        conn = get_connection(_db_path())
+        try:
+            agents_data = list_agents(conn)
+            roles_data = list_roles(conn)
+        finally:
+            conn.close()
+        return render_template(
+            "agents.html",
+            agents=agents_data,
+            roles=roles_data,
+            detected_tools=_detect_tools_status(),
+        )
 
     @app.route("/agents/add", methods=["POST"])
     @_require_local_origin

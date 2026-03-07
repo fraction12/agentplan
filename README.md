@@ -41,6 +41,14 @@ agentplan claim ship-v1 --agent dash
 agentplan ticket done ship-v1 1 --agent dash
 ```
 
+## Agent Loop Demo
+
+```bash
+agentplan next ship-v1
+agentplan claim ship-v1 --agent dash
+agentplan ticket done ship-v1 1 --agent dash
+```
+
 ## Core CLI commands
 
 ### Project lifecycle
