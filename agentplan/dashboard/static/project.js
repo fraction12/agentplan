@@ -43,8 +43,16 @@
     const showReviewActions = data.status === "failed" || data.status === "needs-review";
     panelContent.innerHTML = `
       <section class="panel-block">
-        <h3>Description</h3>
+        <h3>Title <button class="ticket-panel-edit-btn" onclick="editTicketField(${esc(data.num)}, 'title', ${JSON.stringify(data.title || '').replace(/</g,'&lt;')})">✎</button></h3>
+        <p class="panel-description">${esc(data.title || "")}</p>
+      </section>
+      <section class="panel-block">
+        <h3>Description <button class="ticket-panel-edit-btn" onclick="editTicketField(${esc(data.num)}, 'description', ${JSON.stringify(data.description || '').replace(/</g,'&lt;')})">✎</button></h3>
         <p class="panel-description">${esc(data.description || "No description.")}</p>
+      </section>
+      <section class="panel-block">
+        <h3>Priority <button class="ticket-panel-edit-btn" onclick="editTicketField(${esc(data.num)}, 'priority', '${esc(data.priority || 'none')}')">✎</button></h3>
+        <p class="panel-description">${esc((data.priority || 'none'))}</p>
       </section>
       <section class="panel-block">
         <h3>Subtasks</h3>
@@ -441,4 +449,68 @@
       },
     },
   });
+
+  // ── Add Ticket Dialog ──
+  const addBtn = document.getElementById("add-ticket-btn");
+  const dialog = document.getElementById("add-ticket-dialog");
+  const addForm = document.getElementById("add-ticket-form");
+  const cancelBtn = document.getElementById("add-ticket-cancel");
+
+  if (addBtn && dialog) {
+    addBtn.addEventListener("click", () => dialog.showModal());
+    cancelBtn.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+
+    addForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const formData = new FormData(addForm);
+      const body = {
+        title: formData.get("title"),
+        description: formData.get("description"),
+        priority: formData.get("priority"),
+      };
+      try {
+        const resp = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          dialog.close();
+          addForm.reset();
+          showToast(`Ticket #${data.num} created`);
+          window.location.reload();
+        } else {
+          showToast(data.error || "Failed to create ticket", "error");
+        }
+      } catch (err) {
+        showToast("Network error", "error");
+      }
+    });
+  }
+
+  // ── Edit Ticket (in panel) ──
+  window.editTicketField = async function(ticketNum, field, currentValue) {
+    const newValue = prompt(`Edit ${field}:`, currentValue || "");
+    if (newValue === null || newValue === currentValue) return;
+    try {
+      const resp = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/${ticketNum}/edit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: newValue }),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        showToast(`Ticket #${ticketNum} updated`);
+        openPanel(ticketNum);
+      } else {
+        showToast(data.error || "Failed to update", "error");
+      }
+    } catch (err) {
+      showToast("Network error", "error");
+    }
+  };
 })();

@@ -105,6 +105,56 @@ agentplan depend --help
 usage: agentplan depend [-h] --on ON project ticket_id
 ```
 
+### Ticket state transitions
+
+```bash
+agentplan ticket done <project> <ticket_num>     # Mark ticket complete
+agentplan ticket start <project> <ticket_num>    # Mark ticket in-progress
+agentplan ticket fail <project> <ticket_num> [--reason REASON]  # Mark failed
+agentplan ticket skip <project> <ticket_num>     # Skip ticket
+agentplan ticket edit <project> <ticket_num> [--title TITLE] [--desc DESC] [--priority {high,medium,low}]
+agentplan ticket list <project> [--status STATUS]
+```
+
+### Search tickets
+
+```bash
+agentplan search "query"                         # Fuzzy search across all projects
+```
+
+### List projects
+
+```bash
+agentplan list [--status {active,completed,paused,abandoned,all}]
+```
+
+### Close/archive project
+
+```bash
+agentplan close <project> [--abandon]            # Close project (or mark abandoned)
+agentplan archive <project>                      # Archive a completed project
+```
+
+### Notes and attachments
+
+```bash
+agentplan note <project> "text" [--ticket NUM]   # Add note to project or ticket
+agentplan attach <project> "label" "path_or_url" [--ticket NUM]
+```
+
+### Remove
+
+```bash
+agentplan remove <project> [--ticket NUM]        # Remove project or specific ticket
+agentplan undepend <project> <ticket_id> --on <dependency_id>  # Remove dependency
+```
+
+### History
+
+```bash
+agentplan history <project> <ticket_num>         # Show ticket state transitions
+```
+
 ## Default operating pattern
 
 For each iteration:

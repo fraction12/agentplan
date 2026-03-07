@@ -50,7 +50,28 @@
 
 <div class="project-meta">
   <span>{{ done_count }}/{{ total_count }} done</span>
+  <button id="add-ticket-btn" class="btn btn-primary btn-sm" type="button">+ Add Ticket</button>
 </div>
+
+<dialog id="add-ticket-dialog" class="ticket-dialog">
+  <form id="add-ticket-form" method="dialog">
+    <h3>Add Ticket</h3>
+    <label>Title <input type="text" name="title" required autofocus placeholder="What needs to be done?"></label>
+    <label>Description <textarea name="description" rows="3" placeholder="Details (optional)"></textarea></label>
+    <label>Priority
+      <select name="priority">
+        <option value="none">None</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="add-ticket-cancel">Cancel</button>
+      <button type="submit" class="btn btn-primary">Create</button>
+    </div>
+  </form>
+</dialog>
 
 <details class="context-panel" aria-label="project context">
   <summary>
