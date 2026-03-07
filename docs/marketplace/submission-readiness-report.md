@@ -1,5 +1,7 @@
 # Marketplace Submission Readiness Report
 
+> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+
 Date: 2026-03-06
 Branch: `feat/marketplace-finalize`
 Scope: Tickets #27-#34

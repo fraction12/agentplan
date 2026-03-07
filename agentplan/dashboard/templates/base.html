@@ -20,7 +20,6 @@
           {% block topbar_nav %}
           <a class="top-link{% if active_page == 'home' %} active{% endif %}" href="{{ url_for('index') }}">Home</a>
           <a class="top-link{% if active_page == 'activity' %} active{% endif %}" href="{{ url_for('activity') }}">Activity</a>
-          <a class="top-link{% if active_page == 'agents' %} active{% endif %}" href="{{ url_for('agents') }}">Agents</a>
           {% endblock %}
         </nav>
         {% block topbar_right %}

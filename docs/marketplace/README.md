@@ -1,5 +1,7 @@
 # GitHub Marketplace Listing Kit
 
+> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+
 This folder contains the Phase 1 listing assets and operator docs for the `agentplan` GitHub Marketplace pilot.
 
 ## Quick links

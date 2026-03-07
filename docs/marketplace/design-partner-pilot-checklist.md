@@ -1,5 +1,7 @@
 # Design Partner Pilot Checklist
 
+> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+
 ## E2E validation
 - [ ] Setup action installs expected version (`actions/setup`).
 - [ ] Issue import maps `label=agentplan` issues into project tickets.

@@ -1,5 +1,7 @@
 # GitHub Marketplace Quickstart (Phase 1)
 
+> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+
 This quickstart shows how to use the Phase 1 actions added in this repository.
 
 ## 1) Install agentplan in a workflow

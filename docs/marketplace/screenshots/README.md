@@ -1,5 +1,7 @@
 # Marketplace Screenshots
 
+> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+
 Real dashboard captures (PNG) for Marketplace listing:
 - `01-dashboard-overview.png`
 - `02-ticket-kanban.png`
