@@ -3160,6 +3160,34 @@ def _install_plugin(source_dir, dest_dir, label):
     return True
 
 
+def _register_claude_plugin(install_path):
+    """Register plugin in Claude Code's installed_plugins.json registry."""
+    from datetime import datetime, timezone
+    registry_path = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+    try:
+        if os.path.exists(registry_path):
+            with open(registry_path) as f:
+                data = json.load(f)
+        else:
+            data = {"version": 2, "plugins": {}}
+
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        data["plugins"]["agentplan@local"] = [{
+            "scope": "user",
+            "installPath": install_path,
+            "version": __version__,
+            "installedAt": now,
+            "lastUpdated": now,
+        }]
+
+        with open(registry_path, "w") as f:
+            json.dump(data, f, indent=4)
+        print("  ✓ Registered in Claude Code plugin registry")
+    except Exception as e:
+        print(f"  ⚠ Could not register in plugin registry: {e}")
+        print(f"    Plugin files are installed — try restarting Claude Code anyway.")
+
+
 def cmd_setup(args):
     tool = getattr(args, "tool", None)
     install = getattr(args, "install", False)
@@ -3173,6 +3201,7 @@ def cmd_setup(args):
             dst = os.path.expanduser("~/.claude/plugins/agentplan")
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             if _install_plugin(src, dst, "Claude Code"):
+                _register_claude_plugin(dst)
                 installed = True
                 print("  → Restart Claude Code to load the plugin.")
                 print("  → Try: /agentplan:plan to create a project from chat.\n")
