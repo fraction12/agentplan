@@ -3160,32 +3160,84 @@ def _install_plugin(source_dir, dest_dir, label):
     return True
 
 
-def _register_claude_plugin(install_path):
-    """Register plugin in Claude Code's installed_plugins.json registry."""
-    from datetime import datetime, timezone
-    registry_path = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
-    try:
-        if os.path.exists(registry_path):
-            with open(registry_path) as f:
-                data = json.load(f)
-        else:
-            data = {"version": 2, "plugins": {}}
+def _setup_claude_marketplace(source_dir):
+    """Set up agentplan as a local Claude Code marketplace and install the plugin."""
+    import shutil
+    import subprocess
 
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        data["plugins"]["agentplan@local"] = [{
-            "scope": "user",
-            "installPath": install_path,
+    marketplace_dir = os.path.expanduser("~/.agentplan/marketplace")
+    plugin_dest = os.path.join(marketplace_dir, "agentplan")
+
+    if not os.path.isdir(source_dir):
+        print(f"  ✗ Plugin files not found at {source_dir}")
+        return False
+
+    # Copy plugin files into marketplace directory
+    os.makedirs(marketplace_dir, exist_ok=True)
+    if os.path.exists(plugin_dest):
+        shutil.rmtree(plugin_dest)
+    shutil.copytree(source_dir, plugin_dest)
+
+    # Create marketplace manifest
+    manifest_dir = os.path.join(marketplace_dir, ".claude-plugin")
+    os.makedirs(manifest_dir, exist_ok=True)
+    manifest = {
+        "name": "agentplan",
+        "description": "Agentplan plugin marketplace",
+        "owner": {"name": "agentplan", "email": ""},
+        "plugins": [{
+            "name": "agentplan",
+            "description": "Asana for AI agents — task management, ticket tracking, and autonomous work loops",
             "version": __version__,
-            "installedAt": now,
-            "lastUpdated": now,
-        }]
+            "source": "./agentplan",
+            "author": {"name": "agentplan", "email": ""},
+        }],
+    }
+    with open(os.path.join(manifest_dir, "marketplace.json"), "w") as f:
+        json.dump(manifest, f, indent=2)
 
-        with open(registry_path, "w") as f:
-            json.dump(data, f, indent=4)
-        print("  ✓ Registered in Claude Code plugin registry")
+    print(f"  ✓ Plugin files staged at {marketplace_dir}")
+
+    # Register marketplace (idempotent — re-add updates it)
+    try:
+        subprocess.run(
+            ["claude", "plugin", "marketplace", "add", marketplace_dir, "--scope", "user"],
+            capture_output=True, text=True, check=True,
+        )
+        print("  ✓ Registered agentplan marketplace")
+    except FileNotFoundError:
+        print("  ✗ 'claude' CLI not found — is Claude Code installed?")
+        return False
+    except subprocess.CalledProcessError as e:
+        # Already added is fine
+        if "already" not in (e.stderr or "").lower():
+            print(f"  ⚠ Marketplace registration: {(e.stderr or '').strip()}")
+
+    # Install plugin from marketplace
+    try:
+        result = subprocess.run(
+            ["claude", "plugin", "install", "agentplan@agentplan", "--scope", "user"],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            print("  ✓ Installed agentplan plugin in Claude Code")
+        else:
+            stderr = (result.stderr or "").strip()
+            if "already" in stderr.lower():
+                # Update instead
+                subprocess.run(
+                    ["claude", "plugin", "update", "agentplan@agentplan"],
+                    capture_output=True, text=True,
+                )
+                print("  ✓ Updated agentplan plugin in Claude Code")
+            else:
+                print(f"  ⚠ Plugin install: {stderr}")
+                return False
     except Exception as e:
-        print(f"  ⚠ Could not register in plugin registry: {e}")
-        print(f"    Plugin files are installed — try restarting Claude Code anyway.")
+        print(f"  ⚠ Could not install plugin: {e}")
+        return False
+
+    return True
 
 
 def cmd_setup(args):
@@ -3198,10 +3250,7 @@ def cmd_setup(args):
         installed = False
         if tool == "claude" or (install and tool is None):
             src = os.path.join(plugin_dir, "claude-code")
-            dst = os.path.expanduser("~/.claude/plugins/agentplan")
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            if _install_plugin(src, dst, "Claude Code"):
-                _register_claude_plugin(dst)
+            if _setup_claude_marketplace(src):
                 installed = True
                 print("  → Restart Claude Code to load the plugin.")
                 print("  → Try: /agentplan:plan to create a project from chat.\n")
@@ -3225,9 +3274,7 @@ def cmd_setup(args):
         if installed:
             return
         elif tool:
-            print(f"\n  Installing agentplan plugin for {tool}...\n")
-            # Retry with explicit tool
-            cmd_setup(args)
+            print(f"\n  ✗ Failed to install agentplan plugin for {tool}.\n")
             return
 
     header = """
