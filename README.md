@@ -1,14 +1,18 @@
 <p align="center">
   <h1 align="center">agentplan</h1>
-  <p align="center"><strong>Asana for AI agents.</strong></p>
+  <p align="center"><strong>Asana for AI agents — a task board that any AI tool can drive.</strong></p>
 </p>
 
 <p align="center">
   <a href="https://pypi.org/project/agentplan/"><img src="https://img.shields.io/pypi/v/agentplan" alt="PyPI version"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
+  <a href="https://pypi.org/project/agentplan/"><img src="https://img.shields.io/pypi/dm/agentplan" alt="PyPI downloads"></a>
+  <img src="https://img.shields.io/pypi/pyversions/agentplan" alt="Python versions">
+  <a href="https://scorecard.dev/viewer/?uri=github.com/fraction12/agentplan"><img src="https://api.scorecard.dev/projects/github.com/fraction12/agentplan/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://github.com/fraction12/agentplan/actions/workflows/ci.yml"><img src="https://github.com/fraction12/agentplan/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
 </p>
 
-agentplan is a shared task system for multiple AI agents working on the same project.
+agentplan is **Asana for AI agents** — a shared task board that any AI tool can drive.
 
 - persistent project + ticket queue
 - dependency tracking
@@ -16,13 +20,21 @@ agentplan is a shared task system for multiple AI agents working on the same pro
 - web dashboard for visibility
 - local-first SQLite storage
 
-## Install
+## Start in 3 steps
 
 ```bash
+# 1) Install
 pip install agentplan
+
+# 2) Connect your AI tool
+agentplan setup claude
+# or
+agentplan setup codex
+
+# 3) Tell your AI to plan and execute with AgentPlan
 ```
 
-## Quickstart
+## CLI quickstart
 
 ```bash
 # Create a project with starter tickets
@@ -31,7 +43,7 @@ agentplan create "Ship v1" \
   --ticket "Implement API" \
   --ticket "Write tests"
 
-# See what's ready
+# See what is ready
 agentplan next ship-v1
 
 # Claim work
@@ -91,7 +103,16 @@ Open `http://127.0.0.1:5001` to view projects, ticket board state, and activity.
 
 ## AI tool setup
 
-### Claude Code plugin
+Use the built-in setup command to install plugins/skills:
+
+```bash
+agentplan setup claude
+agentplan setup codex
+```
+
+Manual options are still available when you need full control.
+
+### Claude Code plugin (manual)
 
 ```bash
 /install-plugin github:fraction12/agentplan
@@ -103,7 +124,7 @@ Or copy manually:
 cp -r plugins/claude-code ~/.claude/plugins/agentplan
 ```
 
-### Codex skill
+### Codex skill (manual)
 
 ```bash
 mkdir -p ~/.codex/skills/agentplan
