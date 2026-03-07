@@ -14,13 +14,10 @@
 {% block topbar_nav %}
 <a href="{{ url_for('index') }}" class="btn-back">Home</a>
 <a href="{{ url_for('activity') }}" class="btn-back">Activity</a>
-<a href="{{ url_for('agents') }}" class="btn-back">Agents</a>
 {% endblock %}
 
 {% block topbar_right %}
 <div class="topbar-right">
-  <button id="chain-start-btn" class="btn btn-chain-start" type="button">▶ Start Work</button>
-  <button id="chain-stop-btn" class="btn btn-chain-stop" type="button">■ Stop</button>
   <span id="project-clock" class="clock"></span>
   <span class="sse-status"><span id="project-sse-dot" class="status-dot disconnected" aria-hidden="true"></span><span id="project-sse-label">connecting…</span></span>
 </div>

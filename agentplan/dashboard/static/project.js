@@ -148,10 +148,10 @@
     const chainTicketNum = payload && payload.chain_current_ticket_num;
     const pauseReason = payload && payload.chain_pause_reason;
     const normalized = String(chainStatus).toLowerCase();
-    chainStatusDot.className = `chain-dot ${esc(normalized)}`;
-    chainStatusText.textContent = chainSummary(normalized, chainTicketNum, pauseReason);
-    chainStartBtn.disabled = normalized === "running";
-    chainStopBtn.disabled = normalized !== "running";
+    if (chainStatusDot) chainStatusDot.className = `chain-dot ${esc(normalized)}`;
+    if (chainStatusText) chainStatusText.textContent = chainSummary(normalized, chainTicketNum, pauseReason);
+    if (chainStartBtn) chainStartBtn.disabled = normalized === "running";
+    if (chainStopBtn) chainStopBtn.disabled = normalized !== "running";
   }
 
   async function callChainAction(action) {
@@ -312,25 +312,29 @@
     }
   });
 
-  chainStartBtn.addEventListener("click", async () => {
-    chainStartBtn.disabled = true;
-    try {
-      await callChainAction("start");
-    } catch (error) {
-      showToast(error.message || "Failed to start chain.");
-      chainStartBtn.disabled = false;
-    }
-  });
+  if (chainStartBtn) {
+    chainStartBtn.addEventListener("click", async () => {
+      chainStartBtn.disabled = true;
+      try {
+        await callChainAction("start");
+      } catch (error) {
+        showToast(error.message || "Failed to start chain.");
+        chainStartBtn.disabled = false;
+      }
+    });
+  }
 
-  chainStopBtn.addEventListener("click", async () => {
-    chainStopBtn.disabled = true;
-    try {
-      await callChainAction("stop");
-    } catch (error) {
-      showToast(error.message || "Failed to stop chain.");
-      chainStopBtn.disabled = false;
-    }
-  });
+  if (chainStopBtn) {
+    chainStopBtn.addEventListener("click", async () => {
+      chainStopBtn.disabled = true;
+      try {
+        await callChainAction("stop");
+      } catch (error) {
+        showToast(error.message || "Failed to stop chain.");
+        chainStopBtn.disabled = false;
+      }
+    });
+  }
 
   applyChainState({
     chain_status: cfg.chainStatus,

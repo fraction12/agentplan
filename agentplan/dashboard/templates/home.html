@@ -9,7 +9,6 @@
   <article class="stat-card"><div class="stat-label">Active Projects</div><div id="stat-active-projects" class="stat-value">{{ summary.active_projects }}</div></article>
   <article class="stat-card"><div class="stat-label">Tickets In Flight</div><div id="stat-tickets-in-flight" class="stat-value">{{ summary.tickets_in_flight }}</div></article>
   <article class="stat-card"><div class="stat-label">Completed Today</div><div id="stat-completed-today" class="stat-value">{{ summary.completed_today }}</div></article>
-  <article class="stat-card"><div class="stat-label">Active Agents</div><div id="stat-active-agents" class="stat-value">{{ summary.active_agents }}</div></article>
 </section>
 
 {% if projects %}
@@ -98,7 +97,6 @@
     document.getElementById("stat-active-projects").textContent = summary.active_projects ?? 0;
     document.getElementById("stat-tickets-in-flight").textContent = summary.tickets_in_flight ?? 0;
     document.getElementById("stat-completed-today").textContent = summary.completed_today ?? 0;
-    document.getElementById("stat-active-agents").textContent = summary.active_agents ?? 0;
   }
 
   function esc(v) {
