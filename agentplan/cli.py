@@ -3698,6 +3698,23 @@ class FriendlyArgumentParser(argparse.ArgumentParser):
         )
 
 
+_DEPRECATED_COMMANDS = frozenset({
+    "chain", "route", "spawn-terminal", "monitor-process", "auto-tag",
+    "reap", "role", "hook", "agent",
+})
+
+
+def _add_deprecated_parser(sub, name, **kwargs):
+    """Add a subparser that is completely hidden from --help output."""
+    p = sub.add_parser(name, **kwargs)
+    # Remove from the choices display list so it doesn't appear in --help
+    if hasattr(sub, '_choices_actions'):
+        sub._choices_actions = [
+            a for a in sub._choices_actions if a.dest != name
+        ]
+    return p
+
+
 def build_parser():
     p = FriendlyArgumentParser(prog="agentplan", description="Project management CLI for AI agents")
     p.add_argument("--version", action="version", version=f"agentplan {__version__}")
@@ -3775,7 +3792,7 @@ def build_parser():
     clm.add_argument("--tag", help="Filter by a single tag")
     clm.add_argument("--timeout", type=int, help="Claim timeout in seconds")
 
-    rp = sub.add_parser("reap", help=argparse.SUPPRESS)
+    rp = _add_deprecated_parser(sub, "reap")
     rp.add_argument("project", help="Project slug or name")
 
     ss = sub.add_parser("status", help="Project status")
@@ -3826,7 +3843,7 @@ def build_parser():
     ctx.add_argument("--agent", help="Agent name for command templates")
     ctx.add_argument("--regenerate", action="store_true", help="Delete existing .agentplan.md so it is recreated on next agent run")
 
-    rt = sub.add_parser("route", help=argparse.SUPPRESS)
+    rt = _add_deprecated_parser(sub, "route")
     rt.add_argument("project")
     rt.add_argument("ticket_id")
     rt.add_argument("--default-agent", dest="default_agent", help="Fallback agent name if no role match")
@@ -3834,24 +3851,24 @@ def build_parser():
     rt.add_argument("--monitor", action="store_true", help="When used with --terminal, monitor the spawned PID in a background thread")
     rt.add_argument("--terminal-pref", choices=sorted(TERMINAL_CHOICES), help="Terminal preference override (or use AGENTPLAN_TERMINAL)")
 
-    stp = sub.add_parser("spawn-terminal", help=argparse.SUPPRESS)
+    stp = _add_deprecated_parser(sub, "spawn-terminal")
     stp.add_argument("command")
     stp.add_argument("--title", help="Optional terminal title")
     stp.add_argument("--terminal-pref", choices=sorted(TERMINAL_CHOICES), help="Terminal preference override (or use AGENTPLAN_TERMINAL)")
 
-    mp = sub.add_parser("monitor-process", help=argparse.SUPPRESS)
+    mp = _add_deprecated_parser(sub, "monitor-process")
     mp.add_argument("project")
     mp.add_argument("ticket_id", type=int)
     mp.add_argument("pid", type=int)
     mp.add_argument("--timeout", type=int, default=3600, help="Timeout in seconds (default: 3600)")
 
-    atg = sub.add_parser("auto-tag", help=argparse.SUPPRESS)
+    atg = _add_deprecated_parser(sub, "auto-tag")
     atg.add_argument("project")
     atg.add_argument("--ticket", type=int, help="Tag only a specific ticket number")
     atg.add_argument("--dry-run", action="store_true", help="Show predicted tags without writing changes")
     atg.add_argument("--agent", help="Use a specific configured agent name")
 
-    ch = sub.add_parser("chain", help=argparse.SUPPRESS)
+    ch = _add_deprecated_parser(sub, "chain")
     ch.add_argument("project")
     ch.add_argument("--status", action="store_true", help="Show chain status")
     ch.add_argument("--stop", action="store_true", help="Request stop after current ticket")
@@ -3902,7 +3919,7 @@ def build_parser():
     sl = sps.add_parser("list")
     sl.add_argument("project"); sl.add_argument("ticket_id")
 
-    rp = sub.add_parser("role", help=argparse.SUPPRESS)
+    rp = _add_deprecated_parser(sub, "role")
     rps = rp.add_subparsers(dest="role_command")
     rl = rps.add_parser("list", help=argparse.SUPPRESS)
     ra = rps.add_parser("add", help=argparse.SUPPRESS)
@@ -3915,7 +3932,7 @@ def build_parser():
     ru.add_argument("--name", dest="new_name")
     ru.add_argument("--description")
 
-    hp = sub.add_parser("hook", help=argparse.SUPPRESS)
+    hp = _add_deprecated_parser(sub, "hook")
     hps = hp.add_subparsers(dest="hook_command")
     ha = hps.add_parser("add", help=argparse.SUPPRESS)
     ha.add_argument("project")
@@ -3928,7 +3945,7 @@ def build_parser():
     hr.add_argument("project")
     hr.add_argument("hook_id", type=int)
 
-    agp = sub.add_parser("agent", help=argparse.SUPPRESS)
+    agp = _add_deprecated_parser(sub, "agent")
     agps = agp.add_subparsers(dest="agent_command")
     ag_add = agps.add_parser("add", help=argparse.SUPPRESS)
     ag_add.add_argument("name", help="Agent name")
@@ -3956,6 +3973,12 @@ def build_parser():
     internal.add_argument("shell", choices=COMPLETION_SHELLS, help=argparse.SUPPRESS)
     internal.add_argument("current", help=argparse.SUPPRESS)
     internal.add_argument("words", nargs="*", help=argparse.SUPPRESS)
+
+    # Set custom metavar to hide deprecated commands from the choices display
+    visible_cmds = [name for name in sub.choices if name not in _DEPRECATED_COMMANDS and name != "__complete"]
+    for action in p._subparsers._group_actions:
+        if hasattr(action, 'choices') and action.choices is sub.choices:
+            action.metavar = "{" + ",".join(visible_cmds) + "}"
 
     return p
 
