@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentplan"
-version = "0.8.1"
+version = "0.8.2"
 description = "A shared to-do list for AI agents. Dependency-aware task queue, zero dependencies, pure Python."
 readme = "README.md"
 license = {text = "MIT"}
@@ -61,8 +61,8 @@ packages = ["agentplan", "agentplan.dashboard", "agentplan.plugins"]
 "agentplan.dashboard" = ["templates/*.html", "static/*.css", "static/*.js"]
 "agentplan.plugins" = [
     "claude-code/.claude-plugin/*.json",
-    "claude-code/rules/*.md",
-    "claude-code/skills/**/*.md",
+    "claude-code/CLAUDE.md",
+    "claude-code/commands/*.md",
     "claude-code/README.md",
     "codex/*.md",
 ]

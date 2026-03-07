@@ -1,17 +1,17 @@
+---
+allowed-tools: Bash(agentplan:*)
+description: Generate a work loop to autonomously process tickets
+---
+
 # /agentplan:loop
 
-Generate and return the exact execution prompt for Claude Code `/loop` so work proceeds ticket-by-ticket through AgentPlan.
+Generate the exact prompt for Claude Code's `/loop` command to autonomously work through AgentPlan tickets.
 
-## What this skill does
+## Generated loop prompt
 
-- Checks what is unblocked via `agentplan next <project>`
-- If a ticket exists, instructs Claude to claim, execute, validate, commit, close, and log
-- If no ticket exists, instructs Claude to report completion
-- Defines failure handling with `agentplan ticket fail`
+Fill in `<project>` and use with `/loop`:
 
-## Emit this exact prompt (fill in `<project>`)
-
-```text
+```
 Use AgentPlan as the source of truth for this work loop.
 
 Project: <project>
@@ -28,13 +28,13 @@ Loop algorithm:
    c. Implement exactly what the ticket asks.
    d. Run relevant validation (tests/build/lint) for the changed scope.
    e. Commit code with a clear message describing the ticket outcome.
-   f. Mark done: agentplan ticket done <project> <ticket_id>
-   g. Log outcome: agentplan log <project> --ticket <ticket_id> "Completed: <what changed>. Validation: <what passed>."
+   f. Mark done: agentplan ticket done <project> <ticket_num>
+   g. Log outcome: agentplan log <project> --ticket <ticket_num> "Completed: <what changed>. Validation: <what passed>."
    h. Continue loop from step 1.
 
 Failure handling:
 - If implementation cannot be completed, mark failed:
-  agentplan ticket fail <project> <ticket_id> --reason "<blocked by / error summary>"
+  agentplan ticket fail <project> <ticket_num> --reason "<blocked by / error summary>"
 - Then report the blocker clearly and stop.
 
 Rules:
@@ -44,7 +44,5 @@ Rules:
 - Repeat until no unblocked tickets remain.
 ```
 
-## Output format
-
-- Return only the filled prompt block, with `<project>` replaced by the target project id/name.
-- Do not append extra commentary.
+## Output
+Return the filled prompt with `<project>` replaced by the target project name.

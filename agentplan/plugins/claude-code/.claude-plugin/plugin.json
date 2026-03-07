@@ -1,5 +1,8 @@
 {
   "name": "agentplan",
-  "version": "0.8.1",
-  "skills": "./skills/"
+  "description": "Asana for AI agents — task management, ticket tracking, and autonomous work loops",
+  "author": {
+    "name": "Dushyant Garg",
+    "email": "dushyantgarg3@gmail.com"
+  }
 }
