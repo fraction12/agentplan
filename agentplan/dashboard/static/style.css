@@ -382,3 +382,74 @@ h1 { font-family: var(--font-heading); }
   .dashboard-project .filters { grid-template-columns: 1fr; }
   .dashboard-project .kanban-grid { grid-template-columns: 1fr; }
 }
+
+/* Add/Edit Ticket Dialog */
+.ticket-dialog {
+  background: var(--surface, #1a1a2e);
+  color: var(--text, #e0e0e0);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+  min-width: min(420px, 90vw);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.ticket-dialog::backdrop {
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+}
+.ticket-dialog h3 {
+  margin: 0 0 1rem;
+  font-family: var(--font-heading);
+  font-size: 1.2rem;
+}
+.ticket-dialog label {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.6);
+}
+.ticket-dialog input[type="text"],
+.ticket-dialog textarea,
+.ticket-dialog select {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.7rem;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: var(--text, #e0e0e0);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+}
+.ticket-dialog input:focus,
+.ticket-dialog textarea:focus,
+.ticket-dialog select:focus {
+  outline: none;
+  border-color: var(--accent, #6366f1);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.project-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+/* Edit button in ticket panel */
+.ticket-panel-edit-btn {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  color: rgba(255,255,255,0.7);
+}
+.ticket-panel-edit-btn:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}

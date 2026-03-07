@@ -1232,6 +1232,84 @@ def create_app():
         finally:
             conn.close()
 
+    @app.route("/api/ticket/<slug>/add", methods=["POST"])
+    @_require_local_origin
+    def api_ticket_add(slug):
+        conn = get_connection(_db_path())
+        try:
+            project = conn.execute("SELECT id FROM projects WHERE slug=?", (slug,)).fetchone()
+            if not project:
+                abort(404)
+            data = request.get_json(silent=True) or {}
+            title = (data.get("title") or "").strip()
+            if not title:
+                return ({"error": "Title is required"}, 400)
+            desc = (data.get("description") or "").strip()
+            priority = data.get("priority", "none")
+            if priority not in ("high", "medium", "low", "none"):
+                priority = "none"
+            # Get next ticket number
+            row = conn.execute(
+                "SELECT COALESCE(MAX(num), 0) + 1 AS next_num FROM tickets WHERE project_id=?",
+                (project["id"],),
+            ).fetchone()
+            num = row["next_num"]
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            conn.execute(
+                "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes) VALUES (?,?,?,?,?,?,?,?)",
+                (project["id"], num, title, desc, priority, "", "[]", ""),
+            )
+            ticket_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute(
+                "INSERT INTO ticket_history (ticket_id, old_state, new_state, changed_at) VALUES (?,?,?,?)",
+                (ticket_id, None, "created", ts),
+            )
+            conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (ts, project["id"]))
+            conn.commit()
+            return {"ok": True, "num": num}
+        finally:
+            conn.close()
+
+    @app.route("/api/ticket/<slug>/<int:ticket_num>/edit", methods=["POST"])
+    @_require_local_origin
+    def api_ticket_edit(slug, ticket_num):
+        conn = get_connection(_db_path())
+        try:
+            project = conn.execute("SELECT id FROM projects WHERE slug=?", (slug,)).fetchone()
+            if not project:
+                abort(404)
+            ticket = conn.execute(
+                "SELECT id, title, description, priority FROM tickets WHERE project_id=? AND num=?",
+                (project["id"], ticket_num),
+            ).fetchone()
+            if not ticket:
+                abort(404)
+            data = request.get_json(silent=True) or {}
+            updates = {}
+            if "title" in data:
+                title = (data["title"] or "").strip()
+                if title:
+                    updates["title"] = title
+            if "description" in data:
+                updates["description"] = (data["description"] or "").strip()
+            if "priority" in data:
+                p = data["priority"]
+                if p in ("high", "medium", "low", "none"):
+                    updates["priority"] = p
+            if not updates:
+                return ({"error": "No valid fields to update"}, 400)
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            set_clause = ", ".join(f"{key}=?" for key in updates.keys())
+            conn.execute(
+                f"UPDATE tickets SET {set_clause} WHERE id=?",
+                (*updates.values(), ticket["id"]),
+            )
+            conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (ts, project["id"]))
+            conn.commit()
+            return {"ok": True}
+        finally:
+            conn.close()
+
     @app.route("/api/ticket/<slug>/<int:ticket_num>")
     def api_ticket_detail(slug, ticket_num):
         conn = get_connection(_db_path())

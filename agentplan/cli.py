@@ -3088,7 +3088,7 @@ def cmd_dashboard(args):
             return
         try:
             result = subprocess.run(
-                ["lsof", "-ti", f":{port}"],
+                ["/usr/sbin/lsof" if os.path.exists("/usr/sbin/lsof") else "lsof", "-ti", f":{port}"],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -3118,8 +3118,90 @@ def cmd_dashboard(args):
     except ImportError:
         print('Error: Flask not installed. Run: pip install agentplan[dashboard]', file=__import__('sys').stderr)
         __import__("sys").exit(1)
+
+    if getattr(args, "background", False):
+        import sys
+        pid = os.fork()
+        if pid > 0:
+            print(f"Dashboard running in background (pid {pid}) at http://{args.host}:{args.port}")
+            print(f"Stop with: agentplan dashboard --stop")
+            return
+        # Child process: detach from terminal
+        os.setsid()
+        sys.stdin.close()
+        devnull = open(os.devnull, "w")
+        sys.stdout = devnull
+        sys.stderr = devnull
+        run_dashboard(host=args.host, port=args.port, open_browser=False)
+        return
+
     run_dashboard(host=args.host, port=args.port, open_browser=getattr(args, "open_browser", False))
 
+
+
+def cmd_setup(args):
+    tool = getattr(args, "tool", None)
+
+    claude_instructions = """
+  ╭─ Claude Code ──────────────────────────────────────────────╮
+  │                                                            │
+  │  Install the agentplan plugin:                             │
+  │                                                            │
+  │    /install-plugin github:fraction12/agentplan             │
+  │                                                            │
+  │  Or manually copy the plugin:                              │
+  │                                                            │
+  │    cp -r plugins/claude-code ~/.claude/plugins/agentplan   │
+  │                                                            │
+  │  Then every Claude Code session will know agentplan.       │
+  │  Try: /agentplan:plan to create a project from chat.       │
+  │                                                            │
+  ╰────────────────────────────────────────────────────────────╯"""
+
+    codex_instructions = """
+  ╭─ Codex CLI ────────────────────────────────────────────────╮
+  │                                                            │
+  │  Copy the agentplan skill to Codex:                        │
+  │                                                            │
+  │    mkdir -p ~/.codex/skills                                │
+  │    cp -r plugins/claude-code ~/.codex/skills/agentplan     │
+  │                                                            │
+  │  Codex 0.110.0+ will load the skill automatically.        │
+  │                                                            │
+  ╰────────────────────────────────────────────────────────────╯"""
+
+    openclaw_instructions = """
+  ╭─ OpenClaw ─────────────────────────────────────────────────╮
+  │                                                            │
+  │  Install the agentplan skill:                              │
+  │                                                            │
+  │    clawhub install agentplan                               │
+  │                                                            │
+  │  Or copy to your workspace skills:                         │
+  │                                                            │
+  │    cp -r plugins/claude-code                               │
+  │       ~/.openclaw/workspace/skills/agentplan               │
+  │                                                            │
+  ╰────────────────────────────────────────────────────────────╯"""
+
+    header = """
+  ┌──────────────────────────────────────────────────────────┐
+  │  agentplan — Asana for AI Agents                         │
+  │                                                          │
+  │  Step 1: pip install agentplan          ✓ done           │
+  │  Step 2: Install the skill on your AI tool (see below)   │
+  │  Step 3: Tell your AI to plan something!                 │
+  └──────────────────────────────────────────────────────────┘"""
+
+    print(header)
+    if tool == "claude" or tool is None:
+        print(claude_instructions)
+    if tool == "codex" or tool is None:
+        print(codex_instructions)
+    if tool == "openclaw" or tool is None:
+        print(openclaw_instructions)
+
+    print("\n  Quick start: tell your AI \"plan a new project\" and it handles the rest.\n")
 
 
 def cmd_completion(args):
@@ -3626,6 +3708,7 @@ def build_parser():
     dash_p.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
     dash_p.add_argument("--open", action="store_true", dest="open_browser", help="Open dashboard in default browser")
     dash_p.add_argument("--stop", action="store_true", help="Stop the running dashboard")
+    dash_p.add_argument("--background", action="store_true", help="Run dashboard as a background process")
 
     c = sub.add_parser("create", help="Create a project")
     c.add_argument("title")
@@ -3860,6 +3943,9 @@ def build_parser():
     ag_upd.add_argument("--roles", help="New comma-separated roles (replaces existing)")
     ag_upd.add_argument("--priority", type=int, help="New routing priority (lower number wins)")
 
+    setup_p = sub.add_parser("setup", help="Show getting-started instructions for your AI tool")
+    setup_p.add_argument("tool", nargs="?", choices=["claude", "codex", "openclaw"], help="AI tool to configure (default: show all)")
+
     cp = sub.add_parser("completion", help="Print shell completion script")
     cp.add_argument("shell", choices=COMPLETION_SHELLS)
 
@@ -3876,7 +3962,7 @@ DISPATCH = {
     "list": cmd_list, "search": cmd_search, "attach": cmd_attach, "log": cmd_log, "close": cmd_close,
     "archive": cmd_archive,
     "note": cmd_note, "depend": cmd_depend, "undepend": cmd_undepend, "remove": cmd_remove, "history": cmd_history, "version": cmd_version, "dashboard": cmd_dashboard,
-    "completion": cmd_completion, "__complete": cmd_internal_complete,
+    "setup": cmd_setup, "completion": cmd_completion, "__complete": cmd_internal_complete,
     "context": cmd_context,
     "route": cmd_route,
     "spawn-terminal": cmd_spawn_terminal,
@@ -3937,6 +4023,17 @@ def main():
     try:
         args = parser.parse_args()
         if not args.command:
+            # Check if this is a first-time user (no projects yet)
+            try:
+                conn = get_connection()
+                projects = conn.execute("SELECT COUNT(*) as cnt FROM projects").fetchone()
+                conn.close()
+                if projects and projects["cnt"] == 0:
+                    print("  Welcome to agentplan — Asana for AI Agents\n")
+                    print("  Get started: agentplan setup\n")
+                    return
+            except Exception:
+                pass
             parser.print_help()
             fail(
                 "No command provided.",
