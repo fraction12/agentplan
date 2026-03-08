@@ -166,6 +166,9 @@ After setup, restart the AI tool.
 ## Dashboard
 
 ```bash
+# install with dashboard extras (requires Flask)
+pip install "agentplan[dashboard]"
+
 agentplan dashboard
 # or run in background:
 agentplan dashboard --background
