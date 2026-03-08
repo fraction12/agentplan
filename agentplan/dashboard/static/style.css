@@ -604,3 +604,31 @@ h1 { font-family: var(--font-heading); }
   background: rgba(255,255,255,0.1);
   color: #fff;
 }
+.ticket-field-dialog {
+  width: min(32rem, calc(100vw - 2rem));
+}
+.ticket-field-help {
+  margin: 0.25rem 0 1rem;
+  color: rgba(255,255,255,0.64);
+  font-size: 0.9rem;
+}
+.ticket-field-row[hidden] {
+  display: none;
+}
+.ticket-field-row span {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: rgba(255,255,255,0.8);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.ticket-field-dialog textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+.ticket-field-error {
+  margin: 0.9rem 0 0;
+  color: #ff8e8e;
+  font-size: 0.9rem;
+}

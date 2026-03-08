@@ -1557,6 +1557,23 @@ def test_dashboard_project_detail_includes_editable_directory_field():
     assert 'id="project-dir-input"' in body
 
 
+def test_dashboard_project_detail_includes_ticket_field_edit_dialog():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Ticket Field Dialog")
+
+    client = app.test_client()
+    resp = client.get("/project/web-ticket-field-dialog")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="ticket-field-dialog"' in body
+    assert 'id="ticket-field-form"' in body
+    assert 'id="ticket-field-input"' in body
+    assert 'id="ticket-field-textarea"' in body
+    assert 'id="ticket-field-select"' in body
+    assert 'id="ticket-field-save"' in body
+
+
 def test_dashboard_project_detail_links_to_ticket_detail_view():
     from agentplan.dashboard import app
 
@@ -2545,6 +2562,40 @@ def test_dashboard_project_detail_script_includes_dependency_and_log_controls():
     assert '/tickets-list' in project_js
     assert 'form[data-ticket-log-form][data-ticket-num]' in project_js
     assert '/log`' in project_js
+
+
+def test_dashboard_ticket_edit_endpoint_updates_supported_fields():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Ticket Edit API")
+    cli("ticket", "add", "ticket-edit-api", "Original title", "--desc", "Original description")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/ticket/ticket-edit-api/1/edit",
+        json={"title": "Updated title", "description": "Updated description", "priority": "high"},
+        headers={"Origin": "http://localhost"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute(
+        "SELECT title, description, priority FROM tickets WHERE project_id=1 AND num=1"
+    ).fetchone()
+    conn.close()
+    assert row["title"] == "Updated title"
+    assert row["description"] == "Updated description"
+    assert row["priority"] == "high"
+
+
+def test_dashboard_project_detail_script_uses_real_ticket_field_editor():
+    project_js = Path("agentplan/dashboard/static/project.js").read_text(encoding="utf-8")
+    assert "FIELD_EDITOR_CONFIG" in project_js
+    assert "ticket-field-dialog" in project_js
+    assert "prompt(" not in project_js
 
 
 # ---------------------------------------------------------------------------

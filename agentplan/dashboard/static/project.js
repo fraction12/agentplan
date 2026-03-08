@@ -32,6 +32,33 @@
   const panelContent = document.getElementById("ticket-panel-content");
   const projectSlug = cfg.projectSlug;
   let dependencyOptionsCache = null;
+  const FIELD_EDITOR_CONFIG = {
+    title: {
+      type: "input",
+      title: "Edit title",
+      label: "Title",
+      help: "Update the ticket title.",
+      emptyMessage: "Title cannot be empty.",
+      normalize: (value) => String(value || "").trim(),
+    },
+    description: {
+      type: "textarea",
+      title: "Edit description",
+      label: "Description",
+      help: "Update the ticket description.",
+      normalize: (value) => String(value || "").trim(),
+    },
+    priority: {
+      type: "select",
+      title: "Edit priority",
+      label: "Priority",
+      help: "Choose one of the supported priority levels.",
+      normalize: (value) => String(value || "none").trim().toLowerCase(),
+      isValid: (value) => ["high", "medium", "low", "none"].includes(value),
+      emptyMessage: "Choose a valid priority.",
+    },
+  };
+  let activeFieldEdit = null;
 
   function renderList(items, emptyText, variant = "plain", ticketNum = "") {
     if (!items || items.length === 0) return `<p class="panel-muted">${esc(emptyText)}</p>`;
@@ -152,6 +179,86 @@
       renderPanel(data);
     } catch (error) {
       panelContent.innerHTML = `<section class="panel-block"><p class="panel-muted">Failed to load ticket details (${esc(error.message)}).</p></section>`;
+    }
+  }
+
+  const fieldDialog = document.getElementById("ticket-field-dialog");
+  const fieldForm = document.getElementById("ticket-field-form");
+  const fieldDialogTitle = document.getElementById("ticket-field-dialog-title");
+  const fieldDialogHelp = document.getElementById("ticket-field-dialog-help");
+  const fieldInputRow = document.getElementById("ticket-field-input-row");
+  const fieldInputLabel = document.getElementById("ticket-field-input-label");
+  const fieldInput = document.getElementById("ticket-field-input");
+  const fieldTextareaRow = document.getElementById("ticket-field-textarea-row");
+  const fieldTextareaLabel = document.getElementById("ticket-field-textarea-label");
+  const fieldTextarea = document.getElementById("ticket-field-textarea");
+  const fieldSelectRow = document.getElementById("ticket-field-select-row");
+  const fieldSelectLabel = document.getElementById("ticket-field-select-label");
+  const fieldSelect = document.getElementById("ticket-field-select");
+  const fieldError = document.getElementById("ticket-field-error");
+  const fieldCancelBtn = document.getElementById("ticket-field-cancel");
+  const fieldSaveBtn = document.getElementById("ticket-field-save");
+
+  function clearFieldEditorError() {
+    if (!fieldError) return;
+    fieldError.hidden = true;
+    fieldError.textContent = "";
+  }
+
+  function setFieldEditorError(message) {
+    if (!fieldError) return;
+    fieldError.textContent = message;
+    fieldError.hidden = false;
+  }
+
+  function activeFieldControl() {
+    if (!activeFieldEdit) return null;
+    const editor = FIELD_EDITOR_CONFIG[activeFieldEdit.field];
+    if (!editor) return null;
+    if (editor.type === "textarea") return fieldTextarea;
+    if (editor.type === "select") return fieldSelect;
+    return fieldInput;
+  }
+
+  function setActiveFieldValue(value) {
+    const control = activeFieldControl();
+    if (!control) return;
+    control.value = String(value ?? "");
+  }
+
+  function getActiveFieldValue() {
+    const control = activeFieldControl();
+    if (!control) return "";
+    return control.value;
+  }
+
+  function closeFieldEditor() {
+    activeFieldEdit = null;
+    clearFieldEditorError();
+    if (fieldForm) fieldForm.reset();
+    if (fieldSaveBtn) fieldSaveBtn.disabled = false;
+    if (fieldDialog?.open) fieldDialog.close();
+  }
+
+  function openFieldEditor(field, ticketNum, currentValue) {
+    const editor = FIELD_EDITOR_CONFIG[field];
+    if (!editor || !fieldDialog) return;
+    activeFieldEdit = { field, ticketNum, originalValue: editor.normalize ? editor.normalize(currentValue) : String(currentValue ?? "") };
+    clearFieldEditorError();
+    if (fieldDialogTitle) fieldDialogTitle.textContent = editor.title;
+    if (fieldDialogHelp) fieldDialogHelp.textContent = editor.help;
+    if (fieldInputLabel) fieldInputLabel.textContent = editor.label;
+    if (fieldTextareaLabel) fieldTextareaLabel.textContent = editor.label;
+    if (fieldSelectLabel) fieldSelectLabel.textContent = editor.label;
+    if (fieldInputRow) fieldInputRow.hidden = editor.type !== "input";
+    if (fieldTextareaRow) fieldTextareaRow.hidden = editor.type !== "textarea";
+    if (fieldSelectRow) fieldSelectRow.hidden = editor.type !== "select";
+    setActiveFieldValue(activeFieldEdit.originalValue);
+    fieldDialog.showModal();
+    const control = activeFieldControl();
+    if (control) {
+      control.focus();
+      if (typeof control.select === "function" && editor.type !== "select") control.select();
     }
   }
 
@@ -426,6 +533,7 @@
   closeBtn.addEventListener("click", closePanel);
   backdrop.addEventListener("click", closePanel);
   document.addEventListener("keydown", (event) => {
+    if (fieldDialog?.open) return;
     if (event.key === "Escape" && panel.classList.contains("is-open")) closePanel();
   });
 
@@ -881,23 +989,64 @@
     const field = btn.dataset.editField;
     const ticketNum = btn.dataset.editNum;
     const currentValue = _panelData[field] || "";
-    const newValue = prompt(`Edit ${field}:`, currentValue);
-    if (newValue === null || newValue === currentValue) return;
-    try {
-      const resp = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/${ticketNum}/edit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: newValue }),
-      });
-      const data = await resp.json();
-      if (data.ok) {
+    openFieldEditor(field, ticketNum, currentValue);
+  });
+
+  if (fieldCancelBtn) {
+    fieldCancelBtn.addEventListener("click", closeFieldEditor);
+  }
+
+  if (fieldDialog) {
+    fieldDialog.addEventListener("click", (event) => {
+      if (event.target === fieldDialog) closeFieldEditor();
+    });
+    fieldDialog.addEventListener("close", () => {
+      activeFieldEdit = null;
+      clearFieldEditorError();
+      if (fieldSaveBtn) fieldSaveBtn.disabled = false;
+    });
+  }
+
+  if (fieldForm) {
+    fieldForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!activeFieldEdit) return;
+      const editor = FIELD_EDITOR_CONFIG[activeFieldEdit.field];
+      if (!editor) return;
+      const normalized = editor.normalize ? editor.normalize(getActiveFieldValue()) : getActiveFieldValue();
+      if (editor.emptyMessage && !normalized) {
+        setFieldEditorError(editor.emptyMessage);
+        activeFieldControl()?.focus();
+        return;
+      }
+      if (editor.isValid && !editor.isValid(normalized)) {
+        setFieldEditorError(editor.emptyMessage || "Enter a valid value.");
+        activeFieldControl()?.focus();
+        return;
+      }
+      if (normalized === activeFieldEdit.originalValue) {
+        closeFieldEditor();
+        return;
+      }
+      if (fieldSaveBtn) fieldSaveBtn.disabled = true;
+      clearFieldEditorError();
+      try {
+        const ticketNum = activeFieldEdit.ticketNum;
+        const field = activeFieldEdit.field;
+        const resp = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/${ticketNum}/edit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ [field]: normalized }),
+        });
+        const data = await resp.json().catch(() => null);
+        if (!resp.ok) throw new Error((data && data.error) || `HTTP ${resp.status}`);
+        closeFieldEditor();
         showToast(`Ticket #${ticketNum} updated`);
         loadTicket(ticketNum);
-      } else {
-        showToast(data.error || "Failed to update", "error");
+      } catch (err) {
+        if (fieldSaveBtn) fieldSaveBtn.disabled = false;
+        setFieldEditorError(err.message || "Failed to update ticket.");
       }
-    } catch (err) {
-      showToast("Network error", "error");
-    }
-  });
+    });
+  }
 })();
