@@ -99,9 +99,9 @@ The main drift today is inconsistency between the repo's current product directi
 
 - `README.md`
 - `agentplan/plugins/claude-code/README.md`
+- `agentplan/plugins/claude-code/CLAUDE.md`
 - `agentplan/plugins/claude-code/commands/loop.md`
-- `plugins/claude-code/rules/agentplan.md`
-- `plugins/codex/SKILL.md`
+- `agentplan/plugins/codex/SKILL.md`
 - `docs/marketplace/README.md`
 - `docs/marketplace/quickstart.md`
 - `docs/marketplace/support.md`
