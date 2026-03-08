@@ -1680,6 +1680,22 @@ def test_dashboard_project_detail_includes_ticket_field_edit_dialog():
     assert 'id="ticket-field-save"' in body
 
 
+def test_dashboard_project_detail_includes_panel_header_controls_and_hidden_chain_ui():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Panel Header")
+
+    client = app.test_client()
+    resp = client.get("/project/web-panel-header")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="panel-title-edit-btn"' in body
+    assert 'id="ticket-panel-menu-button"' in body
+    assert 'data-ticket-delete-overflow' in body
+    assert 'id="chain-controls"' in body
+    assert 'id="chain-controls" class="chain-controls" hidden' in body
+
+
 def test_dashboard_project_detail_links_to_ticket_detail_view():
     from agentplan.dashboard import app
 
@@ -2486,7 +2502,7 @@ def test_dashboard_review_panel_done_and_skip_actions():
     assert rows[1]["status"] == "skipped"
 
 
-def test_dashboard_project_detail_script_includes_generic_transition_buttons():
+def test_dashboard_project_detail_script_keeps_kanban_transition_logic():
     from agentplan.dashboard import app
 
     cli("create", "Project Panel Actions")
@@ -2498,14 +2514,10 @@ def test_dashboard_project_detail_script_includes_generic_transition_buttons():
     body = resp.get_data(as_text=True)
     assert 'src="/static/project.js"' in body
     project_js = Path("agentplan/dashboard/static/project.js").read_text(encoding="utf-8")
-    assert 'data-transition-action' in project_js
-    assert 'label: "Start"' in project_js
-    assert 'label: "Block"' in project_js
-    assert 'label: "Fail"' in project_js
-    assert 'label: "Review"' in project_js
-    assert 'label: "Done"' in project_js
-    assert 'label: "Retry"' in project_js
-    assert 'label: "Skip"' in project_js
+    assert "VALID_TRANSITIONS" in project_js
+    assert "canTransitionTo" in project_js
+    assert "/transition" in project_js
+    assert 'data-column-body' in body
 
 
 def test_dashboard_ticket_delete_endpoint_removes_ticket_and_cleans_dependencies():
@@ -2537,7 +2549,7 @@ def test_dashboard_ticket_delete_endpoint_removes_ticket_and_cleans_dependencies
 
 def test_dashboard_project_detail_script_includes_ticket_delete_action():
     project_js = Path("agentplan/dashboard/static/project.js").read_text(encoding="utf-8")
-    assert 'data-ticket-delete' in project_js
+    assert 'data-ticket-delete-overflow' in project_js
     assert "/delete`, {" in project_js
 
 
@@ -2660,14 +2672,31 @@ def test_dashboard_ticket_log_endpoint_inserts_entry():
     assert row["entry"] == "dash agent: checked logs"
 
 
-def test_dashboard_project_detail_script_includes_dependency_and_log_controls():
+def test_dashboard_project_detail_script_includes_dependency_controls():
     project_js = Path("agentplan/dashboard/static/project.js").read_text(encoding="utf-8")
-    assert 'data-dependency-toggle' in project_js
-    assert 'data-dependency-add' in project_js
+    assert 'data-dependency-picker-open' in project_js
+    assert 'data-dependency-pick' in project_js
     assert 'data-dependency-remove' in project_js
     assert '/tickets-list' in project_js
-    assert 'form[data-ticket-log-form][data-ticket-num]' in project_js
-    assert '/log`' in project_js
+    assert "Blocked by" in project_js
+    assert "Blocking" in project_js
+
+
+def test_dashboard_project_detail_script_hardens_panel_menu_and_picker_dismissal():
+    project_js = Path("agentplan/dashboard/static/project.js").read_text(encoding="utf-8")
+    assert 'closePanelMenu({ restoreFocus: true })' in project_js
+    assert 'closeDependencyPicker({ restoreFocus: true })' in project_js
+    assert 'panelMenu.querySelector(".kebab-menu-item")?.focus()' in project_js
+    assert 'currentRow.contains(event.target)' in project_js
+
+
+def test_dashboard_project_detail_script_removes_redundant_panel_sections():
+    project_js = Path("agentplan/dashboard/static/project.js").read_text(encoding="utf-8")
+    assert "Audit Timeline" not in project_js
+    assert "Close Notes" not in project_js
+    assert "<h3>Title" not in project_js
+    assert "Actions</h3>" not in project_js
+    assert '/log`' not in project_js
 
 
 def test_dashboard_ticket_edit_endpoint_updates_supported_fields():
