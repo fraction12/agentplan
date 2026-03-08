@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>agentplan Quickstart — install, create projects, and integrate with AI agents</title>
+  <title>agentplan Quickstart — install, create projects, and integrate with AI tools</title>
   <meta name="description" content="Get started with agentplan: install via pip, create your first project, manage tickets, and integrate with Claude, Codex, OpenClaw, or Python scripts." />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -295,7 +295,7 @@
   <header class="hero">
     <div class="container">
       <span class="pill">⚡ Getting started in minutes</span>
-      <h1>Quickstart: install agentplan, create your first project, and integrate with your AI agents</h1>
+      <h1>Quickstart: install agentplan, create your first project, and integrate with your AI tools</h1>
       <p class="lead">This guide is fully copy-paste friendly. Run the commands as-is, then adapt project names and ticket content to your workflow.</p>
     </div>
   </header>
@@ -363,7 +363,7 @@ agentplan status marketing-site</code></pre>
 
       <section id="integrations">
         <h2 class="section-title">4) Integration examples</h2>
-        <p class="section-note">Use these snippets to connect agentplan with your preferred coding agent workflow.</p>
+        <p class="section-note">Use these snippets to connect agentplan with your preferred coding workflow.</p>
 
         <h3>Claude Code / Claude (Anthropic)</h3>
         <div class="code-wrap">
@@ -381,13 +381,13 @@ TASK=$(agentplan next marketing-site --format compact)
 codex exec --full-auto "Implement this agentplan ticket:\n\n$TASK\n\nRun tests and report results."</code></pre>
         </div>
 
-        <h3>OpenClaw agents</h3>
+        <h3>OpenClaw workflow</h3>
         <div class="code-wrap">
           <button class="copy-btn" type="button">Copy</button>
-          <pre><code class="language-bash"># example: assign a ticket to a named OpenClaw agent before execution
+          <pre><code class="language-bash"># example: assign a ticket to a named OpenClaw worker before execution
 agentplan ticket start marketing-site 2 --agent dash
 
-# your OpenClaw agent prompt can include:
+# your OpenClaw prompt can include:
 # "Run: agentplan next marketing-site --format compact
 # Then implement that ticket and mark it done with:
 # agentplan ticket done marketing-site &lt;id&gt; --agent dash"</code></pre>
@@ -407,7 +407,7 @@ next_ticket = run(["agentplan", "next", project, "--format", "compact"])
 prompt = f"""Implement this ticket:\n\n{next_ticket}\n\nReturn changed files and test results."""
 
 # Replace with your model/client call:
-print("Send to your agent model:")
+print("Send to your model:")
 print(prompt)
 
 # After successful implementation, mark done (replace '1' with actual ticket id)
@@ -437,7 +437,7 @@ print(prompt)
           </article>
           <article class="command-item">
             <code>agentplan ticket start &lt;project&gt; &lt;ticket-id&gt; --agent &lt;name&gt;</code>
-            <p>Assign ownership to an agent or person.</p>
+            <p>Assign ownership to a worker or person.</p>
           </article>
           <article class="command-item">
             <code>agentplan ticket done &lt;project&gt; &lt;ticket-id&gt; --agent &lt;name&gt;</code>
@@ -486,7 +486,7 @@ agentplan dashboard --stop</code></pre>
           </article>
           <article class="command-item">
             <code>Live Activity Feed</code>
-            <p>Real-time stream of agent actions via Server-Sent Events (SSE).</p>
+            <p>Real-time stream of ticket activity via Server-Sent Events (SSE).</p>
           </article>
         </div>
       </section>
