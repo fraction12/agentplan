@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>agentplan — The task queue your AI agents are missing</title>
-  <meta name="description" content="A dependency-aware ticket system that any agent can read from and write to. No framework lock-in. No runtime. Just a shared to-do list." />
+  <title>agentplan — Project management for AI-native teams</title>
+  <meta name="description" content="Think Asana, but your team members are AI agents. Create projects, break work into tickets, assign to Claude Code, Codex, or any AI tool. Humans manage. Agents execute." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -170,8 +170,8 @@
   <section class="hero">
     <div class="container">
       <div class="eyebrow">pip install agentplan &nbsp;·&nbsp; Python 3.9+</div>
-      <h1>The task queue your AI agents are missing</h1>
-      <p class="lead">A shared task board for AI agents. Create projects, break work into tickets, let your AI drive. Works with Claude Code, Codex, and any AI tool. No framework lock-in.</p>
+      <h1>Project management for AI-native teams</h1>
+      <p class="lead">Think Asana, but your team members are AI agents. Create projects, break work into tickets, assign to Claude Code, Codex, or any AI tool. Humans manage. Agents execute. Everyone stays in sync.</p>
       <div class="pip-install-wrap" style="margin: 0 auto 28px; display:inline-flex; align-items:center; background:#151b2b; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:12px 20px; gap:14px; font-family:'JetBrains Mono',monospace; font-size:1rem; color:#a7f3d0; max-width:340px; width:100%;">
         <span style="flex:1; text-align:left;">pip install agentplan</span>
         <button onclick="(async()=>{try{await navigator.clipboard.writeText('pip install agentplan');this.innerHTML='✓';setTimeout(()=>this.innerHTML='&#128203;',1500)}catch(e){}})()" title="Copy to clipboard" style="background:none;border:none;cursor:pointer;font-size:1.1rem;color:#8892a8;padding:0;line-height:1;transition:color 0.2s;" onmouseover="this.style.color='#e2e8f0'" onmouseout="this.style.color='#8892a8'">&#128203;</button>
@@ -191,7 +191,7 @@
 
   <div class="trust-bar">
     <div class="container">
-      <p>Zero dependencies &nbsp;·&nbsp; 242 tests &nbsp;·&nbsp; Works with Claude Code, Codex, OpenClaw & any CLI agent &nbsp;·&nbsp; Now with GitHub Actions, CI/CD, and project context</p>
+      <p>Zero dependencies &nbsp;·&nbsp; 242 tests &nbsp;·&nbsp; Works with Claude Code, Codex, OpenClaw &amp; any CLI agent</p>
     </div>
   </div>
 
@@ -202,20 +202,20 @@
         <div class="step">
           <div class="step-number">01</div>
           <div class="step-code">agentplan create my-project</div>
-          <h3>Create</h3>
-          <p>Define a project with tickets, priorities, and dependencies in seconds.</p>
+          <h3>Plan</h3>
+          <p>Define your project. Add tickets with priorities, tags, and dependencies.</p>
         </div>
         <div class="step">
           <div class="step-number">02</div>
           <div class="step-code">agentplan next my-project</div>
-          <h3>Claim</h3>
-          <p>Agents grab the next unblocked ticket automatically — no coordination overhead.</p>
+          <h3>Assign</h3>
+          <p>Agents claim the next unblocked ticket automatically. No standups needed.</p>
         </div>
         <div class="step">
           <div class="step-number">03</div>
-          <div class="step-code">agentplan ticket done my-project 1 --agent dash</div>
+          <div class="step-code">agentplan ticket done my-project 1 --agent codex</div>
           <h3>Ship</h3>
-          <p>Mark complete with attribution. Dependencies auto-unblock downstream tickets.</p>
+          <p>Agents mark work complete. Dependencies auto-unblock. Progress updates in real-time.</p>
         </div>
       </div>
     </div>
@@ -226,9 +226,9 @@
       <h2 class="section-heading">Why agentplan</h2>
       <div class="features">
         <div class="feature-card">
-          <span class="feature-icon">⚡</span>
-          <h3>Zero dependencies</h3>
-          <p>Pure Python stdlib. pip install and go. No heavy runtimes, no package soup.</p>
+          <span class="feature-icon">🤖</span>
+          <h3>Agent-agnostic</h3>
+          <p>Works with any AI tool, any framework, any model. No vendor lock-in.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">🔗</span>
@@ -236,67 +236,26 @@
           <p>Tickets auto-unblock when their blockers close. The queue self-manages.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">🤖</span>
-          <h3>Agent-agnostic</h3>
-          <p>Works with any agent, any framework, any model. No vendor lock-in.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">🧩</span>
-          <h3>Claude Code Plugin</h3>
-          <p>Run <code>agentplan setup claude</code> and get /agentplan:plan, /agentplan:status, and /agentplan:loop commands instantly.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">🧠</span>
-          <h3>Codex Skill</h3>
-          <p>Run <code>agentplan setup codex</code> and Codex learns to plan, track, and close tickets automatically.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">🔄</span>
-          <h3>Stale Claim Handling</h3>
-          <p>Claim timeouts and auto-reaping. Crashed agents don't block the queue — tickets self-heal.</p>
+          <span class="feature-icon">🔒</span>
+          <h3>Parallel-safe</h3>
+          <p>Multiple agents work simultaneously. No double-claims. Safe across concurrent agents.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">📊</span>
-          <h3>Dashboard Control Plane</h3>
-          <p>Start/Stop work, Kanban board, Agents page, review panel. Real-time SSE updates.</p>
+          <h3>Dashboard</h3>
+          <p>Real-time kanban, activity feed, review panel. Mission control for your AI team.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">🔒</span>
-          <h3>Parallel-safe</h3>
-          <p>SQLite with BEGIN IMMEDIATE. No double-claims. Safe across concurrent agents.</p>
+          <span class="feature-icon">🧩</span>
+          <h3>Plugin ecosystem</h3>
+          <p>One-command setup for Claude Code and Codex. Run <code>agentplan setup claude</code> or <code>agentplan setup codex</code> and go.</p>
         </div>
         <div class="feature-card">
-          <span class="feature-icon">🔍</span>
-          <h3>Auto-Detection</h3>
-          <p>Scans for installed AI tools and registers them. Auto-generates project context by scanning your codebase.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">📄</span>
-          <h3>Project Context</h3>
-          <p>Link projects to codebases. Agents auto-generate .agentplan.md context files — like CLAUDE.md, but for your task queue.</p>
+          <span class="feature-icon">⚡</span>
+          <h3>Zero overhead</h3>
+          <p>Pure Python, no dependencies, pip install and go. No heavy runtimes, no package soup.</p>
         </div>
       </div>
-    </div>
-  </section>
-
-  <section class="section section-alt">
-    <div class="container">
-      <h2 class="section-heading">Ship to CI/CD in minutes</h2>
-      <div class="steps">
-        <div class="step">
-          <div class="step-number">01</div>
-          <div class="step-code">uses: fraction12/agentplan/actions/setup@v0.7.1</div>
-          <h3>Setup Action</h3>
-          <p>Install agentplan in any GitHub Actions workflow with a single line.</p>
-        </div>
-        <div class="step">
-          <div class="step-number">02</div>
-          <div class="step-code">agentplan issue import my-project --label agentplan</div>
-          <h3>Import Issues</h3>
-          <p>Pull labeled GitHub issues directly into your agentplan project as tickets.</p>
-        </div>
-      </div>
-      <p style="font-family:'Inter',ui-sans-serif,sans-serif;color:var(--muted);font-size:0.9rem;margin-top:24px;"><a href="https://github.com/fraction12/agentplan/tree/main/docs/marketplace" target="_blank" rel="noopener" style="color:var(--text);">See the full Marketplace documentation &rarr;</a></p>
     </div>
   </section>
 
@@ -319,55 +278,34 @@
   </section>
 
 
-  <section id="dashboard" class="section">
-    <div class="container">
-      <h2 class="section-heading">Built-in Dashboard</h2>
-      <p style="font-family:'Inter',ui-sans-serif,sans-serif;color:var(--muted);font-size:1.05rem;margin-bottom:32px;max-width:680px;line-height:1.7;">Real-time mission control for your projects and tickets. Launch with one command.</p>
-      <div class="cli-block" style="max-width:560px;margin-bottom:40px;">
-        <div class="cli-topbar">
-          <div class="cli-dot"></div><div class="cli-dot"></div><div class="cli-dot"></div>
-          <span class="cli-label">zsh</span>
-        </div>
-        <div class="cli-body" style="padding:20px 28px;">
-          <span class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">agentplan dashboard --open</span></span>
-        </div>
-      </div>
-      <div class="features" style="margin-bottom:32px;">
-        <div class="feature-card">
-          <span class="feature-icon">🗂️</span>
-          <h3>Mission Control</h3>
-          <p>Project cards with SVG progress rings showing real-time completion at a glance.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">📋</span>
-          <h3>6-Column Kanban</h3>
-          <p>Full-width board: Todo → In Progress → Blocked → Needs Review → Failed → Done. Create and edit tickets directly from the UI.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">🔍</span>
-          <h3>Ticket Detail</h3>
-          <p>Slide-over panel with subtasks, dependencies, and full audit timeline.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">⚡</span>
-          <h3>Live Activity Feed</h3>
-          <p>Real-time stream of agent actions delivered via SSE — no polling, no refresh.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">🛡️</span>
-          <h3>Review Panel</h3>
-          <p>Failed and needs-review tickets surface with Mark Done, Retry, or Skip actions. Human in the loop.</p>
-        </div>
-      </div>
-      <p style="font-family:'Inter',ui-sans-serif,sans-serif;color:var(--muted);font-size:0.9rem;">Requires Flask: <code style="font-family:'JetBrains Mono',monospace;color:#a7f3d0;background:var(--panel);padding:2px 8px;border-radius:6px;border:1px solid var(--border);">pip install agentplan[dashboard]</code></p>
-    </div>
-  </section>
-
   <section class="section section-alt">
     <div class="container">
       <h2 class="section-heading">How it compares</h2>
+      <h3 style="font-family:'Inter',ui-sans-serif,sans-serif;font-size:1rem;font-weight:600;color:var(--muted);margin-bottom:16px;">vs Project Management tools</h3>
+      <div class="table-wrap" style="margin-bottom:40px;">
+        <table aria-label="agentplan vs PM tools">
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>agentplan</th>
+              <th>Asana</th>
+              <th>Linear</th>
+              <th>Jira</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>AI-native workflows</td><td class="check">Built-in</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Agent auto-assignment</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Dependency resolution</td><td class="check">Yes</td><td class="partial">Partial</td><td class="partial">Partial</td><td class="partial">Partial</td></tr>
+            <tr><td>Local-first / offline</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>CLI-driven</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Free &amp; open source</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 style="font-family:'Inter',ui-sans-serif,sans-serif;font-size:1rem;font-weight:600;color:var(--muted);margin-bottom:16px;">vs AI Frameworks</h3>
       <div class="table-wrap">
-        <table aria-label="agentplan comparison">
+        <table aria-label="agentplan vs AI frameworks">
           <thead>
             <tr>
               <th>Capability</th>
@@ -378,13 +316,11 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td>Install size</td><td class="check">Single package, 0 deps</td><td class="cross">Heavy (50+ deps)</td><td class="cross">Heavy (30+ deps)</td><td class="cross">Heavy (20+ deps)</td></tr>
-            <tr><td>Setup time</td><td class="check">pip install, done</td><td class="cross">YAML + setup</td><td class="cross">Config + agents</td><td class="cross">Graph definition</td></tr>
             <tr><td>Agent lock-in</td><td class="check">None</td><td class="cross">CrewAI only</td><td class="cross">AutoGen only</td><td class="cross">LangChain only</td></tr>
             <tr><td>Ticket tracking</td><td class="check">Built-in</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
             <tr><td>Dependency resolution</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="partial">Partial</td></tr>
-                                    <tr><td>Stale claim handling</td><td class="check">Auto-reap</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
-            <tr><td>Web dashboard</td><td class="check">Yes + dashboard</td><td class="cross" style="color:#f97316">Paid/cloud</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Stale claim handling</td><td class="check">Auto-reap</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Web dashboard</td><td class="check">Yes</td><td class="cross" style="color:#f97316">Paid/cloud</td><td class="cross">No</td><td class="cross">No</td></tr>
             <tr><td>Parallel safety</td><td class="check">SQLite locks</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
           </tbody>
         </table>
@@ -392,23 +328,9 @@
     </div>
   </section>
 
-  <section class="section">
-    <div class="container">
-      <h2 class="section-heading">Trusted &amp; Secure</h2>
-      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
-        <a href="https://securityscorecards.dev/viewer/?uri=github.com/fraction12/agentplan" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;">
-          <img src="https://api.securityscorecards.dev/projects/github.com/fraction12/agentplan/badge" alt="OpenSSF Scorecard" style="height:20px;" />
-        </a>
-        <span style="font-family:'Inter',ui-sans-serif,sans-serif;font-size:0.85rem;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:6px 12px;">CodeQL scanned</span>
-        <span style="font-family:'Inter',ui-sans-serif,sans-serif;font-size:0.85rem;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:6px 12px;">Hash-pinned dependencies</span>
-        <span style="font-family:'Inter',ui-sans-serif,sans-serif;font-size:0.85rem;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:6px 12px;">Trusted PyPI publishing</span>
-      </div>
-    </div>
-  </section>
-
   <section class="cta-section">
     <div class="container">
-      <h2>Get started in 30 seconds</h2>
+      <h2>Start managing your AI team in 30 seconds</h2>
       <div class="cta-pip">pip install agentplan<br>agentplan setup claude<br># then in Claude Code: /agentplan:plan</div>
       <div class="actions" style="margin-top:0">
         <a class="btn btn-ghost" href="quickstart.html">Read quickstart &rarr;</a>
@@ -424,7 +346,7 @@
           <h4>Product</h4>
           <a href="index.html">Home</a>
           <a href="quickstart.html">Quickstart</a>
-          <a href="#dashboard">Dashboard</a>
+          <a href="quickstart.html#dashboard">Dashboard</a>
         </div>
         <div class="footer-col">
           <h4>Resources</h4>
@@ -440,7 +362,7 @@
         </div>
       </div>
       <div class="footer-bottom">
-        <p>Built for practical AI execution</p>
+        <p>Project management for AI-native teams</p>
         <div class="footer-badges">
           <img src="https://img.shields.io/pypi/v/agentplan?style=flat-square&color=22c55e&labelColor=151b2b" alt="PyPI" />
           <img src="https://img.shields.io/pypi/l/agentplan?style=flat-square&color=8892a8&labelColor=151b2b" alt="MIT" />
@@ -518,7 +440,7 @@
         if (state.running) return;
         state.running = true; state.paused = false; state.started = true;
         updateControls();
-        addLine('# agentplan demo — managing tickets across agents', 'term-muted');
+        addLine('# agentplan demo — managing your AI team', 'term-muted');
         for (const step of demoSteps) {
           await waitWhilePaused();
           if (!state.running) return;
