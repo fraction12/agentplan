@@ -40,6 +40,9 @@ AgentPlan is not the main execution engine. Claude Code, Codex, and other tools 
 # 1) Install
 pip install agentplan
 
+# On macOS (Homebrew Python):
+pipx install agentplan
+
 # 2) Connect your AI tool
 agentplan setup claude    # Claude Code
 agentplan setup codex     # Codex CLI
