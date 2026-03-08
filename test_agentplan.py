@@ -1589,7 +1589,7 @@ def test_dashboard_ticket_retry_rejects_invalid_transition():
 
     assert resp.status_code == 400
     payload = resp.get_json()
-    assert "Cannot transition from terminal state" in payload["error"]
+    assert payload["error"] == "Cannot transition ticket from a terminal state."
 
 
 def test_dashboard_ticket_transition_endpoint_updates_status():
@@ -1607,7 +1607,7 @@ def test_dashboard_ticket_transition_endpoint_updates_status():
     )
 
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True, "status": "in-progress"}
+    assert resp.get_json() == {"ok": True}
 
     conn = agentplan.get_connection("/tmp/test_agentplan.db")
     row = conn.execute("SELECT status FROM tickets WHERE project_id=1 AND num=1").fetchone()
@@ -1619,6 +1619,35 @@ def test_dashboard_ticket_transition_endpoint_updates_status():
     assert row["status"] == "in-progress"
     assert history["old_state"] == "pending"
     assert history["new_state"] == "in-progress"
+
+
+def test_dashboard_api_responses_do_not_reflect_raw_user_input():
+    from agentplan.dashboard import create_app
+
+    test_app = create_app()
+    client = test_app.test_client()
+
+    create_resp = client.post(
+        "/api/project/create",
+        json={"title": '<img src=x onerror=alert("xss")>'},
+        headers={"Origin": "http://localhost"},
+    )
+    assert create_resp.status_code == 200
+    create_payload = create_resp.get_json()
+    assert create_payload["ok"] is True
+    assert "<img" not in json.dumps(create_payload)
+
+    cli("ticket", "add", create_payload["slug"], "Sanity ticket")
+
+    transition_resp = client.post(
+        f"/api/ticket/{create_payload['slug']}/1/transition",
+        json={"status": '<img src=x onerror=alert("xss")>'},
+        headers={"Origin": "http://localhost"},
+    )
+    assert transition_resp.status_code == 400
+    transition_payload = transition_resp.get_json()
+    assert transition_payload["error"] == "Unknown ticket state."
+    assert "<img" not in json.dumps(transition_payload)
 
 
 def test_dashboard_project_tickets_list_endpoint_returns_ticket_summaries():

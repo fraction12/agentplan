@@ -1172,9 +1172,16 @@ def create_app():
                 (slug, title, description, directory),
             )
             conn.commit()
-            return {"ok": True, "slug": slug, "title": title}
+            return {"ok": True, "slug": slug}
         finally:
             conn.close()
+
+    def _transition_error_response(reason):
+        if reason and "terminal state" in reason:
+            return ({"error": "Cannot transition ticket from a terminal state."}, 400)
+        if reason and ("Unknown source state" in reason or "Unknown target state" in reason):
+            return ({"error": "Unknown ticket state."}, 400)
+        return ({"error": "Invalid ticket state transition."}, 400)
 
     @app.route("/api/project/<slug>/close", methods=["POST"])
     @_require_local_origin
@@ -1290,8 +1297,8 @@ def create_app():
             if updated is False:
                 abort(404)
             if updated is None:
-                return ({"error": reason}, 400)
-            return {"ok": True, "status": new_status}
+                return _transition_error_response(reason)
+            return {"ok": True}
         finally:
             conn.close()
 
@@ -1307,7 +1314,7 @@ def create_app():
             if updated is False:
                 abort(404)
             if updated is None:
-                return ({"error": reason}, 400)
+                return _transition_error_response(reason)
             return {"ok": True}
         finally:
             conn.close()
@@ -1324,7 +1331,7 @@ def create_app():
             if updated is False:
                 abort(404)
             if updated is None:
-                return ({"error": reason}, 400)
+                return _transition_error_response(reason)
             return {"ok": True}
         finally:
             conn.close()
@@ -1341,7 +1348,7 @@ def create_app():
             if updated is False:
                 abort(404)
             if updated is None:
-                return ({"error": reason}, 400)
+                return _transition_error_response(reason)
             return {"ok": True}
         finally:
             conn.close()
