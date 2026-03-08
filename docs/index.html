@@ -281,8 +281,31 @@
   <section class="section section-alt">
     <div class="container">
       <h2 class="section-heading">How it compares</h2>
+      <h3 style="font-family:'Inter',ui-sans-serif,sans-serif;font-size:1rem;font-weight:600;color:var(--muted);margin-bottom:16px;">vs Project Management tools</h3>
+      <div class="table-wrap" style="margin-bottom:40px;">
+        <table aria-label="agentplan vs PM tools">
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>agentplan</th>
+              <th>Asana</th>
+              <th>Linear</th>
+              <th>Jira</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>AI-native workflows</td><td class="check">Built-in</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Agent auto-assignment</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Dependency resolution</td><td class="check">Yes</td><td class="partial">Partial</td><td class="partial">Partial</td><td class="partial">Partial</td></tr>
+            <tr><td>Local-first / offline</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>CLI-driven</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Free &amp; open source</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 style="font-family:'Inter',ui-sans-serif,sans-serif;font-size:1rem;font-weight:600;color:var(--muted);margin-bottom:16px;">vs AI Frameworks</h3>
       <div class="table-wrap">
-        <table aria-label="agentplan comparison">
+        <table aria-label="agentplan vs AI frameworks">
           <thead>
             <tr>
               <th>Capability</th>
@@ -293,13 +316,11 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td>Install size</td><td class="check">Single package, 0 deps</td><td class="cross">Heavy (50+ deps)</td><td class="cross">Heavy (30+ deps)</td><td class="cross">Heavy (20+ deps)</td></tr>
-            <tr><td>Setup time</td><td class="check">pip install, done</td><td class="cross">YAML + setup</td><td class="cross">Config + agents</td><td class="cross">Graph definition</td></tr>
             <tr><td>Agent lock-in</td><td class="check">None</td><td class="cross">CrewAI only</td><td class="cross">AutoGen only</td><td class="cross">LangChain only</td></tr>
             <tr><td>Ticket tracking</td><td class="check">Built-in</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
             <tr><td>Dependency resolution</td><td class="check">Yes</td><td class="cross">No</td><td class="cross">No</td><td class="partial">Partial</td></tr>
-                                    <tr><td>Stale claim handling</td><td class="check">Auto-reap</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
-            <tr><td>Web dashboard</td><td class="check">Yes + dashboard</td><td class="cross" style="color:#f97316">Paid/cloud</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Stale claim handling</td><td class="check">Auto-reap</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
+            <tr><td>Web dashboard</td><td class="check">Yes</td><td class="cross" style="color:#f97316">Paid/cloud</td><td class="cross">No</td><td class="cross">No</td></tr>
             <tr><td>Parallel safety</td><td class="check">SQLite locks</td><td class="cross">No</td><td class="cross">No</td><td class="cross">No</td></tr>
           </tbody>
         </table>
