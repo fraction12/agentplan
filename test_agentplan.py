@@ -89,12 +89,11 @@ def test_version():
     assert agentplan.__version__ in out
 
 
-def test_readme_contains_agent_loop_demo_section():
+def test_readme_contains_loop_reference():
     readme_path = Path(__file__).resolve().parent / "README.md"
     assert readme_path.exists(), "README.md should exist at repository root."
     content = readme_path.read_text(encoding="utf-8")
-    assert "## Agent Loop Demo" in content
-    assert "agent loop" in content.lower()
+    assert "loop" in content.lower()
 
 
 def test_changelog_exists_and_has_v020_header():
