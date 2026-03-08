@@ -5,11 +5,44 @@
 {% block body_class %}dashboard-home{% endblock %}
 
 {% block content %}
+<section class="home-toolbar">
+  <div class="home-toolbar-copy">
+    <h1 class="home-title">Projects</h1>
+    <p class="home-subtitle">Track active work, spin up new projects, and manage lifecycle actions from one place.</p>
+  </div>
+  <button type="button" class="btn btn-primary home-create-btn" id="open-create-project-dialog">+ New project</button>
+</section>
+
 <section class="stats-grid" id="stats-grid">
   <article class="stat-card"><div class="stat-label">Active Projects</div><div id="stat-active-projects" class="stat-value">{{ summary.active_projects }}</div></article>
   <article class="stat-card"><div class="stat-label">Tickets In Flight</div><div id="stat-tickets-in-flight" class="stat-value">{{ summary.tickets_in_flight }}</div></article>
   <article class="stat-card"><div class="stat-label">Completed Today</div><div id="stat-completed-today" class="stat-value">{{ summary.completed_today }}</div></article>
 </section>
+
+<dialog id="create-project-dialog" class="confirm-dialog create-project-dialog">
+  <form method="dialog" class="confirm-dialog-form create-project-form" id="create-project-form">
+    <div class="confirm-dialog-copy">
+      <h3 class="confirm-dialog-title">Create project</h3>
+      <p class="confirm-dialog-message">Add a new AgentPlan project linked to an optional working directory.</p>
+    </div>
+    <label class="dialog-field">
+      <span>Title</span>
+      <input id="create-project-title" name="title" type="text" maxlength="160" required autocomplete="off">
+    </label>
+    <label class="dialog-field">
+      <span>Description</span>
+      <textarea name="description" rows="3" maxlength="2000"></textarea>
+    </label>
+    <label class="dialog-field">
+      <span>Directory</span>
+      <input name="directory" type="text" placeholder="~/src/my-project" autocomplete="off">
+    </label>
+    <div class="confirm-dialog-actions">
+      <button type="button" class="btn" id="cancel-create-project">Cancel</button>
+      <button type="submit" class="btn btn-primary">Create project</button>
+    </div>
+  </form>
+</dialog>
 
 {% if projects %}
 <div class="toggle-row">
@@ -20,8 +53,32 @@
   <h2 class="project-section-title">Active Projects</h2>
   <section class="projects-grid" id="active-projects-grid">
     {% for project in active_projects %}
-    <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}">
-      <article class="project-card">
+    <article class="project-card-shell">
+      <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}" data-project-slug="{{ project.slug }}" aria-label="Open {{ project.title }}">
+        <article class="project-card">
+          <div class="project-card-menu">
+            <button
+              type="button"
+              class="kebab-btn"
+              aria-label="Project actions for {{ project.title }}"
+              aria-expanded="false"
+              aria-haspopup="menu"
+              data-project-menu-button
+              data-project-id="{{ project.id }}"
+              data-project-slug="{{ project.slug }}"
+              data-project-title="{{ project.title }}"
+              data-project-status="{{ project.status }}"
+            >⋯</button>
+            <div class="kebab-menu" data-project-menu hidden>
+              {% if project.status not in ["completed", "archived", "abandoned"] %}
+              <button type="button" class="kebab-menu-item" data-project-action="close">Close</button>
+              {% endif %}
+              {% if project.status != "archived" %}
+              <button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>
+              {% endif %}
+              <button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button>
+            </div>
+          </div>
         <div class="project-top">
           <div>
             <h2 class="project-title">{{ project.title }}</h2>
@@ -47,8 +104,9 @@
           <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
           {% endif %}
         </div>
-      </article>
-    </a>
+        </article>
+      </a>
+    </article>
     {% endfor %}
   </section>
 </section>
@@ -57,8 +115,32 @@
   <h2 class="project-section-title">Completed</h2>
   <section class="projects-grid completed" id="completed-projects-grid">
     {% for project in completed_projects %}
-    <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}">
-      <article class="project-card">
+    <article class="project-card-shell">
+      <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}" data-project-slug="{{ project.slug }}" aria-label="Open {{ project.title }}">
+        <article class="project-card">
+          <div class="project-card-menu">
+            <button
+              type="button"
+              class="kebab-btn"
+              aria-label="Project actions for {{ project.title }}"
+              aria-expanded="false"
+              aria-haspopup="menu"
+              data-project-menu-button
+              data-project-id="{{ project.id }}"
+              data-project-slug="{{ project.slug }}"
+              data-project-title="{{ project.title }}"
+              data-project-status="{{ project.status }}"
+            >⋯</button>
+            <div class="kebab-menu" data-project-menu hidden>
+              {% if project.status not in ["completed", "archived", "abandoned"] %}
+              <button type="button" class="kebab-menu-item" data-project-action="close">Close</button>
+              {% endif %}
+              {% if project.status != "archived" %}
+              <button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>
+              {% endif %}
+              <button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button>
+            </div>
+          </div>
         <div class="project-top">
           <div>
             <h2 class="project-title">{{ project.title }}</h2>
@@ -79,8 +161,9 @@
           <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
           {% endif %}
         </div>
-      </article>
-    </a>
+        </article>
+      </a>
+    </article>
     {% endfor %}
   </section>
 </section>
@@ -125,11 +208,23 @@
     });
   }
 
+  function projectMenuMarkup(project) {
+    const status = project.status || "";
+    const title = esc(project.title || "");
+    const maybeClose = ["completed", "archived", "abandoned"].includes(status)
+      ? ""
+      : '<button type="button" class="kebab-menu-item" data-project-action="close">Close</button>';
+    const maybeArchive = status === "archived"
+      ? ""
+      : '<button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>';
+    return `<div class="project-card-menu"><button type="button" class="kebab-btn" aria-label="Project actions for ${title}" aria-expanded="false" aria-haspopup="menu" data-project-menu-button data-project-id="${project.id}" data-project-slug="${esc(project.slug || "")}" data-project-title="${title}" data-project-status="${esc(status)}">⋯</button><div class="kebab-menu" data-project-menu hidden>${maybeClose}${maybeArchive}<button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button></div></div>`;
+  }
+
   function projectCard(project, isCompleted) {
     const breakdown = project.breakdown || {};
     const breakdownHtml = isCompleted ? '' : `<div class="dot-breakdown project-breakdown">${statusOrder.map((status) => `<span class="dot-item"><span class="dot ${status}"></span><span class="dot-value" data-status="${status}">${breakdown[status] || 0}</span></span>`).join("")}</div>`;
     const warningHtml = project.missing_directory ? `<div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>` : "";
-    return `<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}"><article class="project-card"><div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a>`;
+    return `<article class="project-card-shell"><a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}" data-project-slug="${esc(project.slug || "")}" aria-label="Open ${esc(project.title)}"><article class="project-card">${projectMenuMarkup(project)}<div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a></article>`;
   }
 
   function renderProjects(projects) {
@@ -150,8 +245,172 @@
   setInterval(() => setClock("live-clock"), 1000);
   applyRelativeTimes();
 
+  const createProjectDialog = document.getElementById("create-project-dialog");
+  const createProjectForm = document.getElementById("create-project-form");
+  const createProjectTitle = document.getElementById("create-project-title");
+  const openCreateProjectButton = document.getElementById("open-create-project-dialog");
+  const cancelCreateProjectButton = document.getElementById("cancel-create-project");
+  const projectGrids = [document.getElementById("active-projects-grid"), document.getElementById("completed-projects-grid")].filter(Boolean);
+
+  function closeProjectMenus() {
+    document.querySelectorAll("[data-project-menu-button]").forEach((button) => {
+      button.setAttribute("aria-expanded", "false");
+    });
+    document.querySelectorAll("[data-project-menu]").forEach((menu) => {
+      menu.hidden = true;
+    });
+  }
+
+  async function postProjectAction(slug, action, body) {
+    const response = await fetch(`/api/project/${encodeURIComponent(slug)}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : null,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.error || `Failed to ${action} project.`);
+    }
+    return payload;
+  }
+
+  async function handleProjectAction(button, action) {
+    const slug = button.dataset.projectSlug || "";
+    const title = button.dataset.projectTitle || slug || "project";
+
+    if (!slug) {
+      showToast("Missing project slug.");
+      return;
+    }
+
+    try {
+      if (action === "delete") {
+        const confirmed = await confirmAction("Delete project?", `Delete ${title}? This removes the project and all related tickets.`, "Delete");
+        if (!confirmed) return;
+      }
+
+      const payload = action === "close"
+        ? await postProjectAction(slug, action, { abandon: false })
+        : await postProjectAction(slug, action);
+
+      if (action === "delete") {
+        button.closest(".project-card-shell")?.remove();
+        showToast(`Deleted ${title}.`, "success");
+      } else {
+        showToast(`${action[0].toUpperCase()}${action.slice(1)}d ${title}.`, "success");
+      }
+
+      if (payload && payload.slug && action === "create") {
+        window.location.href = `/project/${encodeURIComponent(payload.slug)}`;
+        return;
+      }
+
+      if (typeof window.location.reload === "function") {
+        window.location.reload();
+      }
+    } catch (error) {
+      showToast(error.message || `Failed to ${action} project.`);
+    } finally {
+      closeProjectMenus();
+    }
+  }
+
+  openCreateProjectButton?.addEventListener("click", () => {
+    if (!createProjectDialog) return;
+    createProjectForm?.reset();
+    if (typeof createProjectDialog.showModal === "function") {
+      createProjectDialog.showModal();
+      createProjectTitle?.focus();
+    }
+  });
+
+  cancelCreateProjectButton?.addEventListener("click", () => {
+    createProjectDialog?.close("cancel");
+  });
+
+  createProjectDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    createProjectDialog.close("cancel");
+  });
+
+  createProjectForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submitter = createProjectForm.querySelector('button[type="submit"]');
+    const formData = new FormData(createProjectForm);
+    const payload = {
+      title: (formData.get("title") || "").toString().trim(),
+      description: (formData.get("description") || "").toString().trim(),
+      directory: (formData.get("directory") || "").toString().trim(),
+    };
+
+    if (!payload.title) {
+      showToast("Project title is required.");
+      createProjectTitle?.focus();
+      return;
+    }
+
+    try {
+      if (submitter) submitter.disabled = true;
+      const response = await fetch("/api/project/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error || "Failed to create project.");
+      }
+      createProjectDialog?.close("created");
+      window.location.href = `/project/${encodeURIComponent(data.slug)}`;
+    } catch (error) {
+      showToast(error.message || "Failed to create project.");
+    } finally {
+      if (submitter) submitter.disabled = false;
+    }
+  });
+
   const completedToggle = document.getElementById("show-completed");
   if (completedToggle) completedToggle.addEventListener("change", () => renderProjects(window.__latestProjects || []));
+
+  document.addEventListener("click", (event) => {
+    const menuButton = event.target.closest("[data-project-menu-button]");
+    if (menuButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const menu = menuButton.parentElement?.querySelector("[data-project-menu]");
+      const willOpen = menu?.hidden !== false;
+      closeProjectMenus();
+      if (menu && willOpen) {
+        menu.hidden = false;
+        menuButton.setAttribute("aria-expanded", "true");
+      }
+      return;
+    }
+
+    const actionButton = event.target.closest("[data-project-action]");
+    if (actionButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const shell = actionButton.closest(".project-card-shell");
+      const link = shell?.querySelector(".project-link");
+      const button = shell?.querySelector("[data-project-menu-button]");
+      if (!button || !link) return;
+      button.dataset.projectSlug = link.dataset.projectSlug || button.dataset.projectSlug || "";
+      button.dataset.projectTitle = shell.querySelector(".project-title")?.textContent?.trim() || button.dataset.projectTitle || "";
+      handleProjectAction(button, actionButton.dataset.projectAction || "");
+      return;
+    }
+
+    if (!event.target.closest(".project-card-menu")) {
+      closeProjectMenus();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeProjectMenus();
+    }
+  });
 
   subscribeSSE("{{ url_for('events') }}", {
     onUnsupported: () => setConnection("sse-dot", "sse-label", false, "SSE unsupported"),

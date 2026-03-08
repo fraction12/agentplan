@@ -1386,6 +1386,42 @@ def test_dashboard_index_returns_projects():
     assert "Web Beta" in body
 
 
+def test_dashboard_home_includes_create_dialog_and_project_kebab_menu():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Home Menu")
+
+    client = app.test_client()
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="create-project-dialog"' in body
+    assert 'id="open-create-project-dialog"' in body
+    assert 'data-project-menu-button' in body
+    assert 'data-project-action="close"' in body
+    assert 'data-project-action="archive"' in body
+    assert 'data-project-action="delete"' in body
+    assert "handleProjectAction" in body
+
+
+def test_dashboard_home_hides_close_action_for_completed_projects():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Home Completed")
+    cli("close", "web-home-completed")
+
+    client = app.test_client()
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True).split("<script>", 1)[0]
+    completed_fragment = body.split("Web Home Completed", 1)[1]
+    assert 'data-project-action="archive"' in completed_fragment
+    assert 'data-project-action="delete"' in completed_fragment
+    assert 'data-project-action="close"' not in completed_fragment
+
+
 def test_dashboard_project_detail_returns_ticket_titles():
     from agentplan.dashboard import app
 
@@ -1399,6 +1435,66 @@ def test_dashboard_project_detail_returns_ticket_titles():
     body = resp.get_data(as_text=True)
     assert "Dashboard ticket one" in body
     assert "Dashboard ticket two" in body
+
+
+def test_dashboard_project_detail_includes_header_project_menu():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Header Menu")
+
+    client = app.test_client()
+    resp = client.get("/project/web-header-menu")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="project-header-menu-button"' in body
+    assert 'id="project-header-menu"' in body
+    assert 'data-project-action="close"' in body
+    assert 'data-project-action="archive"' in body
+    assert 'data-project-action="delete"' in body
+    assert 'src="/static/project.js"' in body
+
+
+def test_dashboard_project_detail_hides_close_action_for_completed_project_menu():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Header Completed")
+    cli("close", "web-header-completed")
+
+    client = app.test_client()
+    resp = client.get("/project/web-header-completed")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True).split('<script src="', 1)[0]
+    assert 'id="project-header-menu"' in body
+    assert 'data-project-action="archive"' in body
+    assert 'data-project-action="delete"' in body
+    assert 'data-project-action="close"' not in body
+
+
+def test_dashboard_project_board_marks_ticket_cards_draggable_using_real_status():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Drag Board")
+    cli("ticket", "add", "web-drag-board", "Blocked pending")
+    cli("ticket", "add", "web-drag-board", "Done terminal")
+    cli("ticket", "add", "web-drag-board", "Normal in progress")
+    cli("ticket", "depend", "web-drag-board", "1", "--on", "2")
+    cli("ticket", "done", "web-drag-board", "2")
+    cli("ticket", "start", "web-drag-board", "3")
+
+    client = app.test_client()
+    resp = client.get("/project/web-drag-board")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'data-ticket-num="1"' in body
+    assert 'data-ticket-status="pending"' in body
+    assert 'data-ticket-num="2"' in body
+    assert 'data-ticket-status="done"' in body
+    assert 'data-ticket-num="3"' in body
+    assert 'data-ticket-status="in-progress"' in body
+    assert 'draggable="false"' in body
+    assert 'draggable="true"' in body
 
 
 
@@ -1494,6 +1590,54 @@ def test_dashboard_ticket_retry_rejects_invalid_transition():
     assert resp.status_code == 400
     payload = resp.get_json()
     assert "Cannot transition from terminal state" in payload["error"]
+
+
+def test_dashboard_ticket_transition_endpoint_updates_status():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Web Generic Transition")
+    cli("ticket", "add", "web-generic-transition", "Move me")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/ticket/web-generic-transition/1/transition",
+        json={"status": "in-progress"},
+        headers={"Origin": "http://localhost"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "status": "in-progress"}
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    history = conn.execute(
+        "SELECT old_state, new_state FROM ticket_history WHERE ticket_id=1 ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+
+    assert row["status"] == "in-progress"
+    assert history["old_state"] == "pending"
+    assert history["new_state"] == "in-progress"
+
+
+def test_dashboard_project_tickets_list_endpoint_returns_ticket_summaries():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Web Ticket List")
+    cli("ticket", "add", "web-ticket-list", "First")
+    cli("ticket", "add", "web-ticket-list", "Second")
+    cli("ticket", "start", "web-ticket-list", "2", "--agent", "dash")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.get("/api/project/web-ticket-list/tickets-list")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == [
+        {"num": 1, "title": "First", "status": "pending"},
+        {"num": 2, "title": "Second", "status": "in-progress"},
+    ]
 
 
 def test_dashboard_chain_start_sets_running_state_after_spawn():
@@ -1601,6 +1745,85 @@ def test_dashboard_project_directory_api_crud():
     row = conn.execute("SELECT dir FROM projects WHERE slug='web-dir-api'").fetchone()
     conn.close()
     assert row["dir"] is None
+
+
+def test_dashboard_project_lifecycle_api_create_close_archive_delete():
+    from agentplan.dashboard import create_app
+
+    test_app = create_app()
+    client = test_app.test_client()
+
+    create_resp = client.post(
+        "/api/project/create",
+        json={
+            "title": "Dashboard Lifecycle API",
+            "description": "Created from dashboard",
+            "directory": "~/dashboard-lifecycle-api",
+        },
+        headers={"Origin": "http://localhost"},
+    )
+    assert create_resp.status_code == 200
+    create_payload = create_resp.get_json()
+    assert create_payload["ok"] is True
+    assert create_payload["slug"] == "dashboard-lifecycle-api"
+
+    close_resp = client.post(
+        "/api/project/dashboard-lifecycle-api/close",
+        json={"abandon": True},
+        headers={"Origin": "http://localhost"},
+    )
+    assert close_resp.status_code == 200
+    assert close_resp.get_json() == {"ok": True, "status": "abandoned"}
+
+    archive_resp = client.post(
+        "/api/project/dashboard-lifecycle-api/archive",
+        headers={"Origin": "http://localhost"},
+    )
+    assert archive_resp.status_code == 200
+    assert archive_resp.get_json() == {"ok": True, "status": "archived"}
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute(
+        "SELECT slug, title, notes, dir, status FROM projects WHERE slug='dashboard-lifecycle-api'"
+    ).fetchone()
+    conn.close()
+    assert row["title"] == "Dashboard Lifecycle API"
+    assert row["notes"] == "Created from dashboard"
+    assert row["dir"] == os.path.expanduser("~/dashboard-lifecycle-api")
+    assert row["status"] == "archived"
+
+    delete_resp = client.post(
+        "/api/project/dashboard-lifecycle-api/delete",
+        headers={"Origin": "http://localhost"},
+    )
+    assert delete_resp.status_code == 200
+    assert delete_resp.get_json() == {"ok": True}
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    deleted = conn.execute("SELECT 1 FROM projects WHERE slug='dashboard-lifecycle-api'").fetchone()
+    conn.close()
+    assert deleted is None
+
+
+def test_dashboard_project_archive_endpoint_archives_active_project():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Dashboard Active Archive")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/project/dashboard-active-archive/archive",
+        headers={"Origin": "http://localhost"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "status": "archived"}
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT status FROM projects WHERE slug='dashboard-active-archive'").fetchone()
+    conn.close()
+    assert row["status"] == "archived"
 
 
 def test_dashboard_generate_context_returns_400_when_no_writer_agent_configured():
@@ -2007,6 +2230,190 @@ def test_dashboard_review_panel_done_and_skip_actions():
     conn.close()
     assert rows[0]["status"] == "done"
     assert rows[1]["status"] == "skipped"
+
+
+def test_dashboard_project_detail_script_includes_generic_transition_buttons():
+    from agentplan.dashboard import app
+
+    cli("create", "Project Panel Actions")
+
+    client = app.test_client()
+    resp = client.get("/project/project-panel-actions")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'src="/static/project.js"' in body
+    project_js = Path("agentplan/dashboard/static/project.js").read_text(encoding="utf-8")
+    assert 'data-transition-action' in project_js
+    assert 'label: "Start"' in project_js
+    assert 'label: "Block"' in project_js
+    assert 'label: "Fail"' in project_js
+    assert 'label: "Review"' in project_js
+    assert 'label: "Done"' in project_js
+    assert 'label: "Retry"' in project_js
+    assert 'label: "Skip"' in project_js
+
+
+def test_dashboard_ticket_delete_endpoint_removes_ticket_and_cleans_dependencies():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Delete Ticket API")
+    cli("ticket", "add", "delete-ticket-api", "First ticket")
+    cli("ticket", "add", "delete-ticket-api", "Second ticket", "--depends", "1")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/ticket/delete-ticket-api/1/delete",
+        headers={"Origin": "http://localhost"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute(
+        "SELECT num, depends_on FROM tickets WHERE project_id=1 ORDER BY num"
+    ).fetchall()
+    conn.close()
+
+    assert [row["num"] for row in rows] == [2]
+    assert json.loads(rows[0]["depends_on"] or "[]") == []
+
+
+def test_dashboard_project_detail_script_includes_ticket_delete_action():
+    project_js = Path("agentplan/dashboard/static/project.js").read_text(encoding="utf-8")
+    assert 'data-ticket-delete' in project_js
+    assert "/delete`, {" in project_js
+
+
+def test_dashboard_ticket_subtask_add_and_done_endpoints_update_db():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Subtask API")
+    cli("ticket", "add", "subtask-api", "Primary ticket")
+
+    test_app = create_app()
+    client = test_app.test_client()
+
+    add_resp = client.post(
+        "/api/ticket/subtask-api/1/subtask/add",
+        json={"title": "Write docs"},
+        headers={"Origin": "http://localhost"},
+    )
+    assert add_resp.status_code == 200
+    assert add_resp.get_json() == {"ok": True, "num": 1}
+
+    done_resp = client.post(
+        "/api/ticket/subtask-api/1/subtask/1/done",
+        headers={"Origin": "http://localhost"},
+    )
+    assert done_resp.status_code == 200
+    assert done_resp.get_json() == {"ok": True}
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    rows = conn.execute(
+        "SELECT num, title, status FROM subtasks WHERE ticket_id=1 ORDER BY num"
+    ).fetchall()
+    conn.close()
+
+    assert len(rows) == 1
+    assert rows[0]["num"] == 1
+    assert rows[0]["title"] == "Write docs"
+    assert rows[0]["status"] == "done"
+
+
+def test_dashboard_project_detail_script_includes_subtask_management_actions():
+    project_js = Path("agentplan/dashboard/static/project.js").read_text(encoding="utf-8")
+    assert 'data-subtask-done' in project_js
+    assert 'data-subtask-add-form' in project_js
+    assert '/subtask/add' in project_js
+    assert '/subtask/${encodeURIComponent(checkbox.dataset.subtaskDone)}/done' in project_js
+
+
+def test_dashboard_ticket_dependency_endpoints_add_and_remove_dependency():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Dependency API")
+    cli("ticket", "add", "dependency-api", "First")
+    cli("ticket", "add", "dependency-api", "Second")
+
+    test_app = create_app()
+    client = test_app.test_client()
+
+    depend_resp = client.post(
+        "/api/ticket/dependency-api/2/depend",
+        json={"on": 1},
+        headers={"Origin": "http://localhost"},
+    )
+    assert depend_resp.status_code == 200
+    assert depend_resp.get_json() == {"ok": True}
+
+    undepend_resp = client.post(
+        "/api/ticket/dependency-api/2/undepend",
+        json={"dep": 1},
+        headers={"Origin": "http://localhost"},
+    )
+    assert undepend_resp.status_code == 200
+    assert undepend_resp.get_json() == {"ok": True}
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT depends_on FROM tickets WHERE project_id=1 AND num=2").fetchone()
+    conn.close()
+    assert json.loads(row["depends_on"] or "[]") == []
+
+
+def test_dashboard_ticket_dependency_endpoint_rejects_cycle():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Dependency Cycle API")
+    cli("ticket", "add", "dependency-cycle-api", "One")
+    cli("ticket", "add", "dependency-cycle-api", "Two")
+    cli("depend", "dependency-cycle-api", "2", "--on", "1")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/ticket/dependency-cycle-api/1/depend",
+        json={"on": 2},
+        headers={"Origin": "http://localhost"},
+    )
+
+    assert resp.status_code == 400
+    assert "Circular dependency detected" in resp.get_json()["error"]
+
+
+def test_dashboard_ticket_log_endpoint_inserts_entry():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Ticket Log API")
+    cli("ticket", "add", "ticket-log-api", "First")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/ticket/ticket-log-api/1/log",
+        json={"entry": "dash agent: checked logs"},
+        headers={"Origin": "http://localhost"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT entry FROM log WHERE project_id=1 AND ticket_id=1 ORDER BY id DESC LIMIT 1").fetchone()
+    conn.close()
+    assert row["entry"] == "dash agent: checked logs"
+
+
+def test_dashboard_project_detail_script_includes_dependency_and_log_controls():
+    project_js = Path("agentplan/dashboard/static/project.js").read_text(encoding="utf-8")
+    assert 'data-dependency-toggle' in project_js
+    assert 'data-dependency-add' in project_js
+    assert 'data-dependency-remove' in project_js
+    assert '/tickets-list' in project_js
+    assert 'form[data-ticket-log-form][data-ticket-num]' in project_js
+    assert '/log`' in project_js
 
 
 # ---------------------------------------------------------------------------
