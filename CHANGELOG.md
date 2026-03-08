@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.8.6 - 2026-03-08
+
+### Changed
+- Dashboard ticket panel cleanup (PR #26)
+- Dashboard home page polish (PR #25)
+
+### Added
+- Dashboard inline field editor (PR #24)
+- pipx install alternative in README and marketing site
+- Dashboard extra install step in README
+- `.venv` in gitignore
+
+## v0.8.5 - 2026-03-08
+
+### Fixed
+- Dashboard bug sweep (PR #23)
+- Tightened dashboard origin checks
+
 ## v0.7.1 - 2026-03-06
 
 ### Changed
