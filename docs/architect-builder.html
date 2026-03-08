@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Architect + Builder Workflow — agentplan</title>
+  <meta name="description" content="Use Claude as your architect and Codex as your builder. agentplan bridges the gap — plans become tickets, tickets become working code." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0e1a;
+      --bg-alt: #0f1420;
+      --panel: #151b2b;
+      --text: #e2e8f0;
+      --muted: #8892a8;
+      --accent: #22c55e;
+      --accent-2: #3b82f6;
+      --border: rgba(255,255,255,0.06);
+      --shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', ui-sans-serif, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+    a { color: inherit; text-decoration: none; }
+    .container { width: min(860px, 92vw); margin: 0 auto; }
+
+    /* NAV */
+    .top-nav { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px); background: rgba(10,14,26,0.85); border-bottom: 1px solid var(--border); }
+    .top-nav .container { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; width: min(1100px, 92vw); }
+    .brand { font-family: 'Inter', ui-sans-serif, sans-serif; font-weight: 700; font-size: 1rem; letter-spacing: -0.01em; color: var(--text); }
+    .nav-links { display: flex; align-items: center; gap: 4px; }
+    .nav-link { font-family: 'Inter', ui-sans-serif, sans-serif; color: var(--muted); font-size: 0.88rem; font-weight: 500; padding: 6px 12px; border-radius: 8px; transition: color 0.2s, background 0.2s; }
+    .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+    .nav-link.is-active { color: #071a0f; background: var(--accent); font-weight: 600; }
+
+    /* HERO */
+    .hero { padding: 80px 0 60px; text-align: center; }
+    .eyebrow { display: inline-block; font-size: 0.82rem; color: var(--muted); background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 999px; padding: 6px 16px; margin-bottom: 24px; }
+    .hero h1 { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; line-height: 1.15; letter-spacing: -0.02em; max-width: 700px; margin: 0 auto 16px; }
+    .hero .lead { font-size: clamp(1rem, 2vw, 1.1rem); color: var(--muted); max-width: 580px; margin: 0 auto; line-height: 1.7; }
+
+    /* CONTENT */
+    .content { padding: 60px 0 100px; }
+    .content h2 { font-family: 'Playfair Display', Georgia, serif; font-size: 1.8rem; font-weight: 700; margin: 56px 0 24px; line-height: 1.2; }
+    .content h2:first-child { margin-top: 0; }
+    .content h3 { font-size: 1.1rem; font-weight: 700; margin: 36px 0 12px; }
+    .content p { font-size: 0.95rem; color: var(--muted); margin-bottom: 16px; line-height: 1.7; }
+    .content p strong { color: var(--text); }
+    .content ul, .content ol { margin: 0 0 20px 20px; color: var(--muted); font-size: 0.95rem; line-height: 1.8; }
+    .content li { margin-bottom: 4px; }
+    .content li strong { color: var(--text); }
+
+    /* CODE BLOCKS */
+    .code-block { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 16px 0 24px; box-shadow: var(--shadow); }
+    .code-topbar { display: flex; align-items: center; gap: 7px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); }
+    .code-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .code-dot:nth-child(1) { background: #fb7185; }
+    .code-dot:nth-child(2) { background: #fbbf24; }
+    .code-dot:nth-child(3) { background: #34d399; }
+    .code-label { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--muted); margin-left: 8px; }
+    .code-body { padding: 20px 24px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; line-height: 1.8; overflow-x: auto; color: #a7f3d0; }
+    .code-body .comment { color: var(--muted); }
+    .code-body .output { color: var(--muted); font-style: italic; }
+
+    /* FLOW DIAGRAM */
+    .flow { display: flex; align-items: center; justify-content: center; gap: 0; margin: 40px 0; flex-wrap: wrap; }
+    .flow-step { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 24px 20px; text-align: center; min-width: 180px; flex: 1; max-width: 220px; }
+    .flow-step .icon { font-size: 2rem; margin-bottom: 10px; display: block; }
+    .flow-step .label { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; }
+    .flow-step .sub { font-size: 0.82rem; color: var(--muted); }
+    .flow-arrow { font-size: 1.5rem; color: var(--accent); padding: 0 8px; flex-shrink: 0; }
+
+    /* CALLOUT */
+    .callout { background: rgba(34, 197, 94, 0.06); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 12px; padding: 20px 24px; margin: 24px 0; }
+    .callout p { color: var(--text); margin-bottom: 0; }
+    .callout p:not(:last-child) { margin-bottom: 8px; }
+    .callout strong { color: var(--accent); }
+
+    /* CTA */
+    .cta-section { background: var(--bg-alt); text-align: center; padding: 80px 0; }
+    .cta-section h2 { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(1.6rem, 3.5vw, 2.2rem); font-weight: 700; margin-bottom: 24px; }
+    .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 10px; font-weight: 600; font-size: 0.95rem; border: 1px solid transparent; transition: transform 0.15s, filter 0.15s; cursor: pointer; }
+    .btn-primary { background: var(--accent); color: #071a0f; }
+    .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.08); }
+    .btn-ghost { border-color: var(--border); color: var(--muted); background: rgba(255,255,255,0.03); }
+    .btn-ghost:hover { color: var(--text); border-color: rgba(255,255,255,0.15); }
+
+    /* FOOTER */
+    footer { background: var(--bg); border-top: 1px solid var(--border); padding: 40px 0; text-align: center; }
+    footer p { font-size: 0.85rem; color: var(--muted); }
+
+    @media (max-width: 640px) {
+      .flow { flex-direction: column; gap: 0; }
+      .flow-arrow { transform: rotate(90deg); padding: 4px 0; }
+      .flow-step { max-width: 100%; }
+      .btn { width: 100%; justify-content: center; }
+      .actions { flex-direction: column; align-items: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="top-nav" aria-label="Primary">
+    <div class="container" style="width: min(1100px, 92vw);">
+      <a class="brand" href="index.html">⚡ agentplan</a>
+      <div class="nav-links">
+        <a class="nav-link" href="index.html">Home</a>
+        <a class="nav-link" href="quickstart.html">Quickstart</a>
+        <a class="nav-link is-active" href="architect-builder.html" aria-current="page">Guide</a>
+        <a class="nav-link" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">GitHub</a>
+        <a class="nav-link" href="https://pypi.org/project/agentplan/" target="_blank" rel="noopener">PyPI</a>
+      </div>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="container">
+      <div class="eyebrow">Workflow Guide</div>
+      <h1>The Architect + Builder Workflow</h1>
+      <p class="lead">Use Claude as your architect and Codex as your builder. agentplan is the contract layer that turns plans into tickets and tickets into working code.</p>
+    </div>
+  </section>
+
+  <section class="content">
+    <div class="container">
+
+      <h2>The idea</h2>
+      <p>Different AI models are good at different things. <strong>Claude excels at reasoning, planning, and breaking features into clear steps.</strong> <strong>Codex excels at technical implementation, testing, and making sure code actually works.</strong></p>
+      <p>Most people use one or the other. The Architect + Builder workflow uses both — with agentplan as the bridge between them.</p>
+
+      <div class="flow">
+        <div class="flow-step">
+          <span class="icon">🧠</span>
+          <div class="label">Claude</div>
+          <div class="sub">The Architect</div>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">
+          <span class="icon">⚡</span>
+          <div class="label">agentplan</div>
+          <div class="sub">The Contract</div>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">
+          <span class="icon">🔧</span>
+          <div class="label">Codex</div>
+          <div class="sub">The Builder</div>
+        </div>
+      </div>
+
+      <p>The key insight: <strong>neither agent needs to know about the other.</strong> Claude writes the plan. Codex reads the tickets. agentplan is the shared contract they both understand.</p>
+
+      <h2>How it works</h2>
+
+      <h3>Step 1: Talk to Claude about your idea</h3>
+      <p>Open your project repo in Claude Code. Describe the feature you want to build. Go back and forth — let Claude ask questions, explore edge cases, and think through the architecture.</p>
+      <p>This is where Claude shines. It thinks in features, user stories, and system design. Let it do what it's good at.</p>
+
+      <h3>Step 2: Create a plan</h3>
+      <p>Once you've talked it through, use Claude Code's built-in <code>/plan</code> command to have Claude formalize the plan.</p>
+
+      <div class="code-block">
+        <div class="code-topbar">
+          <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+          <span class="code-label">Claude Code</span>
+        </div>
+        <div class="code-body">
+          <span class="comment"># In Claude Code, after discussing your feature:</span><br>
+          /plan<br>
+          <br>
+          <span class="comment"># Claude creates a structured plan with steps,</span><br>
+          <span class="comment"># implementation details, and acceptance criteria</span>
+        </div>
+      </div>
+
+      <h3>Step 3: Turn the plan into agentplan tickets</h3>
+      <p>Instead of having Claude execute the plan immediately, convert it into an agentplan project. This is the handoff moment — where the architect's vision becomes a set of concrete, trackable tickets.</p>
+
+      <div class="code-block">
+        <div class="code-topbar">
+          <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+          <span class="code-label">Claude Code</span>
+        </div>
+        <div class="code-body">
+          <span class="comment"># Tell Claude to create the agentplan project from the plan:</span><br>
+          "Take this plan and create an agentplan project with tickets for each step"<br>
+          <br>
+          <span class="output"># Claude uses the agentplan CLI to create the project and tickets:</span><br>
+          <span class="output"># agentplan create my-feature</span><br>
+          <span class="output"># agentplan ticket add my-feature "Set up data models" --desc "..." --priority high</span><br>
+          <span class="output"># agentplan ticket add my-feature "Build API endpoints" --desc "..." --depends T-1</span><br>
+          <span class="output"># agentplan ticket add my-feature "Write integration tests" --desc "..."</span><br>
+          <span class="output"># ...</span>
+        </div>
+      </div>
+
+      <div class="callout">
+        <p><strong>Why not execute immediately?</strong> Claude is great at planning but Codex is better at implementation. By converting to tickets first, you get a reviewable contract — you can inspect, reorder, and adjust before any code is written.</p>
+      </div>
+
+      <h3>Step 4: Hand off to Codex</h3>
+      <p>Open Codex and point it at the agentplan project. If you've installed the agentplan Codex skill (<code>agentplan setup codex</code>), Codex can read and manage tickets natively.</p>
+
+      <div class="code-block">
+        <div class="code-topbar">
+          <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+          <span class="code-label">Codex</span>
+        </div>
+        <div class="code-body">
+          <span class="comment"># Ask Codex to review the project:</span><br>
+          "Check agentplan for the my-feature project. Review all tickets and<br>
+          make sure everything is technically sound."<br>
+          <br>
+          <span class="output"># Codex reads the tickets, reviews the plan, and flags issues:</span><br>
+          <span class="output"># "T-3 should depend on T-2, not just T-1"</span><br>
+          <span class="output"># "Missing a ticket for database migration"</span><br>
+          <span class="output"># "T-5 needs error handling — adding a subtask"</span>
+        </div>
+      </div>
+
+      <h3>Step 5: Review and refine together</h3>
+      <p>Go back and forth with Codex. This is where the builder's technical eye catches what the architect missed:</p>
+      <ul>
+        <li>Missing dependencies between tickets</li>
+        <li>Tickets that are too large and should be split</li>
+        <li>Edge cases that need their own tickets</li>
+        <li>Testing gaps</li>
+        <li>Infrastructure or migration steps the plan overlooked</li>
+      </ul>
+      <p>Codex updates the project directly — adding tickets, adjusting priorities, setting dependencies.</p>
+
+      <h3>Step 6: Execute</h3>
+      <p>Once you're satisfied with the plan, tell Codex to start working through the tickets.</p>
+
+      <div class="code-block">
+        <div class="code-topbar">
+          <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+          <span class="code-label">Codex</span>
+        </div>
+        <div class="code-body">
+          <span class="comment"># Start executing:</span><br>
+          "Start working on the my-feature project. Pick up the next ticket."<br>
+          <br>
+          <span class="output"># Codex claims T-1, implements it, marks done, moves to T-2...</span><br>
+          <span class="output"># agentplan ticket start my-feature T-1</span><br>
+          <span class="output"># ... implements the work ...</span><br>
+          <span class="output"># agentplan ticket done my-feature T-1 --note "Models created with migrations"</span>
+        </div>
+      </div>
+
+      <p>Each ticket gets implemented with proper testing, documentation, and clean commits. Codex excels here — small, well-defined tickets are exactly what it's best at.</p>
+
+      <h2>Why this works</h2>
+
+      <h3>Each model does what it's best at</h3>
+      <p><strong>Claude</strong> thinks in features and user stories. It asks the right questions, considers edge cases, and produces clean architectural plans. But it can sometimes rush implementation or miss testing details.</p>
+      <p><strong>Codex</strong> thinks in implementation details and correctness. It writes thorough tests, handles error cases, and produces production-ready code. But it can lose sight of the bigger picture without a clear plan.</p>
+      <p><strong>Together</strong>, they cover each other's blind spots.</p>
+
+      <h3>The contract prevents drift</h3>
+      <p>Without agentplan, plans live in chat context that gets lost. Tickets are persistent — they survive across sessions, they're inspectable, and they create a clear record of what was planned vs. what was built.</p>
+
+      <h3>You stay in control</h3>
+      <p>The human reviews between steps 3 and 6. You see the plan before any code is written. You approve the builder's adjustments before execution starts. Nothing ships without your sign-off.</p>
+
+      <h2>Setup</h2>
+
+      <div class="code-block">
+        <div class="code-topbar">
+          <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+          <span class="code-label">Terminal</span>
+        </div>
+        <div class="code-body">
+          <span class="comment"># 1. Install agentplan</span><br>
+          pip install agentplan<br>
+          <br>
+          <span class="comment"># macOS with Homebrew Python:</span><br>
+          pipx install agentplan<br>
+          <br>
+          <span class="comment"># 2. Install the Claude Code plugin</span><br>
+          agentplan setup claude<br>
+          <br>
+          <span class="comment"># 3. Install the Codex skill</span><br>
+          agentplan setup codex<br>
+          <br>
+          <span class="comment"># 4. (Optional) Install dashboard extras</span><br>
+          pip install "agentplan[dashboard]"<br>
+          <br>
+          <span class="comment"># That's it. Both agents can now read and write agentplan projects.</span>
+        </div>
+      </div>
+
+      <h2>Tips</h2>
+      <ul>
+        <li><strong>Let Claude plan freely.</strong> Don't constrain it during the planning phase. The more thorough the plan, the better the tickets.</li>
+        <li><strong>Small tickets win.</strong> If a ticket takes more than 15-20 minutes, split it. Codex works best with focused, well-scoped work.</li>
+        <li><strong>Use dependencies.</strong> If ticket B can't start until ticket A is done, set <code>--depends T-1</code>. agentplan auto-unblocks when dependencies close.</li>
+        <li><strong>Review Codex's additions.</strong> When Codex adds tickets, check them. Sometimes it over-engineers — sometimes it catches something real.</li>
+        <li><strong>Use the dashboard.</strong> Run <code>agentplan dashboard --open</code> to see the full kanban view while Codex works.</li>
+      </ul>
+
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <div class="container">
+      <h2>Ready to try it?</h2>
+      <div class="actions">
+        <a class="btn btn-primary" href="quickstart.html">Read the Quickstart →</a>
+        <a class="btn btn-ghost" href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">View on GitHub →</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <p>agentplan — Project management for AI-native teams</p>
+    </div>
+  </footer>
+
+</body>
+</html>
