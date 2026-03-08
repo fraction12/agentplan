@@ -294,9 +294,9 @@
 
   <header class="hero">
     <div class="container">
-      <span class="pill">⚡ Getting started in minutes</span>
-      <h1>Quickstart: install agentplan, create your first project, and integrate with your AI tools</h1>
-      <p class="lead">This guide is fully copy-paste friendly. Run the commands as-is, then adapt project names and ticket content to your workflow.</p>
+      <span class="pill">Get your AI team shipping in minutes</span>
+      <h1>Quickstart: set up agentplan, create your first project, and put your AI agents to work</h1>
+      <p class="lead">Follow this guide to go from zero to a managed AI workflow. Copy-paste friendly — adapt project names and tickets to your needs.</p>
     </div>
   </header>
 
@@ -304,11 +304,12 @@
     <aside class="toc" aria-label="Table of contents">
       <h2>On this page</h2>
       <a href="#installation">1) Installation</a>
-      <a href="#first-project">2) Create your first project</a>
-      <a href="#tickets">3) Add and work with tickets</a>
-      <a href="#integrations">4) Integration examples</a>
-      <a href="#cli-reference">5) CLI reference</a>
-      <a href="#dashboard">6) Dashboard</a>
+      <a href="#first-project">2) Your first project</a>
+      <a href="#assign">3) Assign work to agents</a>
+      <a href="#monitor">4) Monitor progress</a>
+      <a href="#integrations">5) Integration examples</a>
+      <a href="#cli-reference">6) CLI reference</a>
+      <a href="#dashboard">7) Dashboard</a>
     </aside>
 
     <div>
@@ -323,46 +324,59 @@ agentplan --help</code></pre>
       </section>
 
       <section id="first-project">
-        <h2 class="section-title">2) Create your first project</h2>
-        <p class="section-note">Initialize agentplan in your repo, create a project, then inspect its status.</p>
+        <h2 class="section-title">2) Your first project</h2>
+        <p class="section-note">Let's say you're building a new API feature. You need research, implementation, and tests — perfect for splitting across agents.</p>
         <div class="code-wrap">
           <button class="copy-btn" type="button">Copy</button>
-          <pre><code class="language-bash"># from your repository root
+          <pre><code class="language-bash"># initialize agentplan in your repo
 agentplan init
 
-# create a project
-agentplan create "marketing-site"
+# create a project and add tickets with dependencies
+agentplan create "api-feature" --dir .
+agentplan ticket add api-feature "Research caching strategies" --priority high --tag research
+agentplan ticket add api-feature "Implement API endpoints" --priority high --tag backend
+agentplan ticket add api-feature "Write integration tests" --priority medium --tag testing
 
-# view all projects and status
-agentplan list
-agentplan status marketing-site</code></pre>
+# wire dependencies — implementation waits for research, tests wait for implementation
+agentplan depend api-feature 2 --on 1
+agentplan depend api-feature 3 --on 2</code></pre>
         </div>
       </section>
 
-      <section id="tickets">
-        <h2 class="section-title">3) Add tickets and work with them</h2>
-        <p class="section-note">Create granular work items, fetch the next actionable ticket, and mark it complete.</p>
+      <section id="assign">
+        <h2 class="section-title">3) Assign work to agents</h2>
+        <p class="section-note">Agents claim tickets automatically based on priority and dependency order. As each ticket completes, the next one unblocks.</p>
         <div class="code-wrap">
           <button class="copy-btn" type="button">Copy</button>
-          <pre><code class="language-bash"># add tickets
-agentplan ticket add marketing-site "Write quickstart docs" --priority high --tag docs
-agentplan ticket add marketing-site "Add terminal demo" --priority medium --tag frontend
-agentplan ticket add marketing-site "Publish to GitHub Pages" --priority high --tag release
+          <pre><code class="language-bash"># see which ticket is ready
+agentplan next api-feature          # → #1 Research caching strategies
 
-# get next ticket (dependency & priority aware)
-agentplan next marketing-site
+# claim it for an agent with a timeout
+agentplan claim api-feature --agent claude --timeout 30
 
-# claim/assign and complete a ticket
-agentplan ticket start marketing-site 1 --agent dash
-agentplan ticket done marketing-site 1 --agent dash
+# ... agent works on the ticket ...
 
-# review progress
-agentplan status marketing-site</code></pre>
+# mark complete — #2 auto-unblocks
+agentplan ticket done api-feature 1 --agent claude
+agentplan next api-feature          # → #2 Implement API endpoints (now unblocked!)</code></pre>
+        </div>
+      </section>
+
+      <section id="monitor">
+        <h2 class="section-title">4) Monitor progress</h2>
+        <p class="section-note">Check project status from the CLI or launch the visual dashboard.</p>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button">Copy</button>
+          <pre><code class="language-bash"># CLI status overview
+agentplan status api-feature
+
+# launch the real-time dashboard
+agentplan dashboard --open</code></pre>
         </div>
       </section>
 
       <section id="integrations">
-        <h2 class="section-title">4) Integration examples</h2>
+        <h2 class="section-title">5) Integration examples</h2>
         <p class="section-note">Use these snippets to connect agentplan with your preferred coding workflow.</p>
 
         <h3>Claude Code / Claude (Anthropic)</h3>
@@ -416,7 +430,7 @@ print(prompt)
       </section>
 
       <section id="cli-reference">
-        <h2 class="section-title">5) CLI reference (key commands)</h2>
+        <h2 class="section-title">6) CLI reference (key commands)</h2>
         <p class="section-note">Core commands you'll use daily.</p>
         <div class="command-list">
           <article class="command-item">
@@ -455,7 +469,7 @@ print(prompt)
       </section>
 
       <section id="dashboard">
-        <h2 class="section-title">6) Dashboard</h2>
+        <h2 class="section-title">7) Dashboard</h2>
         <p class="section-note">Launch the built-in web dashboard for real-time mission control. Requires Flask.</p>
         <div class="code-wrap">
           <button class="copy-btn" type="button">Copy</button>
