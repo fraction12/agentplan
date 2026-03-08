@@ -24,7 +24,32 @@
 {% endblock %}
 
 {% block content %}
-<h1 class="project-title">{{ project.title }}</h1>
+<div class="project-title-row">
+  <h1 class="project-title">{{ project.title }}</h1>
+  <div class="project-header-actions">
+    <button
+      type="button"
+      class="kebab-btn"
+      id="project-header-menu-button"
+      aria-label="Project actions for {{ project.title }}"
+      aria-expanded="false"
+      aria-haspopup="menu"
+      data-project-menu-button
+      data-project-slug="{{ project.slug }}"
+      data-project-title="{{ project.title }}"
+      data-project-status="{{ project.status }}"
+    >⋯</button>
+    <div class="kebab-menu" id="project-header-menu" data-project-menu hidden>
+      {% if project.status not in ["completed", "archived", "abandoned"] %}
+      <button type="button" class="kebab-menu-item" data-project-action="close">Close</button>
+      {% endif %}
+      {% if project.status != "archived" %}
+      <button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>
+      {% endif %}
+      <button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button>
+    </div>
+  </div>
+</div>
 <div class="project-dir-row" id="project-dir-row">
   <span id="project-dir-display" class="project-dir">
   {%- if project.dir -%}
@@ -122,7 +147,7 @@
     <div class="kanban-column-body" data-column-body="{{ status }}">
       {% if grouped[status] %}
         {% for ticket in grouped[status] %}
-        <a class="ticket-link" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}" data-ticket-num="{{ ticket.num }}" data-ticket-status="{{ status }}" role="button" aria-label="Open ticket #{{ ticket.num }} details panel">
+        <a class="ticket-link" href="{{ url_for('ticket_detail', slug=project.slug, ticket_num=ticket.num) }}" data-ticket-num="{{ ticket.num }}" data-ticket-status="{{ ticket.status }}" draggable="{{ 'false' if ticket.status in ['done', 'skipped'] else 'true' }}" role="button" aria-label="Open ticket #{{ ticket.num }} details panel">
           <article class="ticket-card priority-{{ ticket.priority|lower }} {{ "has-active-agent" if ticket.active_agent else "" }}">
             <div class="ticket-head">
               <div>

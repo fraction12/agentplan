@@ -13,18 +13,25 @@ from datetime import datetime
 from functools import wraps
 from urllib.parse import urlparse
 
-from flask import Flask, abort, render_template, request, url_for
+from flask import Flask, abort, redirect, render_template, request, url_for
 
-from agentplan.cli import build_context_prompt, _render_prompt_agent_command, spawn_terminal
+from agentplan.cli import build_context_prompt, _render_prompt_agent_command, slugify, spawn_terminal
 from agentplan.db import (
+    check_auto_complete,
     create_agent,
     delete_agent,
     get_agent_by_role,
     get_chain_state,
     get_connection,
+    has_cycle,
     list_agents,
     list_roles,
+    next_subtask_num,
+    resolve_project,
+    resolve_subtask,
+    resolve_ticket,
     set_chain_state,
+    unique_slug,
     update_agent,
     validate_transition,
 )
@@ -1027,16 +1034,13 @@ def create_app():
             project = conn.execute("SELECT id FROM projects WHERE slug=?", (slug,)).fetchone()
             if not project:
                 abort(404)
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
             conn.execute(
                 "UPDATE projects SET dir=?, updated_at=? WHERE id=?",
-                (directory, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"), project["id"]),
+                (directory, ts, project["id"]),
             )
             conn.commit()
-            return {
-                "ok": True,
-                "directory": directory,
-                "exists_on_disk": bool(directory and os.path.isdir(directory)),
-            }
+            return {"ok": True, "has_directory": bool(directory)}
         finally:
             conn.close()
 
@@ -1147,11 +1151,83 @@ def create_app():
 
         return {"running": running, "last_modified": last_modified, "pid": pid}
 
-    def _update_ticket_state(conn, project_id, ticket_num, new_status):
-        ticket = conn.execute(
-            "SELECT id, status FROM tickets WHERE project_id=? AND num=?",
-            (project_id, ticket_num),
-        ).fetchone()
+    @app.route("/api/project/create", methods=["POST"])
+    @_require_local_origin
+    def api_project_create():
+        conn = get_connection(_db_path())
+        try:
+            data = request.get_json(silent=True) or {}
+            title = (data.get("title") or "").strip()
+            if not title:
+                return ({"error": "title is required"}, 400)
+            description = (data.get("description") or "").strip()
+            directory = (data.get("directory") or "").strip()
+            directory = os.path.expanduser(directory) if directory else None
+            slug = unique_slug(conn, slugify(title))
+            conn.execute(
+                "INSERT INTO projects (slug, title, notes, dir) VALUES (?,?,?,?)",
+                (slug, title, description, directory),
+            )
+            conn.commit()
+            return redirect(url_for("project_detail", slug=slug), code=303)
+        finally:
+            conn.close()
+
+    def _transition_error_response(reason):
+        if reason and "terminal state" in reason:
+            return ({"error": "Cannot transition ticket from a terminal state."}, 400)
+        if reason and ("Unknown source state" in reason or "Unknown target state" in reason):
+            return ({"error": "Unknown ticket state."}, 400)
+        return ({"error": "Invalid ticket state transition."}, 400)
+
+    @app.route("/api/project/<slug>/close", methods=["POST"])
+    @_require_local_origin
+    def api_project_close(slug):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            data = request.get_json(silent=True) or {}
+            status = "abandoned" if data.get("abandon") else "completed"
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            conn.execute("UPDATE projects SET status=?, updated_at=? WHERE id=?", (status, ts, project["id"]))
+            conn.commit()
+            return {"ok": True, "status": status}
+        finally:
+            conn.close()
+
+    @app.route("/api/project/<slug>/archive", methods=["POST"])
+    @_require_local_origin
+    def api_project_archive(slug):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            conn.execute("UPDATE projects SET status=?, updated_at=? WHERE id=?", ("archived", ts, project["id"]))
+            conn.commit()
+            return {"ok": True, "status": "archived"}
+        finally:
+            conn.close()
+
+    @app.route("/api/project/<slug>/delete", methods=["POST"])
+    @_require_local_origin
+    def api_project_delete(slug):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            conn.execute("DELETE FROM projects WHERE id=?", (project["id"],))
+            conn.commit()
+            return {"ok": True}
+        finally:
+            conn.close()
+
+    def _update_ticket_state(conn, project, ticket_num, new_status):
+        ticket = resolve_ticket(conn, project["id"], ticket_num)
         if not ticket:
             return False, None
 
@@ -1160,40 +1236,81 @@ def create_app():
             return None, reason
 
         ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        updates = {"status": new_status, "claimed_at": None}
-        if new_status == "done":
-            updates["completed_at"] = ts
-        elif new_status == "pending":
-            updates["completed_at"] = None
-            updates["close_note"] = None
-        elif new_status == "skipped":
-            updates["completed_at"] = ts
+        completed_at = None
+        claimed_at = ticket["claimed_at"]
+        close_note = ticket["close_note"]
+        if new_status in {"done", "skipped"}:
+            completed_at = ts
+            claimed_at = None
+        else:
+            if new_status != "in-progress":
+                claimed_at = None
+        if new_status == "pending":
+            close_note = None
 
-        set_clause = ", ".join(f"{key}=?" for key in updates.keys())
         conn.execute(
-            f"UPDATE tickets SET {set_clause} WHERE id=?",
-            (*updates.values(), ticket["id"]),
+            "UPDATE tickets SET status=?, completed_at=?, claimed_at=?, close_note=? WHERE id=?",
+            (new_status, completed_at, claimed_at, close_note, ticket["id"]),
         )
         conn.execute(
             "INSERT INTO ticket_history (ticket_id, old_state, new_state, changed_at) VALUES (?,?,?,?)",
             (ticket["id"], ticket["status"], new_status, ts),
         )
+        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (ts, project["id"]))
+        if project["status"] == "active":
+            check_auto_complete(conn, project["id"])
         conn.commit()
         return True, None
+
+    @app.route("/api/project/<slug>/tickets-list")
+    def api_project_tickets_list(slug):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            rows = conn.execute(
+                "SELECT num, title, status FROM tickets WHERE project_id=? ORDER BY num",
+                (project["id"],),
+            ).fetchall()
+            return [{"num": row["num"], "title": row["title"], "status": row["status"]} for row in rows]
+        finally:
+            conn.close()
+
+    @app.route("/api/ticket/<slug>/<int:ticket_num>/transition", methods=["POST"])
+    @_require_local_origin
+    def api_ticket_transition(slug, ticket_num):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            data = request.get_json(silent=True) or {}
+            new_status = (data.get("status") or "").strip()
+            if not new_status:
+                return ({"error": "status is required"}, 400)
+            updated, reason = _update_ticket_state(conn, project, ticket_num, new_status)
+            if updated is False:
+                abort(404)
+            if updated is None:
+                return _transition_error_response(reason)
+            return {"ok": True}
+        finally:
+            conn.close()
 
     @app.route("/api/ticket/<slug>/<int:ticket_num>/done", methods=["POST"])
     @_require_local_origin
     def api_ticket_mark_done(slug, ticket_num):
         conn = get_connection(_db_path())
         try:
-            project = conn.execute("SELECT id FROM projects WHERE slug=?", (slug,)).fetchone()
+            project = resolve_project(conn, slug)
             if not project:
                 abort(404)
-            updated, reason = _update_ticket_state(conn, project["id"], ticket_num, "done")
+            updated, reason = _update_ticket_state(conn, project, ticket_num, "done")
             if updated is False:
                 abort(404)
             if updated is None:
-                return ({"error": reason}, 400)
+                return _transition_error_response(reason)
             return {"ok": True}
         finally:
             conn.close()
@@ -1203,14 +1320,14 @@ def create_app():
     def api_ticket_retry(slug, ticket_num):
         conn = get_connection(_db_path())
         try:
-            project = conn.execute("SELECT id FROM projects WHERE slug=?", (slug,)).fetchone()
+            project = resolve_project(conn, slug)
             if not project:
                 abort(404)
-            updated, reason = _update_ticket_state(conn, project["id"], ticket_num, "pending")
+            updated, reason = _update_ticket_state(conn, project, ticket_num, "pending")
             if updated is False:
                 abort(404)
             if updated is None:
-                return ({"error": reason}, 400)
+                return _transition_error_response(reason)
             return {"ok": True}
         finally:
             conn.close()
@@ -1220,14 +1337,14 @@ def create_app():
     def api_ticket_skip(slug, ticket_num):
         conn = get_connection(_db_path())
         try:
-            project = conn.execute("SELECT id FROM projects WHERE slug=?", (slug,)).fetchone()
+            project = resolve_project(conn, slug)
             if not project:
                 abort(404)
-            updated, reason = _update_ticket_state(conn, project["id"], ticket_num, "skipped")
+            updated, reason = _update_ticket_state(conn, project, ticket_num, "skipped")
             if updated is False:
                 abort(404)
             if updated is None:
-                return ({"error": reason}, 400)
+                return _transition_error_response(reason)
             return {"ok": True}
         finally:
             conn.close()
@@ -1303,6 +1420,181 @@ def create_app():
             conn.execute(
                 f"UPDATE tickets SET {set_clause} WHERE id=?",
                 (*updates.values(), ticket["id"]),
+            )
+            conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (ts, project["id"]))
+            conn.commit()
+            return {"ok": True}
+        finally:
+            conn.close()
+
+    @app.route("/api/ticket/<slug>/<int:ticket_num>/delete", methods=["POST"])
+    @_require_local_origin
+    def api_ticket_delete(slug, ticket_num):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            ticket = resolve_ticket(conn, project["id"], ticket_num)
+            if not ticket:
+                abort(404)
+
+            conn.execute("DELETE FROM tickets WHERE id=?", (ticket["id"],))
+            others = conn.execute(
+                "SELECT id, depends_on FROM tickets WHERE project_id=?",
+                (project["id"],),
+            ).fetchall()
+            for other in others:
+                deps = json.loads(other["depends_on"] or "[]")
+                if ticket["num"] in deps:
+                    deps.remove(ticket["num"])
+                    conn.execute(
+                        "UPDATE tickets SET depends_on=? WHERE id=?",
+                        (json.dumps(deps), other["id"]),
+                    )
+
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (ts, project["id"]))
+            conn.commit()
+            return {"ok": True}
+        finally:
+            conn.close()
+
+    @app.route("/api/ticket/<slug>/<int:ticket_num>/subtask/add", methods=["POST"])
+    @_require_local_origin
+    def api_ticket_subtask_add(slug, ticket_num):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            ticket = resolve_ticket(conn, project["id"], ticket_num)
+            if not ticket:
+                abort(404)
+            data = request.get_json(silent=True) or {}
+            title = (data.get("title") or "").strip()
+            if not title:
+                return ({"error": "title is required"}, 400)
+
+            num = next_subtask_num(conn, ticket["id"])
+            conn.execute(
+                "INSERT INTO subtasks (ticket_id, num, title) VALUES (?,?,?)",
+                (ticket["id"], num, title),
+            )
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (ts, project["id"]))
+            conn.commit()
+            return {"ok": True, "num": num}
+        finally:
+            conn.close()
+
+    @app.route("/api/ticket/<slug>/<int:ticket_num>/subtask/<int:subtask_num>/done", methods=["POST"])
+    @_require_local_origin
+    def api_ticket_subtask_done(slug, ticket_num, subtask_num):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            ticket = resolve_ticket(conn, project["id"], ticket_num)
+            if not ticket:
+                abort(404)
+            subtask = resolve_subtask(conn, ticket["id"], subtask_num)
+            if not subtask:
+                abort(404)
+
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            conn.execute(
+                "UPDATE subtasks SET status='done', completed_at=? WHERE id=?",
+                (ts, subtask["id"]),
+            )
+            conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (ts, project["id"]))
+            conn.commit()
+            return {"ok": True}
+        finally:
+            conn.close()
+
+    @app.route("/api/ticket/<slug>/<int:ticket_num>/depend", methods=["POST"])
+    @_require_local_origin
+    def api_ticket_depend(slug, ticket_num):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            ticket = resolve_ticket(conn, project["id"], ticket_num)
+            if not ticket:
+                abort(404)
+            data = request.get_json(silent=True) or {}
+            dep_num = data.get("on")
+            dep_ticket = resolve_ticket(conn, project["id"], dep_num)
+            if not dep_ticket:
+                abort(404)
+
+            existing = json.loads(ticket["depends_on"] or "[]")
+            merged = sorted(set(existing + [int(dep_num)]))
+            tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (project["id"],)).fetchall()
+            if has_cycle(tickets, ticket["num"], merged):
+                return ({"error": "Circular dependency detected."}, 400)
+
+            conn.execute("UPDATE tickets SET depends_on=? WHERE id=?", (json.dumps(merged), ticket["id"]))
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (ts, project["id"]))
+            conn.commit()
+            return {"ok": True}
+        finally:
+            conn.close()
+
+    @app.route("/api/ticket/<slug>/<int:ticket_num>/undepend", methods=["POST"])
+    @_require_local_origin
+    def api_ticket_undepend(slug, ticket_num):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            ticket = resolve_ticket(conn, project["id"], ticket_num)
+            if not ticket:
+                abort(404)
+            data = request.get_json(silent=True) or {}
+            dep_num = data.get("dep")
+            dep_ticket = resolve_ticket(conn, project["id"], dep_num)
+            if not dep_ticket:
+                abort(404)
+
+            existing = json.loads(ticket["depends_on"] or "[]")
+            if int(dep_num) not in existing:
+                return ({"error": f"Ticket #{ticket['num']} does not depend on ticket #{int(dep_num)}."}, 400)
+
+            updated = [dep for dep in existing if dep != int(dep_num)]
+            conn.execute("UPDATE tickets SET depends_on=? WHERE id=?", (json.dumps(updated), ticket["id"]))
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (ts, project["id"]))
+            conn.commit()
+            return {"ok": True}
+        finally:
+            conn.close()
+
+    @app.route("/api/ticket/<slug>/<int:ticket_num>/log", methods=["POST"])
+    @_require_local_origin
+    def api_ticket_log(slug, ticket_num):
+        conn = get_connection(_db_path())
+        try:
+            project = resolve_project(conn, slug)
+            if not project:
+                abort(404)
+            ticket = resolve_ticket(conn, project["id"], ticket_num)
+            if not ticket:
+                abort(404)
+            data = request.get_json(silent=True) or {}
+            entry = (data.get("entry") or "").strip()
+            if not entry:
+                return ({"error": "entry is required"}, 400)
+
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            conn.execute(
+                "INSERT INTO log (project_id, ticket_id, entry, created_at) VALUES (?,?,?,?)",
+                (project["id"], ticket["id"], entry, ts),
             )
             conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (ts, project["id"]))
             conn.commit()

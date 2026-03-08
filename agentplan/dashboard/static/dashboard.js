@@ -54,3 +54,80 @@ function subscribeSSE(url, handlers = {}) {
 
   return source;
 }
+
+function ensureConfirmDialog() {
+  let dialog = document.getElementById("global-confirm-dialog");
+  if (dialog) return dialog;
+
+  dialog = document.createElement("dialog");
+  dialog.id = "global-confirm-dialog";
+  dialog.className = "confirm-dialog";
+  dialog.innerHTML = `
+    <form method="dialog" class="confirm-dialog-form">
+      <div class="confirm-dialog-copy">
+        <h3 class="confirm-dialog-title"></h3>
+        <p class="confirm-dialog-message"></p>
+      </div>
+      <div class="confirm-dialog-actions">
+        <button type="button" class="btn confirm-dialog-cancel">Cancel</button>
+        <button type="submit" class="btn btn-danger confirm-dialog-confirm" value="confirm">Confirm</button>
+      </div>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+  return dialog;
+}
+
+function confirmAction(title, message, confirmLabel = "Confirm") {
+  const dialog = ensureConfirmDialog();
+  const titleNode = dialog.querySelector(".confirm-dialog-title");
+  const messageNode = dialog.querySelector(".confirm-dialog-message");
+  const confirmBtn = dialog.querySelector(".confirm-dialog-confirm");
+  const cancelBtn = dialog.querySelector(".confirm-dialog-cancel");
+
+  titleNode.textContent = title || "Confirm action";
+  messageNode.textContent = message || "";
+  confirmBtn.textContent = confirmLabel || "Confirm";
+
+  return new Promise((resolve) => {
+    let settled = false;
+
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      dialog.removeEventListener("close", onClose);
+      dialog.removeEventListener("cancel", onCancel);
+      cancelBtn.removeEventListener("click", onCancelClick);
+      resolve(result);
+    }
+
+    function onClose() {
+      finish(dialog.returnValue === "confirm");
+      dialog.returnValue = "";
+    }
+
+    function onCancel(event) {
+      event.preventDefault();
+      dialog.close("cancel");
+    }
+
+    function onCancelClick() {
+      dialog.close("cancel");
+    }
+
+    dialog.addEventListener("close", onClose);
+    dialog.addEventListener("cancel", onCancel);
+    cancelBtn.addEventListener("click", onCancelClick);
+
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+    } else {
+      finish(window.confirm(message || title || "Confirm action"));
+      return;
+    }
+
+    confirmBtn.focus();
+  });
+}
+
+window.confirmAction = confirmAction;
