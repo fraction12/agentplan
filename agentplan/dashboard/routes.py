@@ -1034,16 +1034,13 @@ def create_app():
             project = conn.execute("SELECT id FROM projects WHERE slug=?", (slug,)).fetchone()
             if not project:
                 abort(404)
+            ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
             conn.execute(
                 "UPDATE projects SET dir=?, updated_at=? WHERE id=?",
-                (directory, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"), project["id"]),
+                (directory, ts, project["id"]),
             )
             conn.commit()
-            return {
-                "ok": True,
-                "directory": directory,
-                "exists_on_disk": bool(directory and os.path.isdir(directory)),
-            }
+            return {"ok": True, "has_directory": bool(directory)}
         finally:
             conn.close()
 
@@ -1239,22 +1236,21 @@ def create_app():
             return None, reason
 
         ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        updates = {"status": new_status}
+        completed_at = None
+        claimed_at = ticket["claimed_at"]
+        close_note = ticket["close_note"]
         if new_status in {"done", "skipped"}:
-            updates["completed_at"] = ts
-            updates["claimed_at"] = None
+            completed_at = ts
+            claimed_at = None
         else:
-            updates["completed_at"] = None
             if new_status != "in-progress":
-                updates["claimed_at"] = None
+                claimed_at = None
         if new_status == "pending":
-            updates["completed_at"] = None
-            updates["close_note"] = None
+            close_note = None
 
-        set_clause = ", ".join(f"{key}=?" for key in updates.keys())
         conn.execute(
-            f"UPDATE tickets SET {set_clause} WHERE id=?",
-            (*updates.values(), ticket["id"]),
+            "UPDATE tickets SET status=?, completed_at=?, claimed_at=?, close_note=? WHERE id=?",
+            (new_status, completed_at, claimed_at, close_note, ticket["id"]),
         )
         conn.execute(
             "INSERT INTO ticket_history (ticket_id, old_state, new_state, changed_at) VALUES (?,?,?,?)",

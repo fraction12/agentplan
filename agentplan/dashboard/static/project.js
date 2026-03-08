@@ -701,9 +701,8 @@
         });
         const payload = await response.json().catch(() => null);
         if (!response.ok) throw new Error((payload && payload.error) || `HTTP ${response.status}`);
-        renderDirectoryDisplay(payload ? payload.directory : directory);
-        const missing = Boolean(payload && payload.directory && payload.exists_on_disk === false);
-        if (dirWarning) dirWarning.hidden = !missing;
+        renderDirectoryDisplay(directory);
+        if (dirWarning) dirWarning.hidden = true;
         exitEditMode();
       } catch (error) {
         showToast(error.message || "Failed to update project directory.");

@@ -1749,9 +1749,7 @@ def test_dashboard_project_directory_api_crud():
     )
     assert set_resp.status_code == 200
     set_payload = set_resp.get_json()
-    assert set_payload["ok"] is True
-    assert set_payload["directory"] == os.path.realpath("/tmp/web-dir-api-a")
-    assert set_payload["exists_on_disk"] is True
+    assert set_payload == {"ok": True, "has_directory": True}
 
     update_resp = client.post(
         "/api/project/web-dir-api/directory",
@@ -1760,8 +1758,7 @@ def test_dashboard_project_directory_api_crud():
     )
     assert update_resp.status_code == 200
     update_payload = update_resp.get_json()
-    assert update_payload["directory"] == os.path.realpath("/tmp/web-dir-api-b")
-    assert update_payload["exists_on_disk"] is False
+    assert update_payload == {"ok": True, "has_directory": True}
 
     clear_resp = client.post(
         "/api/project/web-dir-api/directory",
@@ -1770,8 +1767,7 @@ def test_dashboard_project_directory_api_crud():
     )
     assert clear_resp.status_code == 200
     clear_payload = clear_resp.get_json()
-    assert clear_payload["directory"] is None
-    assert clear_payload["exists_on_disk"] is False
+    assert clear_payload == {"ok": True, "has_directory": False}
 
     conn = agentplan.get_connection("/tmp/test_agentplan.db")
     row = conn.execute("SELECT dir FROM projects WHERE slug='web-dir-api'").fetchone()
