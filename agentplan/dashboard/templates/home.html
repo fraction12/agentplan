@@ -4,6 +4,61 @@
 {% block title %}agentplan dashboard{% endblock %}
 {% block body_class %}dashboard-home{% endblock %}
 
+{% macro project_card(project) -%}
+<article class="project-card-shell" data-project-shell data-project-slug="{{ project.slug }}">
+  <div class="project-card-menu">
+    <button
+      type="button"
+      class="kebab-btn"
+      aria-label="Project actions for {{ project.title }}"
+      aria-expanded="false"
+      aria-haspopup="menu"
+      data-project-menu-button
+      data-project-id="{{ project.id }}"
+      data-project-slug="{{ project.slug }}"
+      data-project-title="{{ project.title }}"
+      data-project-status="{{ project.status }}"
+    >⋯</button>
+    <div class="kebab-menu" data-project-menu hidden>
+      {% if project.status not in ["completed", "archived", "abandoned"] %}
+      <button type="button" class="kebab-menu-item" data-project-action="close">Close</button>
+      {% endif %}
+      {% if project.status != "archived" %}
+      <button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>
+      {% endif %}
+      <button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button>
+    </div>
+  </div>
+  <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}" data-project-slug="{{ project.slug }}" aria-label="Open {{ project.title }}">
+    <article class="project-card">
+      <div class="project-top">
+        <div class="project-heading">
+          <h2 class="project-title">{{ project.title }}</h2>
+          <div class="project-code">{{ project.slug }}</div>
+          <div class="project-status-row">
+            <span class="project-status-badge status-{{ project.status }}">{{ project.status_label }}</span>
+          </div>
+        </div>
+        <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
+          <svg viewBox="0 0 36 36">
+            <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
+            <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
+          </svg>
+          <span class="progress-ring-label project-progress-percent">{{ project.progress_pct }}%</span>
+        </div>
+      </div>
+      <div class="project-meta">
+        <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
+        <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
+        {% if project.missing_directory %}
+        <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
+        {% endif %}
+      </div>
+    </article>
+  </a>
+</article>
+{%- endmacro %}
+
 {% block content %}
 <section class="home-toolbar">
   <div class="home-toolbar-copy">
@@ -44,137 +99,56 @@
   </form>
 </dialog>
 
-{% if projects %}
-<div class="toggle-row">
-  <label class="toggle-label"><input id="show-completed" type="checkbox"> Show completed</label>
+<div id="project-sections" class="project-sections"{% if not projects %} hidden{% endif %}>
+  {% if projects %}
+  {% for section in home_sections %}
+  {% set section_open = home_sections|length == 1 or section.key == "active" %}
+  <section class="project-section" data-project-section data-status-section="{{ section.key }}">
+    <div class="project-section-heading">
+      <button
+        type="button"
+        class="project-section-toggle"
+        data-section-toggle
+        data-section-key="{{ section.key }}"
+        aria-expanded="{{ 'true' if section_open else 'false' }}"
+      >
+        <span class="project-section-toggle-icon" aria-hidden="true"></span>
+        <span class="project-section-title">{{ section.title }}</span>
+      </button>
+      <span class="project-section-count">{{ section.projects|length }}</span>
+    </div>
+    <section class="projects-grid"{% if not section_open %} hidden{% endif %}>
+      {% if section.projects %}
+      {% for project in section.projects %}
+      {{ project_card(project) }}
+      {% endfor %}
+      {% else %}
+      <div class="project-section-empty">No {{ section.title|lower }} yet.</div>
+      {% endif %}
+    </section>
+  </section>
+  {% endfor %}
+  {% endif %}
 </div>
-
-<section class="project-section" id="active-section">
-  <h2 class="project-section-title">Active Projects</h2>
-  <section class="projects-grid" id="active-projects-grid">
-    {% for project in active_projects %}
-    <article class="project-card-shell" data-project-shell data-project-slug="{{ project.slug }}">
-      <div class="project-card-menu">
-        <button
-          type="button"
-          class="kebab-btn"
-          aria-label="Project actions for {{ project.title }}"
-          aria-expanded="false"
-          aria-haspopup="menu"
-          data-project-menu-button
-          data-project-id="{{ project.id }}"
-          data-project-slug="{{ project.slug }}"
-          data-project-title="{{ project.title }}"
-          data-project-status="{{ project.status }}"
-        >⋯</button>
-        <div class="kebab-menu" data-project-menu hidden>
-          {% if project.status not in ["completed", "archived", "abandoned"] %}
-          <button type="button" class="kebab-menu-item" data-project-action="close">Close</button>
-          {% endif %}
-          {% if project.status != "archived" %}
-          <button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>
-          {% endif %}
-          <button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button>
-        </div>
-      </div>
-      <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}" data-project-slug="{{ project.slug }}" aria-label="Open {{ project.title }}">
-        <article class="project-card">
-        <div class="project-top">
-          <div>
-            <h2 class="project-title">{{ project.title }}</h2>
-            <div class="project-code">{{ project.slug }}</div>
-          </div>
-          <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
-            <svg viewBox="0 0 36 36">
-              <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
-              <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
-            </svg>
-            <span class="progress-ring-label project-progress-percent">{{ project.progress_pct }}%</span>
-          </div>
-        </div>
-        <div class="project-meta">
-          <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
-          <div class="dot-breakdown project-breakdown">
-            {% for status in ["pending", "in-progress", "blocked", "needs-review", "failed", "done"] %}
-            <span class="dot-item"><span class="dot {{ status }}"></span><span class="dot-value" data-status="{{ status }}">{{ project.breakdown.get(status, 0) }}</span></span>
-            {% endfor %}
-          </div>
-          <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
-          {% if project.missing_directory %}
-          <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
-          {% endif %}
-        </div>
-        </article>
-      </a>
-    </article>
-    {% endfor %}
-  </section>
-</section>
-
-<section class="project-section" id="completed-section">
-  <h2 class="project-section-title">Completed</h2>
-  <section class="projects-grid completed" id="completed-projects-grid">
-    {% for project in completed_projects %}
-    <article class="project-card-shell" data-project-shell data-project-slug="{{ project.slug }}">
-      <div class="project-card-menu">
-        <button
-          type="button"
-          class="kebab-btn"
-          aria-label="Project actions for {{ project.title }}"
-          aria-expanded="false"
-          aria-haspopup="menu"
-          data-project-menu-button
-          data-project-id="{{ project.id }}"
-          data-project-slug="{{ project.slug }}"
-          data-project-title="{{ project.title }}"
-          data-project-status="{{ project.status }}"
-        >⋯</button>
-        <div class="kebab-menu" data-project-menu hidden>
-          {% if project.status not in ["completed", "archived", "abandoned"] %}
-          <button type="button" class="kebab-menu-item" data-project-action="close">Close</button>
-          {% endif %}
-          {% if project.status != "archived" %}
-          <button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>
-          {% endif %}
-          <button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button>
-        </div>
-      </div>
-      <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}" data-project-slug="{{ project.slug }}" aria-label="Open {{ project.title }}">
-        <article class="project-card">
-        <div class="project-top">
-          <div>
-            <h2 class="project-title">{{ project.title }}</h2>
-            <div class="project-code">{{ project.slug }}</div>
-          </div>
-          <div class="progress-ring" style="--ring-progress: {{ project.progress_pct }};" aria-hidden="true">
-            <svg viewBox="0 0 36 36">
-              <circle class="progress-ring-track" cx="18" cy="18" r="16"></circle>
-              <circle class="progress-ring-value" cx="18" cy="18" r="16"></circle>
-            </svg>
-            <span class="progress-ring-label project-progress-percent">{{ project.progress_pct }}%</span>
-          </div>
-        </div>
-        <div class="project-meta">
-          <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
-          <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
-          {% if project.missing_directory %}
-          <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
-          {% endif %}
-        </div>
-        </article>
-      </a>
-    </article>
-    {% endfor %}
-  </section>
-</section>
-{% else %}
-<div class="empty">No projects found.</div>
-{% endif %}
+<div class="empty" id="projects-empty-state"{% if projects %} hidden{% endif %}>No projects found.</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  const statusOrder = ["pending", "in-progress", "blocked", "needs-review", "failed", "done"];
+  const homeSectionOrder = [
+    { key: "active", title: "Active Projects" },
+    { key: "completed", title: "Completed Projects" },
+    { key: "abandoned", title: "Closed Projects" },
+    { key: "archived", title: "Archived Projects" },
+  ];
+  const projectStatusLabels = {
+    active: "Active",
+    completed: "Completed",
+    abandoned: "Closed",
+    archived: "Archived",
+  };
+  const sectionStateStorageKey = "agentplan.dashboard.home.sectionState";
+  let homeSectionState = loadSectionState();
 
   function renderSummary(summary) {
     document.getElementById("stat-active-projects").textContent = summary.active_projects ?? 0;
@@ -208,6 +182,58 @@
     });
   }
 
+  function formatStatusLabel(status) {
+    const normalized = String(status || "").trim().toLowerCase();
+    if (projectStatusLabels[normalized]) return projectStatusLabels[normalized];
+    if (!normalized) return "Unknown";
+    return normalized
+      .split(/[-_]/g)
+      .filter(Boolean)
+      .map((part) => part[0].toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  function loadSectionState() {
+    try {
+      const raw = window.localStorage?.getItem(sectionStateStorageKey);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_err) {
+      return {};
+    }
+  }
+
+  function persistSectionState() {
+    try {
+      window.localStorage?.setItem(sectionStateStorageKey, JSON.stringify(homeSectionState));
+    } catch (_err) {
+      // Ignore storage failures.
+    }
+  }
+
+  function defaultSectionOpen(sectionKey, totalSections) {
+    return totalSections === 1 || sectionKey === "active";
+  }
+
+  function isSectionOpen(sectionKey, totalSections) {
+    if (Object.prototype.hasOwnProperty.call(homeSectionState, sectionKey)) {
+      return Boolean(homeSectionState[sectionKey]);
+    }
+    return defaultSectionOpen(sectionKey, totalSections);
+  }
+
+  function setSectionExpanded(sectionKey, expanded) {
+    const section = document.querySelector(`[data-status-section="${CSS.escape(sectionKey)}"]`);
+    const toggle = section?.querySelector("[data-section-toggle]");
+    const grid = section?.querySelector(".projects-grid");
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    }
+    if (grid) {
+      grid.hidden = !expanded;
+    }
+  }
+
   function projectMenuMarkup(project) {
     const status = project.status || "";
     const title = esc(project.title || "");
@@ -220,11 +246,48 @@
     return `<div class="project-card-menu"><button type="button" class="kebab-btn" aria-label="Project actions for ${title}" aria-expanded="false" aria-haspopup="menu" data-project-menu-button data-project-id="${project.id}" data-project-slug="${esc(project.slug || "")}" data-project-title="${title}" data-project-status="${esc(status)}">⋯</button><div class="kebab-menu" data-project-menu hidden>${maybeClose}${maybeArchive}<button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button></div></div>`;
   }
 
-  function projectCard(project, isCompleted) {
-    const breakdown = project.breakdown || {};
-    const breakdownHtml = isCompleted ? '' : `<div class="dot-breakdown project-breakdown">${statusOrder.map((status) => `<span class="dot-item"><span class="dot ${status}"></span><span class="dot-value" data-status="${status}">${breakdown[status] || 0}</span></span>`).join("")}</div>`;
+  function projectCard(project) {
     const warningHtml = project.missing_directory ? `<div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>` : "";
-    return `<article class="project-card-shell" data-project-shell data-project-slug="${esc(project.slug || "")}">${projectMenuMarkup(project)}<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}" data-project-slug="${esc(project.slug || "")}" aria-label="Open ${esc(project.title)}"><article class="project-card"><div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a></article>`;
+    const status = String(project.status || "").trim().toLowerCase();
+    const statusLabel = esc(project.status_label || formatStatusLabel(status));
+    return `<article class="project-card-shell" data-project-shell data-project-slug="${esc(project.slug || "")}">${projectMenuMarkup(project)}<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(status)}" data-project-slug="${esc(project.slug || "")}" aria-label="Open ${esc(project.title)}"><article class="project-card"><div class="project-top"><div class="project-heading"><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div><div class="project-status-row"><span class="project-status-badge status-${esc(status)}">${statusLabel}</span></div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div><div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a></article>`;
+  }
+
+  function groupProjects(projects) {
+    const groups = new Map(homeSectionOrder.map((section) => [section.key, []]));
+    const extras = new Map();
+    (projects || []).forEach((project) => {
+      const key = String(project.status || "unknown").trim().toLowerCase();
+      if (groups.has(key)) {
+        groups.get(key).push(project);
+        return;
+      }
+      if (!extras.has(key)) extras.set(key, []);
+      extras.get(key).push(project);
+    });
+
+    const sections = homeSectionOrder
+      .map((section) => ({ ...section, projects: groups.get(section.key) || [] }));
+
+    Array.from(extras.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([key, items]) => {
+        sections.push({
+          key,
+          title: `${formatStatusLabel(key)} Projects`,
+          projects: items,
+        });
+      });
+
+    return sections;
+  }
+
+  function renderProjectSection(section) {
+    const expanded = isSectionOpen(section.key, groupProjects(window.__latestProjects || []).length || 1);
+    const content = section.projects.length
+      ? section.projects.map((project) => projectCard(project)).join("")
+      : `<div class="project-section-empty">No ${esc(section.title.toLowerCase())} yet.</div>`;
+    return `<section class="project-section" data-project-section data-status-section="${esc(section.key)}"><div class="project-section-heading"><button type="button" class="project-section-toggle" data-section-toggle data-section-key="${esc(section.key)}" aria-expanded="${expanded ? "true" : "false"}"><span class="project-section-toggle-icon" aria-hidden="true"></span><span class="project-section-title">${esc(section.title)}</span></button><span class="project-section-count">${section.projects.length}</span></div><section class="projects-grid"${expanded ? "" : " hidden"}>${content}</section></section>`;
   }
 
   function getOpenProjectMenuSlug() {
@@ -262,31 +325,28 @@
 
   function renderProjects(projects) {
     const openMenuSlug = getOpenProjectMenuSlug();
-    const showCompleted = document.getElementById("show-completed")?.checked;
-    const visible = projects || [];
-    const active = visible.filter((p) => p.status !== "completed");
-    const completed = visible.filter((p) => p.status === "completed");
-
-    const activeGrid = document.getElementById("active-projects-grid");
-    const completedGrid = document.getElementById("completed-projects-grid");
-    if (activeGrid) activeGrid.innerHTML = active.map((p) => projectCard(p, false)).join("");
-    const completedSection = document.getElementById("completed-section");
-    if (completedSection) completedSection.style.display = showCompleted ? "" : "none";
-    if (completedGrid) completedGrid.innerHTML = completed.map((p) => projectCard(p, true)).join("");
+    const projectSections = document.getElementById("project-sections");
+    const emptyState = document.getElementById("projects-empty-state");
+    const sections = groupProjects(projects || []);
+    if (projectSections) {
+      projectSections.innerHTML = sections.map((section) => renderProjectSection(section)).join("");
+      projectSections.hidden = sections.length === 0;
+    }
+    if (emptyState) emptyState.hidden = sections.length !== 0;
     applyRelativeTimes();
     restoreProjectMenu(openMenuSlug);
   }
 
   setClock("live-clock");
   setInterval(() => setClock("live-clock"), 1000);
-  applyRelativeTimes();
+  window.__latestProjects = {{ projects|tojson }};
+  renderProjects(window.__latestProjects);
 
   const createProjectDialog = document.getElementById("create-project-dialog");
   const createProjectForm = document.getElementById("create-project-form");
   const createProjectTitle = document.getElementById("create-project-title");
   const openCreateProjectButton = document.getElementById("open-create-project-dialog");
   const cancelCreateProjectButton = document.getElementById("cancel-create-project");
-  const projectGrids = [document.getElementById("active-projects-grid"), document.getElementById("completed-projects-grid")].filter(Boolean);
 
   async function postProjectAction(slug, action, body) {
     const response = await fetch(`/api/project/${encodeURIComponent(slug)}/${action}`, {
@@ -400,9 +460,6 @@
     }
   });
 
-  const completedToggle = document.getElementById("show-completed");
-  if (completedToggle) completedToggle.addEventListener("change", () => renderProjects(window.__latestProjects || []));
-
   document.addEventListener("click", (event) => {
     const menuButton = event.target.closest("[data-project-menu-button]");
     if (menuButton) {
@@ -431,6 +488,19 @@
 
     if (!event.target.closest(".project-card-menu")) {
       closeProjectMenus();
+    }
+
+    const sectionToggle = event.target.closest("[data-section-toggle]");
+    if (sectionToggle) {
+      event.preventDefault();
+      const sectionKey = sectionToggle.dataset.sectionKey || "";
+      if (!sectionKey) return;
+      const sections = groupProjects(window.__latestProjects || []);
+      const currentlyOpen = isSectionOpen(sectionKey, sections.length || 1);
+      const nextOpen = !currentlyOpen;
+      homeSectionState[sectionKey] = nextOpen;
+      persistSectionState();
+      setSectionExpanded(sectionKey, nextOpen);
     }
   });
 

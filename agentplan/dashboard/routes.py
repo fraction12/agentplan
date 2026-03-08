@@ -47,6 +47,20 @@ _CONTEXT_PIDS = {}
 _CONTEXT_LOCK = threading.Lock()
 LOGGER = logging.getLogger(__name__)
 
+HOME_STATUS_LABELS = {
+    "active": "Active",
+    "completed": "Completed",
+    "abandoned": "Closed",
+    "archived": "Archived",
+}
+
+HOME_SECTION_ORDER = [
+    ("active", "Active Projects"),
+    ("completed", "Completed Projects"),
+    ("abandoned", "Closed Projects"),
+    ("archived", "Archived Projects"),
+]
+
 
 def _get_context_pid(slug):
     value = _CONTEXT_PIDS.get(slug)
@@ -268,6 +282,42 @@ def _project_context_payload(project):
     return {"exists": True, "html": _markdown_to_html(raw), "raw": raw}
 
 
+def _titleize_status(status):
+    words = [part for part in str(status or "").replace("_", "-").split("-") if part]
+    if not words:
+        return "Unknown"
+    return " ".join(word.capitalize() for word in words)
+
+
+def _home_status_label(status):
+    normalized = (status or "").strip().lower()
+    return HOME_STATUS_LABELS.get(normalized, _titleize_status(normalized))
+
+
+def _group_projects_for_home(projects):
+    grouped = defaultdict(list)
+    for project in projects:
+        grouped[(project.get("status") or "unknown").strip().lower()].append(project)
+
+    sections = []
+    for key, title in HOME_SECTION_ORDER:
+        items = grouped.pop(key, [])
+        sections.append({"key": key, "title": title, "projects": items})
+
+    for key in sorted(grouped):
+        items = grouped[key]
+        if items:
+            sections.append(
+                {
+                    "key": key,
+                    "title": f"{_home_status_label(key)} Projects",
+                    "projects": items,
+                }
+            )
+
+    return sections
+
+
 def _fetch_projects_with_stats(conn):
     projects = conn.execute(
         "SELECT id, slug, title, status, updated_at, dir FROM projects ORDER BY updated_at DESC, id DESC LIMIT 100"
@@ -313,6 +363,7 @@ def _fetch_projects_with_stats(conn):
                 "in_flight_count": in_flight,
                 "progress_pct": progress,
                 "missing_directory": bool(p["dir"] and not os.path.isdir(p["dir"])),
+                "status_label": _home_status_label(p["status"]),
             }
         )
     return out
@@ -403,7 +454,7 @@ def _project_stats_payload():
         conn.close()
 
     summary = {
-        "active_projects": sum(1 for p in projects if p["status"] != "completed"),
+        "active_projects": sum(1 for p in projects if p["status"] == "active"),
         "tickets_in_flight": sum(p["in_flight_count"] for p in projects),
         "completed_today": int(completed_today or 0),
         "active_agents": int(active_agents or 0),
@@ -749,15 +800,16 @@ def create_app():
     def index():
         payload = _project_stats_payload()
         projects = payload["projects"]
-        active_projects = [p for p in projects if p["status"] != "completed" and p["status"] != "archived"]
-        completed_projects = [p for p in projects if p["status"] == "completed"]
         return render_template(
             "home.html",
             projects=projects,
-            active_projects=active_projects,
-            completed_projects=completed_projects,
+            home_sections=_group_projects_for_home(projects),
             summary=payload["summary"],
         )
+
+    @app.route("/favicon.ico")
+    def favicon():
+        return redirect(url_for("static", filename="favicon.svg"), code=308)
 
     @app.route("/api/stats")
     def api_stats():
