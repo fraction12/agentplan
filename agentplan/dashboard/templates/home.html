@@ -356,12 +356,16 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (response.redirected && response.url) {
+        createProjectDialog?.close("created");
+        window.location.href = response.url;
+        return;
+      }
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.ok === false) {
         throw new Error(data.error || "Failed to create project.");
       }
-      createProjectDialog?.close("created");
-      window.location.href = `/project/${encodeURIComponent(data.slug)}`;
+      throw new Error("Failed to create project.");
     } catch (error) {
       showToast(error.message || "Failed to create project.");
     } finally {

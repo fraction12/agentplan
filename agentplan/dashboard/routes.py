@@ -13,7 +13,7 @@ from datetime import datetime
 from functools import wraps
 from urllib.parse import urlparse
 
-from flask import Flask, abort, render_template, request, url_for
+from flask import Flask, abort, redirect, render_template, request, url_for
 
 from agentplan.cli import build_context_prompt, _render_prompt_agent_command, slugify, spawn_terminal
 from agentplan.db import (
@@ -1172,7 +1172,7 @@ def create_app():
                 (slug, title, description, directory),
             )
             conn.commit()
-            return {"ok": True, "slug": slug}
+            return redirect(url_for("project_detail", slug=slug), code=303)
         finally:
             conn.close()
 

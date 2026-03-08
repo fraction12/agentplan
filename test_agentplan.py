@@ -1632,15 +1632,18 @@ def test_dashboard_api_responses_do_not_reflect_raw_user_input():
         json={"title": '<img src=x onerror=alert("xss")>'},
         headers={"Origin": "http://localhost"},
     )
-    assert create_resp.status_code == 200
-    create_payload = create_resp.get_json()
-    assert create_payload["ok"] is True
-    assert "<img" not in json.dumps(create_payload)
+    assert create_resp.status_code == 303
+    assert "<img" not in (create_resp.headers.get("Location") or "")
 
-    cli("ticket", "add", create_payload["slug"], "Sanity ticket")
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    project = conn.execute("SELECT slug FROM projects ORDER BY id DESC LIMIT 1").fetchone()
+    conn.close()
+    assert project is not None
+
+    cli("ticket", "add", project["slug"], "Sanity ticket")
 
     transition_resp = client.post(
-        f"/api/ticket/{create_payload['slug']}/1/transition",
+        f"/api/ticket/{project['slug']}/1/transition",
         json={"status": '<img src=x onerror=alert("xss")>'},
         headers={"Origin": "http://localhost"},
     )
@@ -1791,10 +1794,8 @@ def test_dashboard_project_lifecycle_api_create_close_archive_delete():
         },
         headers={"Origin": "http://localhost"},
     )
-    assert create_resp.status_code == 200
-    create_payload = create_resp.get_json()
-    assert create_payload["ok"] is True
-    assert create_payload["slug"] == "dashboard-lifecycle-api"
+    assert create_resp.status_code == 303
+    assert create_resp.headers["Location"].endswith("/project/dashboard-lifecycle-api")
 
     close_resp = client.post(
         "/api/project/dashboard-lifecycle-api/close",
