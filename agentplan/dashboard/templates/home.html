@@ -53,32 +53,32 @@
   <h2 class="project-section-title">Active Projects</h2>
   <section class="projects-grid" id="active-projects-grid">
     {% for project in active_projects %}
-    <article class="project-card-shell">
+    <article class="project-card-shell" data-project-shell data-project-slug="{{ project.slug }}">
+      <div class="project-card-menu">
+        <button
+          type="button"
+          class="kebab-btn"
+          aria-label="Project actions for {{ project.title }}"
+          aria-expanded="false"
+          aria-haspopup="menu"
+          data-project-menu-button
+          data-project-id="{{ project.id }}"
+          data-project-slug="{{ project.slug }}"
+          data-project-title="{{ project.title }}"
+          data-project-status="{{ project.status }}"
+        >⋯</button>
+        <div class="kebab-menu" data-project-menu hidden>
+          {% if project.status not in ["completed", "archived", "abandoned"] %}
+          <button type="button" class="kebab-menu-item" data-project-action="close">Close</button>
+          {% endif %}
+          {% if project.status != "archived" %}
+          <button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>
+          {% endif %}
+          <button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button>
+        </div>
+      </div>
       <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}" data-project-slug="{{ project.slug }}" aria-label="Open {{ project.title }}">
         <article class="project-card">
-          <div class="project-card-menu">
-            <button
-              type="button"
-              class="kebab-btn"
-              aria-label="Project actions for {{ project.title }}"
-              aria-expanded="false"
-              aria-haspopup="menu"
-              data-project-menu-button
-              data-project-id="{{ project.id }}"
-              data-project-slug="{{ project.slug }}"
-              data-project-title="{{ project.title }}"
-              data-project-status="{{ project.status }}"
-            >⋯</button>
-            <div class="kebab-menu" data-project-menu hidden>
-              {% if project.status not in ["completed", "archived", "abandoned"] %}
-              <button type="button" class="kebab-menu-item" data-project-action="close">Close</button>
-              {% endif %}
-              {% if project.status != "archived" %}
-              <button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>
-              {% endif %}
-              <button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button>
-            </div>
-          </div>
         <div class="project-top">
           <div>
             <h2 class="project-title">{{ project.title }}</h2>
@@ -115,32 +115,32 @@
   <h2 class="project-section-title">Completed</h2>
   <section class="projects-grid completed" id="completed-projects-grid">
     {% for project in completed_projects %}
-    <article class="project-card-shell">
+    <article class="project-card-shell" data-project-shell data-project-slug="{{ project.slug }}">
+      <div class="project-card-menu">
+        <button
+          type="button"
+          class="kebab-btn"
+          aria-label="Project actions for {{ project.title }}"
+          aria-expanded="false"
+          aria-haspopup="menu"
+          data-project-menu-button
+          data-project-id="{{ project.id }}"
+          data-project-slug="{{ project.slug }}"
+          data-project-title="{{ project.title }}"
+          data-project-status="{{ project.status }}"
+        >⋯</button>
+        <div class="kebab-menu" data-project-menu hidden>
+          {% if project.status not in ["completed", "archived", "abandoned"] %}
+          <button type="button" class="kebab-menu-item" data-project-action="close">Close</button>
+          {% endif %}
+          {% if project.status != "archived" %}
+          <button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>
+          {% endif %}
+          <button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button>
+        </div>
+      </div>
       <a class="project-link" href="{{ url_for('project_detail', slug=project.slug) }}" data-project-id="{{ project.id }}" data-project-status="{{ project.status }}" data-project-slug="{{ project.slug }}" aria-label="Open {{ project.title }}">
         <article class="project-card">
-          <div class="project-card-menu">
-            <button
-              type="button"
-              class="kebab-btn"
-              aria-label="Project actions for {{ project.title }}"
-              aria-expanded="false"
-              aria-haspopup="menu"
-              data-project-menu-button
-              data-project-id="{{ project.id }}"
-              data-project-slug="{{ project.slug }}"
-              data-project-title="{{ project.title }}"
-              data-project-status="{{ project.status }}"
-            >⋯</button>
-            <div class="kebab-menu" data-project-menu hidden>
-              {% if project.status not in ["completed", "archived", "abandoned"] %}
-              <button type="button" class="kebab-menu-item" data-project-action="close">Close</button>
-              {% endif %}
-              {% if project.status != "archived" %}
-              <button type="button" class="kebab-menu-item" data-project-action="archive">Archive</button>
-              {% endif %}
-              <button type="button" class="kebab-menu-item danger" data-project-action="delete">Delete</button>
-            </div>
-          </div>
         <div class="project-top">
           <div>
             <h2 class="project-title">{{ project.title }}</h2>
@@ -224,10 +224,44 @@
     const breakdown = project.breakdown || {};
     const breakdownHtml = isCompleted ? '' : `<div class="dot-breakdown project-breakdown">${statusOrder.map((status) => `<span class="dot-item"><span class="dot ${status}"></span><span class="dot-value" data-status="${status}">${breakdown[status] || 0}</span></span>`).join("")}</div>`;
     const warningHtml = project.missing_directory ? `<div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>` : "";
-    return `<article class="project-card-shell"><a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}" data-project-slug="${esc(project.slug || "")}" aria-label="Open ${esc(project.title)}"><article class="project-card">${projectMenuMarkup(project)}<div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a></article>`;
+    return `<article class="project-card-shell" data-project-shell data-project-slug="${esc(project.slug || "")}">${projectMenuMarkup(project)}<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(project.status || '')}" data-project-slug="${esc(project.slug || "")}" aria-label="Open ${esc(project.title)}"><article class="project-card"><div class="project-top"><div><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div>${breakdownHtml}<div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a></article>`;
+  }
+
+  function getOpenProjectMenuSlug() {
+    const openButton = document.querySelector('[data-project-menu-button][aria-expanded="true"]');
+    return openButton?.dataset.projectSlug || "";
+  }
+
+  function closeProjectMenus() {
+    document.querySelectorAll("[data-project-menu-button]").forEach((button) => {
+      button.setAttribute("aria-expanded", "false");
+    });
+    document.querySelectorAll("[data-project-menu]").forEach((menu) => {
+      menu.hidden = true;
+    });
+    document.querySelectorAll("[data-project-shell].menu-open").forEach((shell) => {
+      shell.classList.remove("menu-open");
+    });
+  }
+
+  function openProjectMenu(button) {
+    const menu = button?.parentElement?.querySelector("[data-project-menu]");
+    if (!button || !menu) return;
+    closeProjectMenus();
+    menu.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+    button.closest("[data-project-shell]")?.classList.add("menu-open");
+  }
+
+  function restoreProjectMenu(slug) {
+    if (!slug) return;
+    const button = Array.from(document.querySelectorAll("[data-project-menu-button]"))
+      .find((node) => (node.dataset.projectSlug || "") === slug);
+    if (button) openProjectMenu(button);
   }
 
   function renderProjects(projects) {
+    const openMenuSlug = getOpenProjectMenuSlug();
     const showCompleted = document.getElementById("show-completed")?.checked;
     const visible = projects || [];
     const active = visible.filter((p) => p.status !== "completed");
@@ -239,6 +273,8 @@
     const completedSection = document.getElementById("completed-section");
     if (completedSection) completedSection.style.display = showCompleted ? "" : "none";
     if (completedGrid) completedGrid.innerHTML = completed.map((p) => projectCard(p, true)).join("");
+    applyRelativeTimes();
+    restoreProjectMenu(openMenuSlug);
   }
 
   setClock("live-clock");
@@ -251,15 +287,6 @@
   const openCreateProjectButton = document.getElementById("open-create-project-dialog");
   const cancelCreateProjectButton = document.getElementById("cancel-create-project");
   const projectGrids = [document.getElementById("active-projects-grid"), document.getElementById("completed-projects-grid")].filter(Boolean);
-
-  function closeProjectMenus() {
-    document.querySelectorAll("[data-project-menu-button]").forEach((button) => {
-      button.setAttribute("aria-expanded", "false");
-    });
-    document.querySelectorAll("[data-project-menu]").forEach((menu) => {
-      menu.hidden = true;
-    });
-  }
 
   async function postProjectAction(slug, action, body) {
     const response = await fetch(`/api/project/${encodeURIComponent(slug)}/${action}`, {
@@ -383,11 +410,8 @@
       event.stopPropagation();
       const menu = menuButton.parentElement?.querySelector("[data-project-menu]");
       const willOpen = menu?.hidden !== false;
-      closeProjectMenus();
-      if (menu && willOpen) {
-        menu.hidden = false;
-        menuButton.setAttribute("aria-expanded", "true");
-      }
+      if (willOpen) openProjectMenu(menuButton);
+      else closeProjectMenus();
       return;
     }
 

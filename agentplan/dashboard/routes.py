@@ -139,15 +139,23 @@ def _db_path():
     return os.environ.get("AGENTPLAN_DB", os.path.expanduser("~/.agentplan/agentplan.db"))
 
 
-def _is_local_origin(value):
+def _is_loopback_host(host):
+    host = (host or "").strip().lower()
+    return host in {"localhost", "127.0.0.1", "::1"}
+
+
+def _origin_matches_request_host(value):
     if not value:
         return False
     try:
         parsed = urlparse(value)
     except Exception:
         return False
-    host = (parsed.hostname or "").lower()
-    return host in {"localhost", "127.0.0.1"}
+    origin_host = (parsed.hostname or "").lower()
+    if _is_loopback_host(origin_host):
+        return True
+    request_host = (request.host.split(":", 1)[0] if request.host else "").lower()
+    return bool(request_host) and origin_host == request_host
 
 
 def _require_local_origin(fn):
@@ -156,10 +164,10 @@ def _require_local_origin(fn):
         origin = request.headers.get("Origin")
         referer = request.headers.get("Referer")
         if origin:
-            if not _is_local_origin(origin):
+            if not _origin_matches_request_host(origin):
                 return ({"error": "forbidden"}, 403)
         elif referer:
-            if not _is_local_origin(referer):
+            if not _origin_matches_request_host(referer):
                 return ({"error": "forbidden"}, 403)
         return fn(*args, **kwargs)
 

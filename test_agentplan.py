@@ -1403,6 +1403,24 @@ def test_dashboard_home_includes_create_dialog_and_project_kebab_menu():
     assert 'data-project-action="archive"' in body
     assert 'data-project-action="delete"' in body
     assert "handleProjectAction" in body
+    assert "restoreProjectMenu" in body
+
+
+def test_dashboard_home_project_menu_is_outside_project_link():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Home Menu Structure")
+
+    client = app.test_client()
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    marker = '<article class="project-card-shell" data-project-shell data-project-slug="web-home-menu-structure"'
+    shell_start = body.index(marker)
+    shell_end = body.index("</article>", shell_start)
+    shell_html = body[shell_start:shell_end]
+    assert shell_html.index('class="project-card-menu"') < shell_html.index('class="project-link"')
 
 
 def test_dashboard_home_hides_close_action_for_completed_projects():
@@ -1829,6 +1847,59 @@ def test_dashboard_project_lifecycle_api_create_close_archive_delete():
     deleted = conn.execute("SELECT 1 FROM projects WHERE slug='dashboard-lifecycle-api'").fetchone()
     conn.close()
     assert deleted is None
+
+
+def test_dashboard_same_host_origin_is_allowed_for_create_and_ticket_actions():
+    from agentplan.dashboard import create_app
+
+    test_app = create_app()
+    client = test_app.test_client()
+    base_url = "http://100.117.26.54:8080"
+    headers = {"Origin": base_url}
+
+    create_resp = client.post(
+        "/api/project/create",
+        json={"title": "Remote Host Dashboard", "description": "created via same-host origin"},
+        headers=headers,
+        base_url=base_url,
+    )
+    assert create_resp.status_code == 303
+    assert create_resp.headers["Location"].endswith("/project/remote-host-dashboard")
+
+    add_resp = client.post(
+        "/api/ticket/remote-host-dashboard/add",
+        json={"title": "Created from remote host"},
+        headers=headers,
+        base_url=base_url,
+    )
+    assert add_resp.status_code == 200
+    assert add_resp.get_json()["ok"] is True
+
+    transition_resp = client.post(
+        "/api/ticket/remote-host-dashboard/1/transition",
+        json={"status": "in-progress"},
+        headers=headers,
+        base_url=base_url,
+    )
+    assert transition_resp.status_code == 200
+    assert transition_resp.get_json() == {"ok": True}
+
+
+def test_dashboard_mismatched_origin_is_rejected():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Forbidden Dashboard Origin")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/project/forbidden-dashboard-origin/archive",
+        headers={"Origin": "http://evil.example"},
+        base_url="http://100.117.26.54:8080",
+    )
+
+    assert resp.status_code == 403
+    assert resp.get_json() == {"error": "forbidden"}
 
 
 def test_dashboard_project_archive_endpoint_archives_active_project():
