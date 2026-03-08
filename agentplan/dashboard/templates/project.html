@@ -95,6 +95,35 @@
   </form>
 </dialog>
 
+<dialog id="ticket-field-dialog" class="ticket-dialog ticket-field-dialog">
+  <form id="ticket-field-form" method="dialog">
+    <h3 id="ticket-field-dialog-title">Edit field</h3>
+    <p id="ticket-field-dialog-help" class="ticket-field-help">Update the selected ticket field.</p>
+    <label id="ticket-field-input-row" class="ticket-field-row" hidden>
+      <span id="ticket-field-input-label">Value</span>
+      <input id="ticket-field-input" type="text" name="value" maxlength="255" autocomplete="off">
+    </label>
+    <label id="ticket-field-textarea-row" class="ticket-field-row" hidden>
+      <span id="ticket-field-textarea-label">Value</span>
+      <textarea id="ticket-field-textarea" name="value_multiline" rows="5" maxlength="4000"></textarea>
+    </label>
+    <label id="ticket-field-select-row" class="ticket-field-row" hidden>
+      <span id="ticket-field-select-label">Value</span>
+      <select id="ticket-field-select" name="value_select">
+        <option value="none">None</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+    </label>
+    <p id="ticket-field-error" class="ticket-field-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="ticket-field-cancel">Cancel</button>
+      <button type="submit" class="btn btn-primary" id="ticket-field-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <details class="context-panel" aria-label="project context">
   <summary>
     <span>Project Context</span>
