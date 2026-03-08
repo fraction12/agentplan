@@ -14,11 +14,12 @@
 
 agentplan is **Asana for AI agents** — a shared task board that any AI tool can drive.
 
-- persistent project + ticket queue
-- dependency tracking
-- ticket ownership + history
-- web dashboard for visibility
-- local-first SQLite storage
+- Persistent project + ticket queue
+- Dependency tracking with automatic unblocking
+- Atomic ticket claiming (safe for concurrent agents)
+- Web dashboard for visibility
+- Local-first SQLite storage
+- Built-in plugins for Claude Code and Codex
 
 ## Start in 3 steps
 
@@ -27,125 +28,115 @@ agentplan is **Asana for AI agents** — a shared task board that any AI tool ca
 pip install agentplan
 
 # 2) Connect your AI tool
-agentplan setup claude
-# or
-agentplan setup codex
+agentplan setup claude    # Claude Code
+agentplan setup codex     # Codex CLI
 
-# 3) Tell your AI to plan and execute with AgentPlan
+# 3) Tell your AI to plan
+# In Claude Code: /agentplan:plan
+# Or just say: "plan a new project for this repo"
 ```
 
 ## CLI quickstart
 
 ```bash
-# Create a project with starter tickets
+# Create a project
 agentplan create "Ship v1" \
   --ticket "Set up database" \
   --ticket "Implement API" \
   --ticket "Write tests"
 
-# See what is ready
+# See what's ready to work on
 agentplan next ship-v1
 
-# Claim work
-agentplan claim ship-v1 --agent dash
+# Claim the next unblocked ticket
+agentplan claim ship-v1
 
-# Mark complete
-agentplan ticket done ship-v1 1 --agent dash
-```
+# Mark it done
+agentplan ticket done ship-v1 1
 
-## Agent Loop Demo
-
-```bash
-agentplan next ship-v1
-agentplan claim ship-v1 --agent dash
-agentplan ticket done ship-v1 1 --agent dash
+# Check progress
+agentplan status ship-v1
 ```
 
 ## Core CLI commands
 
 ### Project lifecycle
-- `agentplan create`
-- `agentplan list`
-- `agentplan status`
-- `agentplan close`
-- `agentplan archive`
-- `agentplan remove`
+
+| Command | Description |
+|---------|-------------|
+| `agentplan create` | Create a project (with optional `--ticket` flags) |
+| `agentplan list` | List all projects |
+| `agentplan status <project>` | Show project progress and ticket states |
+| `agentplan close <project>` | Close a completed project |
+| `agentplan archive <project>` | Archive a project |
+| `agentplan remove <project>` | Permanently remove a project |
 
 ### Ticket workflow
-- `agentplan ticket add|list|start|done|skip|block|fail|review|edit|update`
-- `agentplan next`
-- `agentplan claim`
-- `agentplan search`
-- `agentplan note`
-- `agentplan attach`
-- `agentplan history`
 
-### Dependencies + logs
-- `agentplan depend`
-- `agentplan undepend`
-- `agentplan log`
+| Command | Description |
+|---------|-------------|
+| `agentplan ticket add <project> "title"` | Add a ticket |
+| `agentplan ticket list <project>` | List tickets |
+| `agentplan ticket start <project> <num>` | Mark ticket in-progress |
+| `agentplan ticket done <project> <num>` | Mark ticket done |
+| `agentplan ticket skip <project> <num>` | Skip a ticket |
+| `agentplan ticket block <project> <num>` | Block a ticket |
+| `agentplan ticket fail <project> <num>` | Mark ticket failed |
+| `agentplan ticket edit <project> <num>` | Edit ticket details |
+| `agentplan next <project>` | Show next unblocked tickets |
+| `agentplan claim <project>` | Atomically claim the next unblocked ticket |
+| `agentplan search <query>` | Search tickets across all projects |
+
+### Dependencies, logs, and notes
+
+| Command | Description |
+|---------|-------------|
+| `agentplan depend <project> <ticket> --on <dep>` | Add dependency |
+| `agentplan undepend <project> <ticket> --on <dep>` | Remove dependency |
+| `agentplan log <project>` | Add a log entry |
+| `agentplan note <project>` | Set a note on project or ticket |
+| `agentplan attach <project>` | Attach a file or URL |
+| `agentplan history <project> <ticket>` | Show ticket state transitions |
 
 ### Utilities
-- `agentplan dashboard`
-- `agentplan setup`
-- `agentplan version`
-- `agentplan completion`
+
+| Command | Description |
+|---------|-------------|
+| `agentplan setup [claude\|codex]` | Install AI tool plugin |
+| `agentplan dashboard` | Launch web dashboard |
+| `agentplan completion` | Print shell completion script |
 
 ## Dashboard
 
-Run the web dashboard:
-
 ```bash
 agentplan dashboard
+# or run in background:
+agentplan dashboard --background
 ```
 
-Open `http://127.0.0.1:5001` to view projects, ticket board state, and activity.
+Open `http://127.0.0.1:5001` to view projects, ticket board, and activity. Create and edit tickets directly from the UI.
 
 ## AI tool setup
 
-Use the built-in setup command to install plugins/skills:
+The `setup` command installs plugins from the pip package — no cloning required:
 
 ```bash
+# Claude Code — registers as a local marketplace plugin
 agentplan setup claude
+
+# Codex CLI — copies skill to ~/.codex/skills/
 agentplan setup codex
 ```
 
-Manual options are still available when you need full control.
-
-### Claude Code plugin (manual)
-
-```bash
-/install-plugin github:fraction12/agentplan
-```
-
-Or copy manually:
-
-```bash
-cp -r plugins/claude-code ~/.claude/plugins/agentplan
-```
-
-### Codex skill (manual)
-
-```bash
-mkdir -p ~/.codex/skills/agentplan
-cp plugins/codex/SKILL.md ~/.codex/skills/agentplan/
-```
-
-### OpenClaw skill
-
-```bash
-clawhub install agentplan
-```
-
-## Notes on advanced orchestration
-
-AgentPlan also contains advanced orchestration/routing surfaces for power users. These are intentionally de-emphasized in the primary UX and documentation.
+After setup, restart your AI tool. The plugin gives your AI four commands:
+- `/agentplan:plan` — Create a project from conversation
+- `/agentplan:status` — Show project progress
+- `/agentplan:loop` — Set up autonomous ticket processing
 
 ## Security + docs
 
 - Security policy: `docs/security/security.md`
 - Privacy: `docs/security/privacy.md`
-- Marketplace docs: `docs/marketplace/`
 
 ## License
 
