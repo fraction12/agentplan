@@ -5,6 +5,7 @@ AgentPlan is installed and available in this environment.
 AgentPlan is the task board system for AI work sessions.
 - You (Claude Code) own implementation and execution.
 - AgentPlan owns planning state, dependencies, and ticket lifecycle.
+- Use AgentPlan as the shared backlog, not as the execution runtime.
 
 ## Core workflow (always follow)
 
@@ -38,15 +39,7 @@ Keep tickets small and executable.
 - Break large efforts into multiple dependent tickets.
 - Prefer clear, action-oriented ticket titles.
 
-## CLI reference (exact signatures)
-
-### Top-level
-
-```bash
-agentplan --help
-usage: agentplan [-h] [--version]
-                 {init,version,dashboard,create,project,ticket,next,claim,reap,status,search,list,archive,attach,log,close,note,depend,undepend,remove,history,context,route,spawn-terminal,monitor-process,auto-tag,chain,issue,pr,artifact,subtask,role,hook,agent,completion,__complete} ...
-```
+## Primary commands to use
 
 ### Create project
 
@@ -109,51 +102,15 @@ usage: agentplan depend [-h] --on ON project ticket_id
 
 ```bash
 agentplan ticket done <project> <ticket_num>     # Mark ticket complete
-agentplan ticket start <project> <ticket_num>    # Mark ticket in-progress
 agentplan ticket fail <project> <ticket_num> [--reason REASON]  # Mark failed
 agentplan ticket skip <project> <ticket_num>     # Skip ticket
 agentplan ticket edit <project> <ticket_num> [--title TITLE] [--desc DESC] [--priority {high,medium,low}]
 agentplan ticket list <project> [--status STATUS]
 ```
 
-### Search tickets
+## Advanced commands
 
-```bash
-agentplan search "query"                         # Fuzzy search across all projects
-```
-
-### List projects
-
-```bash
-agentplan list [--status {active,completed,paused,abandoned,all}]
-```
-
-### Close/archive project
-
-```bash
-agentplan close <project> [--abandon]            # Close project (or mark abandoned)
-agentplan archive <project>                      # Archive a completed project
-```
-
-### Notes and attachments
-
-```bash
-agentplan note <project> "text" [--ticket NUM]   # Add note to project or ticket
-agentplan attach <project> "label" "path_or_url" [--ticket NUM]
-```
-
-### Remove
-
-```bash
-agentplan remove <project> [--ticket NUM]        # Remove project or specific ticket
-agentplan undepend <project> <ticket_id> --on <dependency_id>  # Remove dependency
-```
-
-### History
-
-```bash
-agentplan history <project> <ticket_num>         # Show ticket state transitions
-```
+Advanced orchestration, routing, CI, and other internal/power-user surfaces exist in AgentPlan, but they are not the primary workflow for new users. Prefer the core commands above unless the user explicitly asks for an advanced flow.
 
 ## Default operating pattern
 

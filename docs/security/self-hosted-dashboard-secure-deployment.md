@@ -1,6 +1,6 @@
 # Self-Hosted Dashboard Secure Deployment Guide
 
-> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+> **Note:** AgentPlan's primary workflow is shared project and ticket management for AI tools. Advanced automation and orchestration checks below apply only if you enable those operator workflows.
 
 ## Baseline
 1. Bind dashboard to localhost only:
@@ -20,6 +20,7 @@
 - Add request size/rate limits on proxy paths.
 
 ## Operational checks
-- Verify `agentplan chain <project> --status` from host shell.
+- Verify `agentplan status <project>` from host shell.
+- If advanced automation is enabled, also verify `agentplan chain <project> --status`.
 - Verify reverse proxy auth before exposing dashboard URL.
 - Back up SQLite DB on a schedule.

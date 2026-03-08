@@ -136,11 +136,11 @@
 
   function chainSummary(chainStatus, chainTicketNum, pauseReason) {
     const status = (chainStatus || "stopped").toLowerCase();
-    if (status === "running") return `Chain: running — ticket #${chainTicketNum || "?"}`;
-    if (status === "paused") return `Chain: paused — ${pauseReason || "waiting"}`;
-    if (status === "done") return "Chain: idle";
-    if (status === "stopped") return pauseReason ? `Chain: idle — ${pauseReason}` : "Chain: idle";
-    return "Chain: idle";
+    if (status === "running") return `Automation: running — ticket #${chainTicketNum || "?"}`;
+    if (status === "paused") return `Automation: paused — ${pauseReason || "waiting"}`;
+    if (status === "done") return "Automation: idle";
+    if (status === "stopped") return pauseReason ? `Automation: idle — ${pauseReason}` : "Automation: idle";
+    return "Automation: idle";
   }
 
   function applyChainState(payload) {
@@ -318,7 +318,7 @@
       try {
         await callChainAction("start");
       } catch (error) {
-        showToast(error.message || "Failed to start chain.");
+        showToast(error.message || "Failed to start automation.");
         chainStartBtn.disabled = false;
       }
     });
@@ -330,7 +330,7 @@
       try {
         await callChainAction("stop");
       } catch (error) {
-        showToast(error.message || "Failed to stop chain.");
+        showToast(error.message || "Failed to stop automation.");
         chainStopBtn.disabled = false;
       }
     });
@@ -377,7 +377,7 @@
     const label = generateContextBtn.querySelector(".btn-label");
     generateContextBtn.disabled = Boolean(isLoading);
     generateContextBtn.classList.toggle("is-loading", Boolean(isLoading));
-    if (label) label.textContent = isLoading ? "Generating..." : "Generate Context";
+    if (label) label.textContent = isLoading ? "Generating..." : "Generate Repo Context";
   }
 
   function stopContextPolling() {

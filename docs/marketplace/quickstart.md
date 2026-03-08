@@ -1,8 +1,8 @@
 # GitHub Marketplace Quickstart (Phase 1)
 
-> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+> **Note:** This quickstart covers Marketplace and CI/operator workflows. The primary product workflow is still: plan in Claude/Codex, track in AgentPlan, and use the dashboard for visibility.
 
-This quickstart shows how to use the Phase 1 actions added in this repository.
+This quickstart shows how to use the Phase 1 actions added in this repository for CI and GitHub Marketplace scenarios.
 
 ## 1) Install agentplan in a workflow
 
@@ -17,7 +17,7 @@ This quickstart shows how to use the Phase 1 actions added in this repository.
   run: echo "agentplan=${{ steps.setup-agentplan.outputs.agentplan-version }}"
 ```
 
-## 2) Run chain headlessly in CI
+## 2) Run advanced automation headlessly in CI
 
 ```yaml
 - name: Run agentplan chain
@@ -38,6 +38,7 @@ This quickstart shows how to use the Phase 1 actions added in this repository.
 ```
 
 Notes:
+- This is an advanced CI/operator path, not the default user flow.
 - `actions/run-chain` forces `AGENTPLAN_CI=1`, so no terminal spawning is used.
 - The action writes a Markdown summary to `$GITHUB_STEP_SUMMARY`.
 - `max-tickets` and `timeout` are optional.

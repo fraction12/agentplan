@@ -12,7 +12,7 @@
   <a href="https://github.com/fraction12/agentplan/actions/workflows/ci.yml"><img src="https://github.com/fraction12/agentplan/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
 </p>
 
-agentplan is **Asana for AI agents** — a shared task board that any AI tool can drive.
+agentplan is **Asana for AI agents** — a shared task board that AI tools can use as the source of truth for work.
 
 - Persistent project + ticket queue
 - Dependency tracking with automatic unblocking
@@ -20,6 +20,19 @@ agentplan is **Asana for AI agents** — a shared task board that any AI tool ca
 - Web dashboard for visibility
 - Local-first SQLite storage
 - Built-in plugins for Claude Code and Codex
+
+## What AgentPlan Is
+
+AgentPlan is the coordination layer for AI work.
+
+Use it to:
+- create a project for a repo
+- break work into small tickets
+- track dependencies and progress
+- let agents claim the next unblocked task
+- watch the work move in the dashboard
+
+AgentPlan is not the main execution engine. Claude Code, Codex, and other tools do the planning and implementation work. AgentPlan keeps the shared backlog, ticket state, and history in one place.
 
 ## Start in 3 steps
 
@@ -36,14 +49,30 @@ agentplan setup codex     # Codex CLI
 # Or just say: "plan a new project for this repo"
 ```
 
-## CLI quickstart
+## Typical workflow
+
+1. Open Claude Code, Codex, or another supported AI tool.
+2. Ask it to create an AgentPlan project for the current repo.
+3. Let it break the work into tickets with dependencies.
+4. Have the AI tool work ticket-by-ticket using `agentplan next` and `agentplan claim`.
+5. Use the dashboard to monitor progress and inspect ticket state.
+
+Short version: plan in the AI tool, track in AgentPlan, execute through the AI tool's own loop or scheduled workflow.
+
+## Quickstart
 
 ```bash
-# Create a project
-agentplan create "Ship v1" \
-  --ticket "Set up database" \
-  --ticket "Implement API" \
-  --ticket "Write tests"
+# Create a project linked to the current repo
+agentplan create "Ship v1" --dir .
+
+# Add a few tickets
+agentplan ticket add ship-v1 "Set up database" --priority high
+agentplan ticket add ship-v1 "Implement API" --priority high
+agentplan ticket add ship-v1 "Write tests" --priority medium
+
+# Add dependencies where needed
+agentplan depend ship-v1 2 --on 1
+agentplan depend ship-v1 3 --on 2
 
 # See what's ready to work on
 agentplan next ship-v1
@@ -57,6 +86,32 @@ agentplan ticket done ship-v1 1
 # Check progress
 agentplan status ship-v1
 ```
+
+## AI tool setup
+
+The `setup` command installs plugins from the pip package, so the AI tool can understand the AgentPlan workflow without cloning anything extra:
+
+```bash
+# Claude Code — registers as a local marketplace plugin
+agentplan setup claude
+
+# Codex CLI — copies the skill into ~/.codex/skills/
+agentplan setup codex
+```
+
+After setup, restart the AI tool.
+
+### Claude Code flow
+
+- `/agentplan:plan` creates a project and tickets from the conversation
+- `/agentplan:status` shows project progress
+- `/agentplan:loop` generates the prompt/instructions for Claude's own loop or cron-driven workflow
+
+### Codex flow
+
+- use the installed `agentplan` skill
+- create a project, add tickets, and work from `agentplan next` / `agentplan claim`
+- keep AgentPlan as the shared backlog if Claude and Codex are both working on the same repo
 
 ## Core CLI commands
 
@@ -77,7 +132,6 @@ agentplan status ship-v1
 |---------|-------------|
 | `agentplan ticket add <project> "title"` | Add a ticket |
 | `agentplan ticket list <project>` | List tickets |
-| `agentplan ticket start <project> <num>` | Mark ticket in-progress |
 | `agentplan ticket done <project> <num>` | Mark ticket done |
 | `agentplan ticket skip <project> <num>` | Skip a ticket |
 | `agentplan ticket block <project> <num>` | Block a ticket |
@@ -116,27 +170,22 @@ agentplan dashboard --background
 
 Open `http://127.0.0.1:5001` to view projects, ticket board, and activity. Create and edit tickets directly from the UI.
 
-## AI tool setup
+## Advanced workflows
 
-The `setup` command installs plugins from the pip package — no cloning required:
+AgentPlan also includes advanced and power-user surfaces for orchestration, CI, and other automation-heavy workflows. Those are intentionally de-emphasized in the main UX.
 
-```bash
-# Claude Code — registers as a local marketplace plugin
-agentplan setup claude
-
-# Codex CLI — copies skill to ~/.codex/skills/
-agentplan setup codex
-```
-
-After setup, restart your AI tool. The plugin gives your AI four commands:
-- `/agentplan:plan` — Create a project from conversation
-- `/agentplan:status` — Show project progress
-- `/agentplan:loop` — Set up autonomous ticket processing
+If you are evaluating AgentPlan for the first time, start with:
+- project creation
+- tickets and dependencies
+- `next` and `claim`
+- dashboard visibility
+- Claude/Codex plugin flow
 
 ## Security + docs
 
 - Security policy: `docs/security/security.md`
 - Privacy: `docs/security/privacy.md`
+- Canonical docs alignment baseline: `docs/docs-alignment-canonical-story.md`
 
 ## License
 

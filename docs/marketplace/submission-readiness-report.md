@@ -1,6 +1,6 @@
 # Marketplace Submission Readiness Report
 
-> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+> **Note:** This report documents Marketplace/operator readiness work. It includes advanced automation artifacts that are not the primary product entry point for most users.
 
 Date: 2026-03-06
 Branch: `feat/marketplace-finalize`

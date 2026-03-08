@@ -1,6 +1,6 @@
 ---
 name: "agentplan"
-description: "Use when planning, tracking, or executing multi-ticket projects. AgentPlan is the task board for AI work sessions — create projects, break work into tickets, claim tickets atomically, track progress. Use for any multi-step build."
+description: "Use when planning, tracking, or executing multi-ticket projects. AgentPlan is the shared task board for AI work sessions — create projects, break work into tickets, claim tickets atomically, and track progress across tools."
 ---
 
 # AgentPlan Skill
@@ -9,7 +9,18 @@ description: "Use when planning, tracking, or executing multi-ticket projects. A
 - User asks to plan or build something with multiple steps
 - Working through an existing agentplan project
 - Need to check what's next, claim work, or mark tickets done
-- Setting up autonomous work loops
+- Coordinating work with Claude Code or other AI tools through a shared backlog
+
+## Core idea
+
+AgentPlan is the source of truth for project state.
+
+Codex does the work.
+AgentPlan stores:
+- ticket queue
+- dependency order
+- claim state
+- progress history
 
 ## Core workflow
 1. **Before starting:** `agentplan claim <project>` (atomic lock)
@@ -30,7 +41,6 @@ agentplan create "Title" --dir .                    # Create project linked to c
 agentplan ticket add <proj> "Title" [--priority P] [--desc D] [--depends N]
 agentplan next <project>                            # Show next unblocked ticket
 agentplan claim <project>                           # Atomically claim next ticket
-agentplan ticket start <proj> <num>                 # Mark in-progress
 agentplan ticket done <proj> <num>                  # Mark complete
 agentplan ticket fail <proj> <num> --reason "why"   # Mark failed
 agentplan ticket skip <proj> <num>                  # Skip ticket
@@ -54,3 +64,4 @@ agentplan dashboard [--background]                  # Launch web dashboard
 - Keep tickets small (1-2 sessions each)
 - Log meaningful progress, not busywork
 - Link projects to directories with `--dir .`
+- If Claude and Codex are both working, use AgentPlan as the shared backlog instead of separate private plans

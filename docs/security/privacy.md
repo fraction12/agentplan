@@ -1,13 +1,13 @@
 # Privacy
 
-> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+> **Note:** AgentPlan primarily stores shared project and ticket state for AI work. Advanced orchestration and CI references below apply only when operators enable those workflows.
 
 `agentplan` stores project and ticket metadata in SQLite. In CI workflows, logs may include project slugs, ticket titles, and execution status.
 
 ## Data stored locally
 - project metadata (slug, title, optional directory path)
 - ticket metadata (title, description, tags, status)
-- runtime logs and chain state
+- runtime logs and advanced automation state
 - imported GitHub issue references (repo, issue number, URL)
 
 ## Data sent externally

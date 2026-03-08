@@ -1,8 +1,10 @@
 # GitHub Marketplace Listing Kit
 
-> **Note:** References to chaining/routing/orchestration below are advanced/internal workflows for power users and are de-emphasized in the main AgentPlan UX.
+> **Note:** AgentPlan's primary user experience is a shared task board for AI tools. CI, chaining, and orchestration references below are advanced/operator workflows, not the main product entry point.
 
 This folder contains the Phase 1 listing assets and operator docs for the `agentplan` GitHub Marketplace pilot.
+
+Use these materials when you need Marketplace-facing assets or CI/operator setup guidance. For the main user workflow, start with the root `README.md`.
 
 ## Quick links
 - Quickstart: `docs/marketplace/quickstart.md`
@@ -25,4 +27,4 @@ This folder contains the Phase 1 listing assets and operator docs for the `agent
 ## Screenshot assets
 - `docs/marketplace/screenshots/01-dashboard-overview.png`
 - `docs/marketplace/screenshots/02-ticket-kanban.png`
-- `docs/marketplace/screenshots/03-chain-status.png`
+- `docs/marketplace/screenshots/03-chain-status.png` (advanced CI/orchestration surface)

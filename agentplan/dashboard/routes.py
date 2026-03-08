@@ -918,11 +918,11 @@ def create_app():
         chain_status = (chain.get("status") or "stopped").lower()
         chain_pause_reason = chain.get("pause_reason")
         if chain_status == "running":
-            chain_text = f"Chain: running — ticket #{chain_current_ticket_num or '?'}"
+            chain_text = f"Automation: running — ticket #{chain_current_ticket_num or '?'}"
         elif chain_status == "paused":
-            chain_text = f"Chain: paused — {chain_pause_reason or 'waiting'}"
+            chain_text = f"Automation: paused — {chain_pause_reason or 'waiting'}"
         else:
-            chain_text = "Chain: idle"
+            chain_text = "Automation: idle"
 
         return render_template(
             "project.html",

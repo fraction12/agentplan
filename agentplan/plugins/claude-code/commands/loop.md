@@ -1,11 +1,13 @@
 ---
 allowed-tools: Bash(agentplan:*), AskUserQuestion, CronCreate, CronList, CronDelete
-description: Set up a cron loop to autonomously work through tickets
+description: Set up Claude's cron loop to work through AgentPlan tickets
 ---
 
 # /agentplan:loop
 
-Interactively configure a cron job that autonomously picks up agentplan tickets, does the work, and marks them done.
+Interactively configure Claude's cron job so Claude can keep working through AgentPlan tickets over time.
+
+AgentPlan remains the source of truth for task state. The cron job is only the execution mechanism.
 
 ## Steps
 
@@ -29,7 +31,7 @@ Interactively configure a cron job that autonomously picks up agentplan tickets,
 4. **Create the cron job** using CronCreate with this prompt template (fill in the project and settings from the user's answers):
 
    ```
-   You are running an autonomous agentplan work loop.
+   You are running Claude's scheduled AgentPlan work loop.
 
    Project: <project>
 
@@ -63,6 +65,7 @@ Interactively configure a cron job that autonomously picks up agentplan tickets,
 5. **Confirm the cron job was created.** Show the user:
    - The interval and schedule
    - What project it's working on
+   - That AgentPlan remains the shared backlog and ticket ledger
    - How to check progress: `agentplan status <project>` or `/agentplan:status`
    - How to cancel: they can ask you to cancel the loop or use CronDelete
    - Remind them: cron jobs only run in this session and auto-expire after 3 days

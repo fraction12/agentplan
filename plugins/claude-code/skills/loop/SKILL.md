@@ -1,6 +1,6 @@
 # /agentplan:loop
 
-Generate and return the exact execution prompt for Claude Code `/loop` so work proceeds ticket-by-ticket through AgentPlan.
+Generate and return the exact execution prompt for Claude Code's own `/loop` so work proceeds ticket-by-ticket through AgentPlan.
 
 ## What this skill does
 
@@ -13,6 +13,7 @@ Generate and return the exact execution prompt for Claude Code `/loop` so work p
 
 ```text
 Use AgentPlan as the source of truth for this work loop.
+Claude's `/loop` is the execution mechanism.
 
 Project: <project>
 
