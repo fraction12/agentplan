@@ -65,9 +65,11 @@
 </div>
 <div id="project-dir-warning" class="project-dir-warning" {% if not directory_warning %}hidden{% endif %}>⚠ Linked directory does not exist on disk.</div>
 
-<div id="chain-status" class="chain-status">
-  <span id="chain-status-dot" class="chain-dot {{ chain.status if chain and chain.status else 'stopped' }}"></span>
-  <span id="chain-status-text">{{ chain_text }}</span>
+<div id="chain-controls" class="chain-controls" hidden>
+  <div id="chain-status" class="chain-status">
+    <span id="chain-status-dot" class="chain-dot {{ chain.status if chain and chain.status else 'stopped' }}"></span>
+    <span id="chain-status-text">{{ chain_text }}</span>
+  </div>
 </div>
 
 <div class="project-meta">
@@ -224,11 +226,22 @@
 <div id="ticket-panel-backdrop" class="ticket-panel-backdrop" hidden></div>
 <aside id="ticket-panel" class="ticket-panel" aria-hidden="true" aria-label="Ticket detail panel">
   <header class="ticket-panel-header">
-    <div>
+    <div class="ticket-panel-heading">
       <div id="panel-ticket-id" class="ticket-panel-id">Ticket</div>
-      <h2 id="panel-ticket-title" class="ticket-panel-title">Loading…</h2>
+      <div class="ticket-panel-title-row">
+        <h2 id="panel-ticket-title" class="ticket-panel-title">Loading…</h2>
+        <button id="panel-title-edit-btn" class="ticket-panel-edit-btn" type="button" data-edit-field="title" hidden aria-label="Edit ticket title">✎</button>
+      </div>
     </div>
-    <button id="ticket-panel-close" class="ticket-panel-close" type="button" aria-label="Close ticket detail">✕</button>
+    <div class="ticket-panel-header-actions">
+      <div class="ticket-panel-menu-wrap">
+        <button id="ticket-panel-menu-button" class="kebab-btn ticket-panel-menu-button" type="button" aria-label="Ticket actions" aria-expanded="false" aria-haspopup="menu" hidden>⋯</button>
+        <div id="ticket-panel-menu" class="kebab-menu ticket-panel-menu" hidden>
+          <button type="button" class="kebab-menu-item danger" data-ticket-delete-overflow>Delete Ticket</button>
+        </div>
+      </div>
+      <button id="ticket-panel-close" class="ticket-panel-close" type="button" aria-label="Close ticket detail">✕</button>
+    </div>
   </header>
   <div id="ticket-panel-content" class="ticket-panel-content"></div>
 </aside>

@@ -30,8 +30,12 @@
   const panelId = document.getElementById("panel-ticket-id");
   const panelTitle = document.getElementById("panel-ticket-title");
   const panelContent = document.getElementById("ticket-panel-content");
+  const panelTitleEditBtn = document.getElementById("panel-title-edit-btn");
+  const panelMenuButton = document.getElementById("ticket-panel-menu-button");
+  const panelMenu = document.getElementById("ticket-panel-menu");
   const projectSlug = cfg.projectSlug;
   let dependencyOptionsCache = null;
+  let activeDependencyPicker = null;
   const FIELD_EDITOR_CONFIG = {
     title: {
       type: "input",
@@ -60,16 +64,6 @@
   };
   let activeFieldEdit = null;
 
-  function renderList(items, emptyText, variant = "plain", ticketNum = "") {
-    if (!items || items.length === 0) return `<p class="panel-muted">${esc(emptyText)}</p>`;
-    return `<ul class="dep-list">${items.map((item) => {
-      if (variant === "blocked-by") {
-        return `<li class="dep-item">#${esc(item.num)} ${esc(item.title)} <button class="dep-remove-btn" type="button" data-dependency-remove="${esc(item.num)}" data-ticket-num="${esc(ticketNum)}" aria-label="Remove dependency on ticket ${esc(item.num)}">×</button></li>`;
-      }
-      return `<li class="dep-item">#${esc(item.num)} ${esc(item.title)}</li>`;
-    }).join("")}</ul>`;
-  }
-
   function renderSubtasks(ticketNum, subtasks) {
     const listMarkup = (!subtasks || subtasks.length === 0)
       ? '<p class="panel-muted">No subtasks.</p>'
@@ -77,40 +71,63 @@
     return `${listMarkup}<form class="subtask-add-row" data-subtask-add-form data-ticket-num="${esc(ticketNum)}"><input type="text" name="title" placeholder="Add subtask" maxlength="160" autocomplete="off"><button class="btn btn-sm btn-primary" type="submit">Add</button></form>`;
   }
 
-  function renderHistory(history) {
-    if (!history || history.length === 0) return '<p class="panel-muted">No audit entries.</p>';
-    return `<ul class="audit-timeline">${history.map((item) => `<li class="audit-item"><div class="audit-meta">${esc(item.timestamp)} · ${esc(item.agent || "system")}${item.transition ? ` · ${esc(item.transition.old_state || "(none)")} → ${esc(item.transition.new_state || "")}` : ""}</div><p class="audit-message">${esc(item.message || "")}</p></li>`).join("")}</ul>`;
+  function renderDependencyChips(items, ticketNum, direction) {
+    if (!items || items.length === 0) return '<p class="panel-muted">None.</p>';
+    return `<div class="dep-chip-list">${items.map((item) => `<span class="dep-chip">#${esc(item.num)} ${esc(item.title)}<button class="dep-chip-remove" type="button" data-dependency-remove="${esc(item.num)}" data-ticket-num="${esc(ticketNum)}" data-dependency-direction="${esc(direction)}" aria-label="Remove dependency link for ticket ${esc(item.num)}">×</button></span>`).join("")}</div>`;
   }
 
-  function transitionActionMarkup(data) {
-    const actionDefs = {
-      "in-progress": { label: "Start", className: "btn btn-chain-start", icon: "▶" },
-      blocked: { label: "Block", className: "btn", icon: "⏸" },
-      failed: { label: "Fail", className: "btn btn-chain-stop", icon: "✕" },
-      "needs-review": { label: "Review", className: "btn btn-primary", icon: "↺" },
-      done: { label: "Done", className: "btn btn-chain-start", icon: "✓" },
-      pending: { label: "Retry", className: "btn btn-primary", icon: "↺" },
-      skipped: { label: "Skip", className: "btn btn-chain-stop", icon: "⊘" },
-    };
-    const actions = Array.from(VALID_TRANSITIONS[data.status] || [])
-      .map((status) => ({ status, ...actionDefs[status] }))
-      .filter((item) => item.label);
-    if (actions.length === 0) return "";
-    return `<section class="panel-block review-actions"><h3>Actions</h3><div class="review-actions-row">${actions.map((action) => `<button class="${action.className}" type="button" data-transition-action="${esc(action.status)}" data-ticket-num="${esc(data.num)}">${action.icon} ${action.label}</button>`).join("")}</div></section>`;
+  function renderDependencyPicker(data, direction) {
+    const isOpen = activeDependencyPicker
+      && String(activeDependencyPicker.ticketNum) === String(data.num)
+      && activeDependencyPicker.direction === direction;
+    return `
+      <div class="dep-inline-picker" data-dependency-picker="${esc(direction)}" data-ticket-num="${esc(data.num)}" ${isOpen ? "" : "hidden"}>
+        <input class="dep-search-input" type="text" value="${esc(isOpen ? activeDependencyPicker.query || "" : "")}" placeholder="Search tickets" autocomplete="off" data-dependency-search="${esc(direction)}" data-ticket-num="${esc(data.num)}">
+        <div class="dep-search-results" data-dependency-results="${esc(direction)}" data-ticket-num="${esc(data.num)}"></div>
+      </div>
+    `;
   }
 
-  function dependencyPickerMarkup(data) {
-    return `<div class="dep-add-row"><button class="btn btn-sm" type="button" data-dependency-toggle="${esc(data.num)}">Add Dependency</button><div class="dep-picker" data-dependency-picker hidden><select data-dependency-select="${esc(data.num)}"><option value="">Select ticket…</option></select><button class="btn btn-sm btn-primary" type="button" data-dependency-add="${esc(data.num)}">Add</button></div></div>`;
+  function renderDependencyRow(data, direction, label, items) {
+    const isOpen = activeDependencyPicker
+      && String(activeDependencyPicker.ticketNum) === String(data.num)
+      && activeDependencyPicker.direction === direction;
+    return `
+      <div class="dep-section-row" data-dependency-row="${esc(direction)}" data-ticket-num="${esc(data.num)}">
+        <div class="dep-row-header">
+          <div class="dep-row-label">${esc(label)}</div>
+          <button class="dep-add-trigger" type="button" data-dependency-picker-open="${esc(direction)}" data-ticket-num="${esc(data.num)}" aria-expanded="${isOpen ? "true" : "false"}">+</button>
+        </div>
+        ${renderDependencyChips(items, data.num, direction)}
+        ${renderDependencyPicker(data, direction)}
+      </div>
+    `;
+  }
+
+  function renderDependencySection(data) {
+    return `
+      <section class="panel-block">
+        <h3>Dependencies</h3>
+        <div class="dep-section">
+          ${renderDependencyRow(data, "blocked_by", "Blocked by", data.blocked_by || [])}
+          ${renderDependencyRow(data, "blocking", "Blocking", data.blocks || [])}
+        </div>
+      </section>
+    `;
   }
 
   function renderPanel(data) {
     panelId.textContent = `#${data.num}`;
     panelTitle.textContent = data.title || "Ticket details";
+    if (panelTitleEditBtn) {
+      panelTitleEditBtn.dataset.editNum = String(data.num || "");
+      panelTitleEditBtn.hidden = false;
+    }
+    if (panelMenuButton) {
+      panelMenuButton.dataset.ticketNum = String(data.num || "");
+      panelMenuButton.hidden = false;
+    }
     panelContent.innerHTML = `
-      <section class="panel-block">
-        <h3>Title <button class="ticket-panel-edit-btn" data-edit-field="title" data-edit-num="${esc(data.num)}">✎</button></h3>
-        <p class="panel-description">${esc(data.title || "")}</p>
-      </section>
       <section class="panel-block">
         <h3>Description <button class="ticket-panel-edit-btn" data-edit-field="description" data-edit-num="${esc(data.num)}">✎</button></h3>
         <p class="panel-description">${esc(data.description || "No description.")}</p>
@@ -123,30 +140,27 @@
         <h3>Subtasks</h3>
         ${renderSubtasks(data.num, data.subtasks)}
       </section>
-      <section class="panel-block">
-        <h3>Dependency Graph</h3>
-        <div class="dep-grid">
-          <div><div class="panel-muted panel-subtitle">blocked by</div>${renderList(data.blocked_by, "No blockers.", "blocked-by", data.num)}${dependencyPickerMarkup(data)}</div>
-          <div><div class="panel-muted panel-subtitle">blocks</div>${renderList(data.blocks, "No blocked tickets.")}</div>
-        </div>
-      </section>
-      ${transitionActionMarkup(data)}
-      <section class="panel-block">
-        <h3>Audit Timeline</h3>
-        ${renderHistory(data.audit_history)}
-        <form class="dep-add-row" data-ticket-log-form data-ticket-num="${esc(data.num)}">
-          <input type="text" name="entry" placeholder="Add log entry" maxlength="2000" autocomplete="off">
-          <button class="btn btn-sm btn-primary" type="submit">Log</button>
-        </form>
-      </section>
-      <section class="panel-block">
-        <h3>Close Notes</h3>
-        <p class="panel-description">${esc(data.close_note || "No close notes.")}</p>
-      </section>
-      <section class="panel-block">
-        <button class="btn btn-danger panel-delete-btn" type="button" data-ticket-delete="${esc(data.num)}">Delete Ticket</button>
-      </section>
+      ${renderDependencySection(data)}
     `;
+  }
+
+  function closePanelMenu({ restoreFocus = false } = {}) {
+    if (panelMenuButton) panelMenuButton.setAttribute("aria-expanded", "false");
+    if (panelMenu) panelMenu.hidden = true;
+    if (restoreFocus) panelMenuButton?.focus();
+  }
+
+  function resetPanelHeaderActions() {
+    closePanelMenu();
+    activeDependencyPicker = null;
+    if (panelTitleEditBtn) {
+      panelTitleEditBtn.hidden = true;
+      delete panelTitleEditBtn.dataset.editNum;
+    }
+    if (panelMenuButton) {
+      panelMenuButton.hidden = true;
+      delete panelMenuButton.dataset.ticketNum;
+    }
   }
 
   function openPanel() {
@@ -159,6 +173,8 @@
   }
 
   function closePanel() {
+    closePanelMenu();
+    closeDependencyPicker();
     panel.classList.remove("is-open");
     backdrop.classList.remove("is-open");
     panel.setAttribute("aria-hidden", "true");
@@ -170,6 +186,7 @@
   async function loadTicket(ticketNum) {
     panelId.textContent = `#${ticketNum}`;
     panelTitle.textContent = "Loading…";
+    resetPanelHeaderActions();
     panelContent.innerHTML = '<section class="panel-block"><p class="panel-muted">Fetching ticket details…</p></section>';
     openPanel();
     try {
@@ -297,6 +314,60 @@
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     dependencyOptionsCache = await response.json();
     return dependencyOptionsCache;
+  }
+
+  function dependencyCandidates(ticketNum, direction, query = "") {
+    if (!dependencyOptionsCache || !_panelData) return [];
+    const currentTicketNum = Number(ticketNum);
+    const existing = new Set(
+      (direction === "blocked_by" ? (_panelData.blocked_by || []) : (_panelData.blocks || []))
+        .map((item) => Number(item.num)),
+    );
+    const normalizedQuery = String(query || "").trim().toLowerCase();
+    return dependencyOptionsCache.filter((ticket) => {
+      if (Number(ticket.num) === currentTicketNum) return false;
+      if (existing.has(Number(ticket.num))) return false;
+      const haystack = `#${ticket.num} ${ticket.title || ""}`.toLowerCase();
+      return !normalizedQuery || haystack.includes(normalizedQuery);
+    });
+  }
+
+  function renderDependencySearchResults(ticketNum, direction) {
+    const results = panelContent.querySelector(`[data-dependency-results="${direction}"][data-ticket-num="${ticketNum}"]`);
+    if (!results) return;
+    const query = activeDependencyPicker?.query || "";
+    const matches = dependencyCandidates(ticketNum, direction, query);
+    if (matches.length === 0) {
+      results.innerHTML = '<p class="panel-muted">No matching tickets.</p>';
+      return;
+    }
+    results.innerHTML = matches.map((ticket) => `<button class="dep-search-result" type="button" data-dependency-pick="${esc(ticket.num)}" data-ticket-num="${esc(ticketNum)}" data-dependency-direction="${esc(direction)}">#${esc(ticket.num)} ${esc(ticket.title)}</button>`).join("");
+  }
+
+  async function openDependencyPicker(ticketNum, direction) {
+    await fetchDependencyOptions();
+    activeDependencyPicker = { ticketNum: String(ticketNum), direction, query: "" };
+    if (_panelData) renderPanel(_panelData);
+    requestAnimationFrame(() => {
+      const input = panelContent.querySelector(`[data-dependency-search="${direction}"][data-ticket-num="${ticketNum}"]`);
+      if (!input) return;
+      input.focus();
+      renderDependencySearchResults(ticketNum, direction);
+    });
+  }
+
+  function closeDependencyPicker({ restoreFocus = false } = {}) {
+    const ticketNum = activeDependencyPicker?.ticketNum;
+    const direction = activeDependencyPicker?.direction;
+    activeDependencyPicker = null;
+    if (_panelData) {
+      renderPanel(_panelData);
+      if (restoreFocus && ticketNum && direction) {
+        requestAnimationFrame(() => {
+          panelContent.querySelector(`[data-dependency-picker-open="${direction}"][data-ticket-num="${ticketNum}"]`)?.focus();
+        });
+      }
+    }
   }
 
   async function updateDependency(ticketNum, action, body) {
@@ -534,7 +605,16 @@
   backdrop.addEventListener("click", closePanel);
   document.addEventListener("keydown", (event) => {
     if (fieldDialog?.open) return;
-    if (event.key === "Escape" && panel.classList.contains("is-open")) closePanel();
+    if (event.key !== "Escape") return;
+    if (panelMenu && !panelMenu.hidden) {
+      closePanelMenu({ restoreFocus: true });
+      return;
+    }
+    if (activeDependencyPicker) {
+      closeDependencyPicker({ restoreFocus: true });
+      return;
+    }
+    if (panel.classList.contains("is-open")) closePanel();
   });
 
   const chainStartBtn = document.getElementById("chain-start-btn");
@@ -592,26 +672,10 @@
     }
   }
 
-  panelContent.addEventListener("click", async (event) => {
-    const button = event.target.closest("button[data-transition-action][data-ticket-num]");
-    if (!button) return;
-    button.disabled = true;
-    try {
-      await transitionTicket(button.dataset.ticketNum, button.dataset.transitionAction);
-      await loadTicket(button.dataset.ticketNum);
-    } catch (_error) {
-      button.disabled = false;
-    }
-  });
-
-  panelContent.addEventListener("click", async (event) => {
-    const button = event.target.closest("button[data-ticket-delete]");
-    if (!button) return;
-    const ticketNum = button.dataset.ticketDelete;
+  async function deleteTicket(ticketNum) {
     const ticketTitle = panelTitle.textContent || `ticket #${ticketNum}`;
     const confirmed = await confirmAction("Delete ticket?", `Delete ${ticketTitle}? Dependencies pointing to this ticket will be removed.`, "Delete");
     if (!confirmed) return;
-    button.disabled = true;
     try {
       const response = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/${encodeURIComponent(ticketNum)}/delete`, {
         method: "POST",
@@ -621,10 +685,9 @@
       closePanel();
       window.location.reload();
     } catch (error) {
-      button.disabled = false;
       showToast(error.message || "Failed to delete ticket.");
     }
-  });
+  }
 
   panelContent.addEventListener("change", async (event) => {
     const checkbox = event.target.closest("input[data-subtask-done][data-ticket-num]");
@@ -673,57 +736,61 @@
   });
 
   panelContent.addEventListener("click", async (event) => {
-    const toggle = event.target.closest("[data-dependency-toggle]");
-    if (toggle) {
-      const picker = panelContent.querySelector("[data-dependency-picker]");
-      const select = panelContent.querySelector("[data-dependency-select]");
-      if (!picker || !select) return;
-      const willOpen = picker.hidden;
-      picker.hidden = !picker.hidden;
-      if (!willOpen) return;
+    const pickerTrigger = event.target.closest("[data-dependency-picker-open][data-ticket-num]");
+    if (pickerTrigger) {
+      const ticketNum = pickerTrigger.dataset.ticketNum;
+      const direction = pickerTrigger.dataset.dependencyPickerOpen;
+      const isSamePicker = activeDependencyPicker
+        && String(activeDependencyPicker.ticketNum) === String(ticketNum)
+        && activeDependencyPicker.direction === direction;
+      if (isSamePicker) {
+        closeDependencyPicker();
+        return;
+      }
       try {
-        const allTickets = await fetchDependencyOptions();
-        const currentTicketNum = Number(toggle.dataset.dependencyToggle);
-        const existing = new Set(Array.from(panelContent.querySelectorAll("[data-dependency-remove]")).map((node) => Number(node.dataset.dependencyRemove)));
-        const options = allTickets.filter((ticket) => ticket.num !== currentTicketNum && !existing.has(ticket.num));
-        select.innerHTML = '<option value="">Select ticket…</option>' + options.map((ticket) => `<option value="${ticket.num}">#${ticket.num} ${esc(ticket.title)}</option>`).join("");
-        select.focus();
+        await openDependencyPicker(ticketNum, direction);
       } catch (error) {
-        picker.hidden = true;
+        activeDependencyPicker = null;
         showToast(error.message || "Failed to load ticket list.");
       }
       return;
     }
 
-    const addButton = event.target.closest("[data-dependency-add]");
-    if (addButton) {
-      const ticketNum = addButton.dataset.dependencyAdd;
-      const select = panelContent.querySelector(`[data-dependency-select="${ticketNum}"]`);
-      const depNum = Number(select?.value || 0);
-      if (!depNum) {
-        select?.focus();
-        return;
-      }
-      addButton.disabled = true;
+    const pickButton = event.target.closest("[data-dependency-pick][data-ticket-num][data-dependency-direction]");
+    if (pickButton) {
+      const ticketNum = pickButton.dataset.ticketNum;
+      const depNum = Number(pickButton.dataset.dependencyPick);
+      const direction = pickButton.dataset.dependencyDirection;
+      pickButton.disabled = true;
       try {
-        await updateDependency(ticketNum, "depend", { on: depNum });
+        if (direction === "blocking") {
+          await updateDependency(depNum, "depend", { on: Number(ticketNum) });
+        } else {
+          await updateDependency(ticketNum, "depend", { on: depNum });
+        }
         dependencyOptionsCache = null;
+        activeDependencyPicker = null;
         await loadTicket(ticketNum);
       } catch (error) {
         showToast(error.message || "Failed to add dependency.");
-      } finally {
-        addButton.disabled = false;
       }
       return;
     }
 
-    const removeButton = event.target.closest("[data-dependency-remove][data-ticket-num]");
+    const removeButton = event.target.closest("[data-dependency-remove][data-ticket-num][data-dependency-direction]");
     if (removeButton) {
       removeButton.disabled = true;
       try {
-        await updateDependency(removeButton.dataset.ticketNum, "undepend", { dep: Number(removeButton.dataset.dependencyRemove) });
+        const currentTicketNum = Number(removeButton.dataset.ticketNum);
+        const targetTicketNum = Number(removeButton.dataset.dependencyRemove);
+        if (removeButton.dataset.dependencyDirection === "blocking") {
+          await updateDependency(targetTicketNum, "undepend", { dep: currentTicketNum });
+        } else {
+          await updateDependency(currentTicketNum, "undepend", { dep: targetTicketNum });
+        }
         dependencyOptionsCache = null;
-        await loadTicket(removeButton.dataset.ticketNum);
+        activeDependencyPicker = null;
+        await loadTicket(currentTicketNum);
       } catch (error) {
         removeButton.disabled = false;
         showToast(error.message || "Failed to remove dependency.");
@@ -731,32 +798,11 @@
     }
   });
 
-  panelContent.addEventListener("submit", async (event) => {
-    const form = event.target.closest("form[data-ticket-log-form][data-ticket-num]");
-    if (!form) return;
-    event.preventDefault();
-    const input = form.querySelector('input[name="entry"]');
-    const submitter = form.querySelector('button[type="submit"]');
-    const entry = (input?.value || "").trim();
-    if (!entry) {
-      input?.focus();
-      return;
-    }
-    try {
-      if (submitter) submitter.disabled = true;
-      const response = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/${encodeURIComponent(form.dataset.ticketNum)}/log`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entry }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error((payload && payload.error) || `HTTP ${response.status}`);
-      await loadTicket(form.dataset.ticketNum);
-    } catch (error) {
-      showToast(error.message || "Failed to add log entry.");
-    } finally {
-      if (submitter) submitter.disabled = false;
-    }
+  panelContent.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-dependency-search][data-ticket-num]");
+    if (!input || !activeDependencyPicker) return;
+    activeDependencyPicker.query = input.value || "";
+    renderDependencySearchResults(input.dataset.ticketNum, input.dataset.dependencySearch);
   });
 
   if (chainStartBtn) {
@@ -910,6 +956,45 @@
     });
   }
 
+  if (panelMenuButton && panelMenu) {
+    panelMenuButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const willOpen = panelMenu.hidden !== false;
+      closePanelMenu();
+      if (willOpen) {
+        panelMenu.hidden = false;
+        panelMenuButton.setAttribute("aria-expanded", "true");
+        panelMenu.querySelector(".kebab-menu-item")?.focus();
+      }
+    });
+
+    panelMenu.addEventListener("click", async (event) => {
+      const deleteButton = event.target.closest("[data-ticket-delete-overflow]");
+      if (!deleteButton) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closePanelMenu();
+      const ticketNum = panelMenuButton.dataset.ticketNum;
+      if (!ticketNum) return;
+      await deleteTicket(ticketNum);
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest(".ticket-panel-menu-wrap")) {
+        closePanelMenu();
+      }
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    if (!activeDependencyPicker) return;
+    const currentRow = panelContent.querySelector(`[data-dependency-row="${activeDependencyPicker.direction}"][data-ticket-num="${activeDependencyPicker.ticketNum}"]`);
+    if (currentRow && !currentRow.contains(event.target)) {
+      closeDependencyPicker();
+    }
+  });
+
   const params = new URLSearchParams({ project: projectSlug });
   if (cfg.filters && cfg.filters.status) params.set("status", cfg.filters.status);
   if (cfg.filters && cfg.filters.priority) params.set("priority", cfg.filters.priority);
@@ -992,6 +1077,13 @@
     openFieldEditor(field, ticketNum, currentValue);
   });
 
+  if (panelTitleEditBtn) {
+    panelTitleEditBtn.addEventListener("click", () => {
+      if (!_panelData) return;
+      openFieldEditor("title", _panelData.num, _panelData.title || "");
+    });
+  }
+
   if (fieldCancelBtn) {
     fieldCancelBtn.addEventListener("click", closeFieldEditor);
   }
@@ -1049,4 +1141,5 @@
       }
     });
   }
+
 })();
