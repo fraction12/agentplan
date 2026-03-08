@@ -1404,6 +1404,10 @@ def test_dashboard_home_includes_create_dialog_and_project_kebab_menu():
     assert 'data-project-action="delete"' in body
     assert "handleProjectAction" in body
     assert "restoreProjectMenu" in body
+    assert "project-status-badge" in body
+    assert 'data-section-toggle' in body
+    assert 'rel="icon"' in body
+    assert 'favicon.svg' in body
 
 
 def test_dashboard_home_project_menu_is_outside_project_link():
@@ -1423,6 +1427,78 @@ def test_dashboard_home_project_menu_is_outside_project_link():
     assert shell_html.index('class="project-card-menu"') < shell_html.index('class="project-link"')
 
 
+def test_dashboard_home_groups_projects_by_status_and_shows_status_badges():
+    from agentplan.dashboard import app
+
+    cli("create", "Web Home Active")
+    cli("create", "Web Home Completed")
+    cli("create", "Web Home Closed")
+    cli("create", "Web Home Archived")
+    cli("close", "web-home-completed")
+    cli("close", "web-home-closed", "--abandon")
+    cli("close", "web-home-archived")
+    cli("archive", "web-home-archived")
+
+    client = app.test_client()
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Active Projects" in body
+    assert "Completed Projects" in body
+    assert "Closed Projects" in body
+    assert "Archived Projects" in body
+    assert 'data-status-section="archived"' in body
+    assert "status-active" in body
+    assert "status-completed" in body
+    assert "status-abandoned" in body
+    assert "status-archived" in body
+    assert ">Active<" in body
+    assert ">Completed<" in body
+    assert ">Closed<" in body
+    assert ">Archived<" in body
+    assert "dot-breakdown" not in body
+    assert 'id="show-completed"' not in body
+
+
+def test_dashboard_home_sections_are_collapsible():
+    from agentplan.dashboard import app
+
+    cli("create", "Collapse Active")
+    cli("create", "Collapse Completed")
+    cli("close", "collapse-completed")
+
+    client = app.test_client()
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'data-section-toggle' in body
+    assert 'data-section-key="active"' in body
+    assert 'data-section-key="completed"' in body
+    assert 'aria-expanded="true"' in body
+    assert 'aria-expanded="false"' in body
+    assert 'sectionStateStorageKey' in body
+    assert 'localStorage?.setItem' in body
+    assert 'function setSectionExpanded(sectionKey, expanded)' in body
+    assert 'grid.hidden = !expanded;' in body
+
+
+def test_dashboard_home_shows_archived_section_even_when_empty():
+    from agentplan.dashboard import app
+
+    cli("create", "Only Active Home")
+
+    client = app.test_client()
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'data-status-section="archived"' in body
+    assert "Archived Projects" in body
+    assert "No archived projects yet." in body
+
+
 def test_dashboard_home_hides_close_action_for_completed_projects():
     from agentplan.dashboard import app
 
@@ -1438,6 +1514,36 @@ def test_dashboard_home_hides_close_action_for_completed_projects():
     assert 'data-project-action="archive"' in completed_fragment
     assert 'data-project-action="delete"' in completed_fragment
     assert 'data-project-action="close"' not in completed_fragment
+
+
+def test_dashboard_home_active_summary_counts_only_active_projects():
+    from agentplan.dashboard import app
+
+    cli("create", "Summary Active")
+    cli("create", "Summary Completed")
+    cli("create", "Summary Closed")
+    cli("create", "Summary Archived")
+    cli("close", "summary-completed")
+    cli("close", "summary-closed", "--abandon")
+    cli("close", "summary-archived")
+    cli("archive", "summary-archived")
+
+    client = app.test_client()
+    resp = client.get("/api/stats")
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["summary"]["active_projects"] == 1
+
+
+def test_dashboard_favicon_route_redirects_to_static_asset():
+    from agentplan.dashboard import app
+
+    client = app.test_client()
+    resp = client.get("/favicon.ico", follow_redirects=False)
+
+    assert resp.status_code == 308
+    assert resp.headers["Location"].endswith("/static/favicon.svg")
 
 
 def test_dashboard_project_detail_returns_ticket_titles():

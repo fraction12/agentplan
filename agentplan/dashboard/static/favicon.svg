@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="agentplan-favicon-bg" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#agentplan-favicon-bg)"/>
+  <path d="M18 42L27 22H33L24 42H18ZM31 42L40 22H46L37 42H31Z" fill="#f8fafc"/>
+  <circle cx="47" cy="18" r="5" fill="#34d399"/>
+</svg>
