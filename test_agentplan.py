@@ -1902,6 +1902,40 @@ def test_dashboard_mismatched_origin_is_rejected():
     assert resp.get_json() == {"error": "forbidden"}
 
 
+def test_dashboard_same_host_with_different_port_is_rejected():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Forbidden Dashboard Port")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/project/forbidden-dashboard-port/archive",
+        headers={"Origin": "http://100.117.26.54:9999"},
+        base_url="http://100.117.26.54:8080",
+    )
+
+    assert resp.status_code == 403
+    assert resp.get_json() == {"error": "forbidden"}
+
+
+def test_dashboard_same_host_with_different_scheme_is_rejected():
+    from agentplan.dashboard import create_app
+
+    cli("create", "Forbidden Dashboard Scheme")
+
+    test_app = create_app()
+    client = test_app.test_client()
+    resp = client.post(
+        "/api/project/forbidden-dashboard-scheme/archive",
+        headers={"Origin": "https://100.117.26.54:8080"},
+        base_url="http://100.117.26.54:8080",
+    )
+
+    assert resp.status_code == 403
+    assert resp.get_json() == {"error": "forbidden"}
+
+
 def test_dashboard_project_archive_endpoint_archives_active_project():
     from agentplan.dashboard import create_app
 

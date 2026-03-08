@@ -144,6 +144,16 @@ def _is_loopback_host(host):
     return host in {"localhost", "127.0.0.1", "::1"}
 
 
+def _effective_port(parsed):
+    if parsed.port is not None:
+        return parsed.port
+    if parsed.scheme == "https":
+        return 443
+    if parsed.scheme == "http":
+        return 80
+    return None
+
+
 def _origin_matches_request_host(value):
     if not value:
         return False
@@ -155,7 +165,15 @@ def _origin_matches_request_host(value):
     if _is_loopback_host(origin_host):
         return True
     request_host = (request.host.split(":", 1)[0] if request.host else "").lower()
-    return bool(request_host) and origin_host == request_host
+    if not request_host or origin_host != request_host:
+        return False
+    request_scheme = (request.scheme or "").lower()
+    origin_scheme = (parsed.scheme or "").lower()
+    if not request_scheme or origin_scheme != request_scheme:
+        return False
+    request_port = _effective_port(urlparse(f"{request_scheme}://{request.host}"))
+    origin_port = _effective_port(parsed)
+    return request_port is not None and origin_port == request_port
 
 
 def _require_local_origin(fn):
