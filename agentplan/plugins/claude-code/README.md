@@ -11,5 +11,5 @@ In the Claude Code workflow:
 - Claude loops or cron jobs handle repeated execution when needed
 
 - `.claude-plugin/plugin.json` — plugin manifest
-- `rules/agentplan.md` — always-loaded AgentPlan workflow/rules
-- `skills/*/SKILL.md` — slash-command skills (`plan`, `next`, `status`, `loop`)
+- `CLAUDE.md` — always-loaded AgentPlan workflow/rules
+- `commands/*.md` — slash-command prompts (`plan`, `status`, `loop`)

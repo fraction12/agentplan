@@ -8,4 +8,3 @@ Real dashboard captures (PNG) for Marketplace listing:
 - `03-chain-status.png` (advanced orchestration/CI surface)
 
 These PNGs were captured from the current local dashboard build using Playwright at 1440x900.
-Legacy `.svg` placeholder files are retained only as fallback references.

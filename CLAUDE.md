@@ -59,9 +59,7 @@ Flask app at `agentplan/dashboard/`. Binds to `127.0.0.1:5001`. Has CSRF protect
 
 ### Plugin system
 
-Two plugin directories exist (known issue):
-- `plugins/claude-code/` — Legacy, uses `skills/*/SKILL.md` format
-- `agentplan/plugins/claude-code/` — Canonical, uses `commands/*.md` format (installed by `agentplan setup`)
+Plugin assets live under `agentplan/plugins/`.
 
 The `commands/*.md` format is the current standard. `agentplan setup` copies from the package-bundled `agentplan/plugins/` directory.
 

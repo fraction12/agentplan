@@ -7,7 +7,7 @@ name = "agentplan"
 version = "0.8.3"
 description = "A shared to-do list for AI agents. Dependency-aware task queue, zero dependencies, pure Python."
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.9"
 authors = [{name = "Dushyant Garg", email = "dushyantgarg3@gmail.com"}]
 keywords = [
@@ -21,7 +21,6 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
