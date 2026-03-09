@@ -260,28 +260,19 @@
     }
 
     /* FOOTER */
-    footer { background: var(--bg); border-top: 1px solid var(--border); padding: 60px 0 40px; }
-    .footer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; margin-bottom: 48px; }
-    .footer-col h4 { font-family: 'Inter', ui-sans-serif, sans-serif; font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
-    .footer-col a { font-family: 'Inter', ui-sans-serif, sans-serif; display: block; font-size: 0.9rem; color: var(--muted); margin-bottom: 8px; transition: color 0.2s; }
-    .footer-col a:hover { color: var(--text); }
-    .footer-bottom { border-top: 1px solid var(--border); padding-top: 28px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
-    .footer-bottom p { font-family: 'Inter', ui-sans-serif, sans-serif; font-size: 0.85rem; color: var(--muted); }
-    .footer-badges { display: flex; gap: 8px; flex-wrap: wrap; }
-    .footer-badges img { height: 18px; }
+    
 
     @media (max-width: 920px) {
       .grid { grid-template-columns: 1fr; }
       .toc { position: static; }
-      .footer-grid { grid-template-columns: 1fr 1fr; }
     }
 
     @media (max-width: 640px) {
       .top-nav .container { flex-direction: column; align-items: flex-start; gap: 10px; }
       section { padding: 18px; }
-      .footer-grid { grid-template-columns: 1fr; }
     }
   </style>
+  <link rel="stylesheet" href="components/footer.css">
 </head>
 <body>
   <nav class="top-nav" aria-label="Primary">
@@ -516,38 +507,7 @@ agentplan dashboard --stop</code></pre>
     </div>
   </main>
 
-  <footer>
-    <div class="container">
-      <div class="footer-grid">
-        <div class="footer-col">
-          <h4>Product</h4>
-          <a href="index.html">Home</a>
-          <a href="quickstart.html">Quickstart</a>
-          <a href="architect-builder.html">Architect + Builder Guide</a>
-          <a href="quickstart.html#dashboard">Dashboard</a>
-        </div>
-        <div class="footer-col">
-          <h4>Resources</h4>
-          <a href="https://github.com/fraction12/agentplan" target="_blank" rel="noopener">GitHub</a>
-          <a href="https://pypi.org/project/agentplan/" target="_blank" rel="noopener">PyPI</a>
-          <a href="https://github.com/fraction12/agentplan/issues" target="_blank" rel="noopener">Issues</a>
-          <a href="https://github.com/fraction12/agentplan/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a>
-        </div>
-        <div class="footer-col">
-          <h4>Meta</h4>
-          <a href="https://github.com/fraction12/agentplan/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
-          <a href="https://python.org" target="_blank" rel="noopener">Built with Python</a>
-        </div>
-      </div>
-      <div class="footer-bottom">
-        <p>Project management for AI-native teams</p>
-        <div class="footer-badges">
-          <img src="https://img.shields.io/pypi/v/agentplan?style=flat-square&color=22c55e&labelColor=151b2b" alt="PyPI" />
-          <img src="https://img.shields.io/pypi/l/agentplan?style=flat-square&color=8892a8&labelColor=151b2b" alt="MIT" />
-        </div>
-      </div>
-    </div>
-  </footer>
+  <div id="footer-placeholder"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
   <script>
@@ -578,5 +538,6 @@ agentplan dashboard --stop</code></pre>
       });
     })();
   </script>
+  <script>fetch('components/footer.html').then(r=>r.text()).then(h=>document.getElementById('footer-placeholder').innerHTML=h)</script>
 </body>
 </html>
