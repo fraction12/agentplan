@@ -68,10 +68,10 @@ Short version: plan in the AI tool, track in AgentPlan, execute through the AI t
 # Create a project linked to the current repo
 agentplan create "Ship v1" --dir .
 
-# Add a few tickets
-agentplan ticket add ship-v1 "Set up database" --priority high
-agentplan ticket add ship-v1 "Implement API" --priority high
-agentplan ticket add ship-v1 "Write tests" --priority medium
+# Add a few tickets (with model tiers for AI routing)
+agentplan ticket add ship-v1 "Set up database" --priority high --model standard
+agentplan ticket add ship-v1 "Implement API" --priority high --model standard
+agentplan ticket add ship-v1 "Write tests" --priority medium --model light
 
 # Add dependencies where needed
 agentplan depend ship-v1 2 --on 1
@@ -89,6 +89,25 @@ agentplan ticket done ship-v1 1
 # Check progress
 agentplan status ship-v1
 ```
+
+## Model tiers
+
+Every ticket can carry a `--model` tier that tells the executing agent how much capability the task needs:
+
+| Tier | Use when |
+|------|----------|
+| `light` | Mechanical work — rename files, update configs, fix typos |
+| `standard` | Clear implementation — build from a spec, write tests, refactor |
+| `reasoning` | Architectural judgment — system design, subtle debugging, tradeoff evaluation |
+| `auto` | Unknown complexity — the executing agent decides at runtime (default) |
+
+```bash
+agentplan ticket add my-project "Fix typo in README" --model light
+agentplan ticket add my-project "Build auth module" --model standard
+agentplan ticket add my-project "Design plugin architecture" --model reasoning
+```
+
+When an agent claims a ticket, the tier is shown in the output. Agents use this to route to the appropriate model or adjust execution depth. The tier is also visible on kanban cards and ticket detail in the dashboard.
 
 ## AI tool setup
 
@@ -133,13 +152,13 @@ After setup, restart the AI tool.
 
 | Command | Description |
 |---------|-------------|
-| `agentplan ticket add <project> "title"` | Add a ticket |
+| `agentplan ticket add <project> "title"` | Add a ticket (`--model light\|standard\|reasoning\|auto`) |
 | `agentplan ticket list <project>` | List tickets |
 | `agentplan ticket done <project> <num>` | Mark ticket done |
 | `agentplan ticket skip <project> <num>` | Skip a ticket |
 | `agentplan ticket block <project> <num>` | Block a ticket |
 | `agentplan ticket fail <project> <num>` | Mark ticket failed |
-| `agentplan ticket edit <project> <num>` | Edit ticket details |
+| `agentplan ticket edit <project> <num>` | Edit ticket details (title, desc, priority, model) |
 | `agentplan next <project>` | Show next unblocked tickets |
 | `agentplan claim <project>` | Atomically claim the next unblocked ticket |
 | `agentplan search <query>` | Search tickets across all projects |

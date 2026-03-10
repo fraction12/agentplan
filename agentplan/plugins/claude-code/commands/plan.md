@@ -16,10 +16,11 @@ Collaborate with the user to create a new AgentPlan project, break work into tic
    agentplan create "<Project Title>" --dir .
    ```
 
-3. **Break work into tickets.** Each ticket should be 1–2 focused sessions of work. Create them in dependency order:
+3. **Break work into tickets.** Each ticket should be 1–2 focused sessions of work. Create them in dependency order, and assign a model tier based on task complexity:
    ```bash
-   agentplan ticket add <project> "Ticket title" --priority high --desc "Details"
+   agentplan ticket add <project> "Ticket title" --priority high --desc "Details" --model standard
    ```
+   Model tiers: `light` (mechanical), `standard` (clear implementation), `reasoning` (architectural judgment), `auto` (unknown — default).
 
 4. **Wire dependencies** between tickets where execution order matters:
    ```bash

@@ -121,6 +121,16 @@ def _validate_len(value, max_len, field_name):
         )
 
 
+def _validate_model_tier(value):
+    """Validate model_tier value."""
+    if value and value not in MODEL_TIER_CHOICES:
+        fail(
+            f"Invalid model tier '{value}'.",
+            suggestions=[f"Allowed values: {', '.join(MODEL_TIER_CHOICES)}."],
+        )
+    return value
+
+
 def _validate_timeout_sec(timeout, flag_name="--timeout"):
     if timeout is None:
         return None
@@ -143,6 +153,7 @@ def _effective_ticket_timeout_sec(project, ticket, override_timeout=None):
 
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3}
 PRIORITY_CHOICES = ["high", "medium", "low", "none"]
+MODEL_TIER_CHOICES = ["auto", "light", "standard", "reasoning"]
 COMPLETION_SHELLS = ["bash", "zsh", "fish"]
 TOP_LEVEL_COMMANDS = [
     "init",
@@ -2039,9 +2050,11 @@ def cmd_ticket_add(args):
     _validate_role_tags_or_fail(conn, tags)
     due_date = _parse_due_date(getattr(args, "due", None))
     timeout_sec = _validate_timeout_sec(getattr(args, "timeout", None))
+    model_tier = getattr(args, "model", None) or "auto"
+    _validate_model_tier(model_tier)
     conn.execute(
-        "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes, due_date, timeout_sec) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (proj["id"], num, args.title, args.desc, args.priority or "none", tags, json.dumps(deps), args.notes, due_date, timeout_sec),
+        "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes, due_date, timeout_sec, model_tier) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (proj["id"], num, args.title, args.desc, args.priority or "none", tags, json.dumps(deps), args.notes, due_date, timeout_sec, model_tier),
     )
     ticket_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     _record_ticket_history(conn, ticket_id, None, "created")
@@ -2143,12 +2156,16 @@ def cmd_ticket_edit(args):
     if args.timeout is not None:
         updates.append("timeout_sec=?")
         values.append(_validate_timeout_sec(args.timeout))
+    if getattr(args, "model", None) is not None:
+        _validate_model_tier(args.model)
+        updates.append("model_tier=?")
+        values.append(args.model)
 
     if not updates:
         conn.close()
         fail(
             "No updates provided.",
-            suggestions=["Use at least one of: `--title`, `--desc`, `--priority`, `--tag`, `--due`, `--timeout`."],
+            suggestions=["Use at least one of: `--title`, `--desc`, `--priority`, `--tag`, `--due`, `--timeout`, `--model`."],
         )
 
     values.append(t["id"])
@@ -2490,7 +2507,10 @@ def cmd_claim(args):
         conn.commit()
         claimed = conn.execute("SELECT * FROM tickets WHERE id=?", (claimed["id"],)).fetchone()
 
+    model_tier = claimed["model_tier"] if "model_tier" in claimed.keys() else "auto"
     msg = f"▶ Claimed ticket #{claimed['num']}: {claimed['title']} → in-progress"
+    if model_tier != "auto":
+        msg += f" [model: {model_tier}]"
     if claimed["started_by"]:
         msg += f" (by {claimed['started_by']})"
     print(msg)
@@ -2548,7 +2568,9 @@ def cmd_ticket_list(args):
         icon = _ticket_icon(t["status"], blocked)
         progress = _subtask_progress_label(subtask_progress.get(t["id"]))
         progress_segment = f" {progress}" if progress else ""
-        line = f"  {icon} {t['num']}. {t['title']}{progress_segment} [priority: {_priority_label(t['priority'])}]"
+        model_tier = t["model_tier"] if "model_tier" in t.keys() else "auto"
+        tier_segment = f" [model: {model_tier}]" if model_tier != "auto" else ""
+        line = f"  {icon} {t['num']}. {t['title']}{progress_segment} [priority: {_priority_label(t['priority'])}]{tier_segment}"
         if t["status"] == "in-progress":
             line += " (in-progress)"
             if t["started_by"]:
@@ -2601,12 +2623,14 @@ def cmd_next(args):
         payload = []
         for p, items in results:
             t = items[0]
+            model_tier = t["model_tier"] if "model_tier" in t.keys() else "auto"
             payload.append(
                 {
                     "id": t["num"],
                     "title": t["title"],
                     "status": t["status"],
                     "project": p["slug"],
+                    "model_tier": model_tier,
                 }
             )
         if args.project:
@@ -2620,7 +2644,9 @@ def cmd_next(args):
         parts = []
         for t in items:
             m = "▶" if t["status"] == "in-progress" else "○"
-            parts.append(f"[{t['num']}] {t['title']} {m} (priority: {_priority_label(t['priority'])})")
+            model_tier = t["model_tier"] if "model_tier" in t.keys() else "auto"
+            tier_segment = f" [model: {model_tier}]" if model_tier != "auto" else ""
+            parts.append(f"[{t['num']}] {t['title']} {m} (priority: {_priority_label(t['priority'])}){tier_segment}")
         print(f"📋 {p['title']}: {', '.join(parts)}")
     conn.close()
 
@@ -2719,7 +2745,9 @@ def cmd_status(args):
             icon = _ticket_icon(t["status"], blocked)
             progress = _subtask_progress_label(subtask_progress.get(t["id"]))
             progress_segment = f" {progress}" if progress else ""
-            line = f"  {icon} {t['num']}. {t['title']}{progress_segment} [priority: {_priority_label(t['priority'])}]"
+            model_tier = t["model_tier"] if "model_tier" in t.keys() else "auto"
+            tier_segment = f" [model: {model_tier}]" if model_tier != "auto" else ""
+            line = f"  {icon} {t['num']}. {t['title']}{progress_segment} [priority: {_priority_label(t['priority'])}]{tier_segment}"
             if t["status"] == "in-progress":
                 line += " (in-progress)"
                 if t["started_by"]:
@@ -3840,6 +3868,7 @@ def build_parser():
     a.add_argument("--due", help="Due date in YYYY-MM-DD format")
     a.add_argument("--timeout", type=int, help="Per-ticket timeout in seconds")
     a.add_argument("--role", help="Assign a registered role to this ticket (must exist in role registry)")
+    a.add_argument("--model", choices=MODEL_TIER_CHOICES, default="auto", help="Model tier: auto, light, standard, reasoning")
     u = ts.add_parser("update")
     u.add_argument("project"); u.add_argument("ticket_id")
     u.add_argument("--title"); u.add_argument("--notes"); u.add_argument("--depends")
@@ -3850,6 +3879,7 @@ def build_parser():
     e.add_argument("--priority", choices=PRIORITY_CHOICES)
     e.add_argument("--due", help="Due date in YYYY-MM-DD format")
     e.add_argument("--timeout", type=int, help="Per-ticket timeout in seconds")
+    e.add_argument("--model", choices=MODEL_TIER_CHOICES, help="Model tier: auto, light, standard, reasoning")
     d = ts.add_parser("done")
     d.add_argument("project"); d.add_argument("ticket_ids", nargs="+", help="Ticket IDs (space or comma-separated, e.g. 1 2 or 1,2,3)")
     d.add_argument("--note", help="Optional closing note/reason")

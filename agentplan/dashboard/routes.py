@@ -352,6 +352,8 @@ def _normalize_ticket(row):
 
     tag_tones = {tag: TAG_TONES[sum(ord(ch) for ch in tag) % len(TAG_TONES)] for tag in tags}
 
+    model_tier = row["model_tier"] if "model_tier" in row.keys() else "auto"
+
     return {
         "id": row["id"],
         "num": row["num"],
@@ -366,6 +368,7 @@ def _normalize_ticket(row):
         "assignee_initials": initials,
         "due_date": due_date,
         "is_overdue": is_overdue,
+        "model_tier": model_tier,
     }
 
 
@@ -558,7 +561,7 @@ def _activity_feed_payload(limit=300):
 def _ticket_detail_payload(conn, project_id, ticket_num):
     row = conn.execute(
         """
-        SELECT id, num, title, description, status, priority, tags, depends_on, close_note, started_by, done_by, due_date
+        SELECT id, num, title, description, status, priority, tags, depends_on, close_note, started_by, done_by, due_date, model_tier
         FROM tickets
         WHERE project_id=? AND num=?
         """,
@@ -638,6 +641,7 @@ def _ticket_detail_payload(conn, project_id, ticket_num):
         "status": ticket["status"],
         "priority": ticket["priority"],
         "description": ticket["description"],
+        "model_tier": ticket.get("model_tier", "auto"),
         "subtasks": subtasks,
         "blocked_by": blocked_by,
         "blocks": blocks,
@@ -660,7 +664,7 @@ def _project_board_payload(slug, priority_filter="", tag_filter=""):
 
         rows = conn.execute(
             """
-            SELECT id, num, title, description, status, priority, tags, depends_on, started_by, done_by, due_date
+            SELECT id, num, title, description, status, priority, tags, depends_on, started_by, done_by, due_date, model_tier
             FROM tickets
             WHERE project_id=?
             ORDER BY num
@@ -1381,6 +1385,9 @@ def create_app():
             priority = data.get("priority", "none")
             if priority not in ("high", "medium", "low", "none"):
                 priority = "none"
+            model_tier = data.get("model_tier", "auto")
+            if model_tier not in ("auto", "light", "standard", "reasoning"):
+                model_tier = "auto"
             # Get next ticket number
             row = conn.execute(
                 "SELECT COALESCE(MAX(num), 0) + 1 AS next_num FROM tickets WHERE project_id=?",
@@ -1389,8 +1396,8 @@ def create_app():
             num = row["next_num"]
             ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
             conn.execute(
-                "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes) VALUES (?,?,?,?,?,?,?,?)",
-                (project["id"], num, title, desc, priority, "", "[]", ""),
+                "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes, model_tier) VALUES (?,?,?,?,?,?,?,?,?)",
+                (project["id"], num, title, desc, priority, "", "[]", "", model_tier),
             )
             ticket_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             conn.execute(
@@ -1429,6 +1436,10 @@ def create_app():
                 p = data["priority"]
                 if p in ("high", "medium", "low", "none"):
                     updates["priority"] = p
+            if "model_tier" in data:
+                mt = data["model_tier"]
+                if mt in ("auto", "light", "standard", "reasoning"):
+                    updates["model_tier"] = mt
             if not updates:
                 return ({"error": "No valid fields to update"}, 400)
             ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")

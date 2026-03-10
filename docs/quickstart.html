@@ -333,9 +333,9 @@ agentplan init
 
 # create a project and add tickets with dependencies
 agentplan create "api-feature" --dir .
-agentplan ticket add api-feature "Research caching strategies" --priority high --tag research
-agentplan ticket add api-feature "Implement API endpoints" --priority high --tag backend
-agentplan ticket add api-feature "Write integration tests" --priority medium --tag testing
+agentplan ticket add api-feature "Research caching strategies" --priority high --tag research --model reasoning
+agentplan ticket add api-feature "Implement API endpoints" --priority high --tag backend --model standard
+agentplan ticket add api-feature "Write integration tests" --priority medium --tag testing --model standard
 
 # wire dependencies — implementation waits for research, tests wait for implementation
 agentplan depend api-feature 2 --on 1
@@ -442,7 +442,7 @@ print(prompt)
             <p>Create a new tracked project.</p>
           </article>
           <article class="command-item">
-            <code>agentplan ticket add &lt;project&gt; "&lt;title&gt;" [--priority] [--tag]</code>
+            <code>agentplan ticket add &lt;project&gt; "&lt;title&gt;" [--priority] [--tag] [--model]</code>
             <p>Add a ticket to a project.</p>
           </article>
           <article class="command-item">

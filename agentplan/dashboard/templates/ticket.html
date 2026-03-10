@@ -93,6 +93,9 @@
           <div class="d-flex flex-wrap gap-2 mb-2">
             <span class="badge status-badge status-{{ ticket.status }}">{{ ticket.status }}</span>
             <span class="badge ticket-id pill priority-pill">priority: {{ ticket.priority }}</span>
+            {% if ticket.model_tier and ticket.model_tier != 'auto' %}
+            <span class="badge rounded-pill pill tag-pill-muted">model: {{ ticket.model_tier }}</span>
+            {% endif %}
             {% if ticket.tags %}
               {% for tag in ticket.tags %}
               <span class="badge rounded-pill pill tag-pill-muted">{{ tag }}</span>
