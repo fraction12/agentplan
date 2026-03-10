@@ -31,20 +31,43 @@ AgentPlan stores:
 ## Creating a project
 ```bash
 agentplan create "Project Title" --dir .
-agentplan ticket add <project> "Ticket title" --priority high --desc "Details"
+agentplan ticket add <project> "Ticket title" --priority high --desc "Details" --model standard
 agentplan depend <project> 2 --on 1   # ticket 2 depends on ticket 1
 ```
+
+## Model tiers (required on every ticket)
+
+Every ticket must have a `--model` tier. When creating tickets, evaluate what the task actually demands and assign the right level:
+
+| Tier | Use when | Examples |
+|------|----------|----------|
+| `light` | Task is mechanical — no judgment needed | Rename files, update config values, fix typos, add boilerplate, formatting changes |
+| `standard` | Task requires competent implementation but the approach is clear | Build a feature from a spec, write tests, refactor a module, fix a well-understood bug |
+| `reasoning` | Task requires planning, multi-step thinking, or architectural judgment | Design a system, debug a subtle issue across multiple files, evaluate tradeoffs, write complex algorithms |
+| `auto` | You genuinely can't assess complexity upfront | Exploratory tasks, unclear scope — the executing agent decides at runtime |
+
+Default is `auto`, but prefer being specific. If you can read the ticket title and know roughly how hard it is, pick a tier.
+
+## Acting on model tiers when executing
+
+When you claim a ticket via `agentplan claim`, the output includes the model tier. Use it:
+- **`light`** — execute with your fastest/cheapest model. Don't overthink it.
+- **`standard`** — use your default working model. Standard execution.
+- **`reasoning`** — use your strongest model. Take time to plan before implementing.
+- **`auto`** — assess the ticket description yourself and pick the appropriate level.
+
+If you're spawning subagents, route them to the appropriate model based on the tier.
 
 ## Key commands
 ```bash
 agentplan create "Title" --dir .                    # Create project linked to cwd
-agentplan ticket add <proj> "Title" [--priority P] [--desc D] [--depends N]
+agentplan ticket add <proj> "Title" [--priority P] [--desc D] [--depends N] [--model M]
 agentplan next <project>                            # Show next unblocked ticket
 agentplan claim <project>                           # Atomically claim next ticket
 agentplan ticket done <proj> <num>                  # Mark complete
 agentplan ticket fail <proj> <num> --reason "why"   # Mark failed
 agentplan ticket skip <proj> <num>                  # Skip ticket
-agentplan ticket edit <proj> <num> [--title T] [--desc D] [--priority P]
+agentplan ticket edit <proj> <num> [--title T] [--desc D] [--priority P] [--model M]
 agentplan ticket list <proj> [--status S]           # List tickets
 agentplan log <proj> "message" --ticket <num>       # Log progress
 agentplan status [project]                          # Project overview

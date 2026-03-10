@@ -88,6 +88,7 @@ def init_db(conn):
             claimed_at TEXT,
             claim_timeout INTEGER,
             timeout_sec INTEGER,
+            model_tier TEXT NOT NULL DEFAULT 'auto',
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
             completed_at TEXT
         );
@@ -216,6 +217,7 @@ def init_db(conn):
         ("claimed_at", "ALTER TABLE tickets ADD COLUMN claimed_at TEXT", None),
         ("claim_timeout", "ALTER TABLE tickets ADD COLUMN claim_timeout INTEGER", None),
         ("timeout_sec", "ALTER TABLE tickets ADD COLUMN timeout_sec INTEGER", None),
+        ("model_tier", "ALTER TABLE tickets ADD COLUMN model_tier TEXT NOT NULL DEFAULT 'auto'", "UPDATE tickets SET model_tier='auto' WHERE model_tier IS NULL OR model_tier=''"),
     ]
     for col, alter_sql, fix_sql in migrations:
         try:

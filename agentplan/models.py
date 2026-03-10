@@ -57,6 +57,7 @@ class Ticket:
     created_at: str
     completed_at: Optional[str]
     close_note: Optional[str] = None
+    model_tier: str = "auto"
 
     @classmethod
     def from_row(cls, row: RowLike) -> "Ticket":
@@ -80,6 +81,7 @@ class Ticket:
             created_at=str(row["created_at"]),
             completed_at=row["completed_at"],
             close_note=row["close_note"] if "close_note" in row else None,
+            model_tier=row["model_tier"] if "model_tier" in row else "auto",
         )
 
 

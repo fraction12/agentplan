@@ -61,6 +61,15 @@
       isValid: (value) => ["high", "medium", "low", "none"].includes(value),
       emptyMessage: "Choose a valid priority.",
     },
+    model_tier: {
+      type: "select",
+      title: "Edit model tier",
+      label: "Model Tier",
+      help: "Choose the capability level needed for this task.",
+      normalize: (value) => String(value || "auto").trim().toLowerCase(),
+      isValid: (value) => ["auto", "light", "standard", "reasoning"].includes(value),
+      emptyMessage: "Choose a valid model tier.",
+    },
   };
   let activeFieldEdit = null;
 
@@ -135,6 +144,10 @@
       <section class="panel-block">
         <h3>Priority <button class="ticket-panel-edit-btn" data-edit-field="priority" data-edit-num="${esc(data.num)}">✎</button></h3>
         <p class="panel-description">${esc((data.priority || 'none'))}</p>
+      </section>
+      <section class="panel-block">
+        <h3>Model Tier <button class="ticket-panel-edit-btn" data-edit-field="model_tier" data-edit-num="${esc(data.num)}">✎</button></h3>
+        <p class="panel-description">${esc((data.model_tier || 'auto'))}</p>
       </section>
       <section class="panel-block">
         <h3>Subtasks</h3>
@@ -270,6 +283,14 @@
     if (fieldInputRow) fieldInputRow.hidden = editor.type !== "input";
     if (fieldTextareaRow) fieldTextareaRow.hidden = editor.type !== "textarea";
     if (fieldSelectRow) fieldSelectRow.hidden = editor.type !== "select";
+    if (editor.type === "select" && fieldSelect) {
+      const optionSets = {
+        priority: [["none","None"],["high","High"],["medium","Medium"],["low","Low"]],
+        model_tier: [["auto","Auto"],["light","Light"],["standard","Standard"],["reasoning","Reasoning"]],
+      };
+      const opts = optionSets[field] || optionSets.priority;
+      fieldSelect.innerHTML = opts.map(([v,l]) => `<option value="${v}">${l}</option>`).join("");
+    }
     setActiveFieldValue(activeFieldEdit.originalValue);
     fieldDialog.showModal();
     const control = activeFieldControl();
@@ -425,7 +446,7 @@
     const subtask = ticket.subtask_total > 0 ? `<div class="progress-meta"><span>subtasks</span><span>${ticket.subtask_done}/${ticket.subtask_total}</span></div><div class="mini-progress" role="img" aria-label="subtask progress"><div class="mini-progress-value" style="--progress: ${ticket.subtask_pct}%;"></div></div>` : "";
     return `<article class="ticket-card priority-${esc((ticket.priority || "none").toLowerCase())} ${ticket.active_agent ? "has-active-agent" : ""}">
       <div class="ticket-head"><div><div class="ticket-id">#${ticket.num}</div><div class="ticket-title">${esc(ticket.title)}</div></div>${due}</div>
-      <div class="pill-row"><span class="priority-pill p-${esc((ticket.priority || "none").toLowerCase())}">${esc((ticket.priority || "none").toLowerCase())}</span>${tags || ""}</div>
+      <div class="pill-row"><span class="priority-pill p-${esc((ticket.priority || "none").toLowerCase())}">${esc((ticket.priority || "none").toLowerCase())}</span>${ticket.model_tier && ticket.model_tier !== "auto" ? `<span class="tag-pill tag-purple">${esc(ticket.model_tier)}</span>` : ""}${tags || ""}</div>
       ${assignee}
       ${subtask}
     </article>`;
@@ -976,6 +997,7 @@
         title: formData.get("title"),
         description: formData.get("description"),
         priority: formData.get("priority"),
+        model_tier: formData.get("model_tier"),
       };
       try {
         const resp = await fetch(`/api/ticket/${encodeURIComponent(projectSlug)}/add`, {

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.8.8 - 2026-03-10
+
+### Added
+- **Model tiers** on tickets (`--model light|standard|reasoning|auto`) — tells executing agents how much capability a task needs
+- `--model` flag on `ticket add` and `ticket edit` CLI commands
+- Model tier display in `next`, `claim`, `ticket list`, and `status` output (hidden when `auto`)
+- Model tier badges on dashboard kanban cards and ticket detail view
+- Model tier dropdown in dashboard add-ticket and edit-ticket UI
+- DB migration adds `model_tier` column (auto-applied on first access)
+- 9 new tests covering model tier validation, CLI flags, display, and migration
+- Updated README with model tiers section, quickstart examples, and command table
+- Updated docs: quickstart.html, architect-builder.html
+- Updated Claude Code plugin: CLAUDE.md rules + plan.md command
+- Updated Codex plugin: SKILL.md with tier guidance tables
+
+## v0.8.7 - 2026-03-10
+
+### Changed
+- Typography standardized to Inter + 5-size scale, dropped Playfair Display (PR #27)
+- Dashboard filter simplification (PR #27)
+
 ## v0.8.6 - 2026-03-08
 
 ### Changed

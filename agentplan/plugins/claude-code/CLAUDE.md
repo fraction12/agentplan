@@ -58,6 +58,7 @@ usage: agentplan ticket add [-h] [--desc DESC] [--depends DEPENDS]
                             [--notes NOTES] [--tag TAG]
                             [--priority {high,medium,low}] [--due DUE]
                             [--timeout TIMEOUT] [--role ROLE]
+                            [--model {auto,light,standard,reasoning}]
                             project title
 ```
 
@@ -104,13 +105,36 @@ usage: agentplan depend [-h] --on ON project ticket_id
 agentplan ticket done <project> <ticket_num>     # Mark ticket complete
 agentplan ticket fail <project> <ticket_num> [--reason REASON]  # Mark failed
 agentplan ticket skip <project> <ticket_num>     # Skip ticket
-agentplan ticket edit <project> <ticket_num> [--title TITLE] [--desc DESC] [--priority {high,medium,low}]
+agentplan ticket edit <project> <ticket_num> [--title TITLE] [--desc DESC] [--priority {high,medium,low}] [--model {auto,light,standard,reasoning}]
 agentplan ticket list <project> [--status STATUS]
 ```
 
 ## Advanced commands
 
 Advanced orchestration, routing, CI, and other internal/power-user surfaces exist in AgentPlan, but they are not the primary workflow for new users. Prefer the core commands above unless the user explicitly asks for an advanced flow.
+
+## Model tiers (required on every ticket)
+
+Every ticket must have a `--model` tier. When creating tickets, evaluate what the task actually demands and assign the right level:
+
+| Tier | Use when | Examples |
+|------|----------|----------|
+| `light` | Task is mechanical — no judgment needed | Rename files, update config values, fix typos, add boilerplate, formatting changes |
+| `standard` | Task requires competent implementation but the approach is clear | Build a feature from a spec, write tests, refactor a module, fix a well-understood bug |
+| `reasoning` | Task requires planning, multi-step thinking, or architectural judgment | Design a system, debug a subtle issue across multiple files, evaluate tradeoffs, write complex algorithms |
+| `auto` | You genuinely can't assess complexity upfront | Exploratory tasks, unclear scope — the executing agent decides at runtime |
+
+Default is `auto`, but prefer being specific. If you can read the ticket title and know roughly how hard it is, pick a tier.
+
+## Acting on model tiers when executing
+
+When you claim a ticket via `agentplan claim`, the output includes the model tier. Use it:
+- **`light`** — execute quickly. Don't overanalyze, just do the mechanical work.
+- **`standard`** — normal execution. Plan briefly, implement, validate.
+- **`reasoning`** — slow down. Plan your approach before writing code. Think through edge cases and tradeoffs.
+- **`auto`** — assess the ticket description yourself and pick the appropriate execution style.
+
+If you're spawning subagents, route them to the appropriate model based on the tier.
 
 ## Default operating pattern
 

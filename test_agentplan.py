@@ -692,7 +692,7 @@ def test_ticket_edit_requires_edit_fields():
     assert code == 2
     assert out == ""
     assert "No updates provided." in err
-    assert "Use at least one of: `--title`, `--desc`, `--priority`, `--tag`, `--due`, `--timeout`." in err
+    assert "Use at least one of: `--title`, `--desc`, `--priority`, `--tag`, `--due`, `--timeout`, `--model`." in err
 
 
 def test_next_orders_by_priority():
@@ -735,6 +735,7 @@ def test_next_json_for_project_returns_machine_parseable_ticket_object():
         "title": "Ship JSON output",
         "status": "pending",
         "project": "agentplan-v02",
+        "model_tier": "auto",
     }
 
 
@@ -4818,3 +4819,135 @@ def test_claim_returns_none_when_lock_unavailable():
     conn.close()
 
     assert row is None
+
+
+# ---------------------------------------------------------------------------
+# Model Tier Tests
+# ---------------------------------------------------------------------------
+
+class TestModelTier:
+    """Tests for the model_tier field on tickets."""
+
+    def test_default_model_tier_is_auto(self):
+        """Ticket created without --model should default to 'auto'."""
+        cli("create", "tier-proj", "--dir", "/tmp")
+        cli("ticket", "add", "tier-proj", "Basic task")
+        conn = agentplan.get_connection()
+        row = conn.execute("SELECT model_tier FROM tickets WHERE num=1").fetchone()
+        conn.close()
+        assert row["model_tier"] == "auto"
+
+    def test_valid_model_tiers_accepted(self):
+        """All four valid values should be accepted."""
+        cli("create", "tier-valid", "--dir", "/tmp")
+        for i, tier in enumerate(["auto", "light", "standard", "reasoning"], 1):
+            out, err, code = cli("ticket", "add", "tier-valid", f"Task {tier}", "--model", tier)
+            assert code == 0, f"Failed for tier={tier}: {err}"
+        conn = agentplan.get_connection()
+        rows = conn.execute("SELECT model_tier FROM tickets ORDER BY num").fetchall()
+        conn.close()
+        assert [r["model_tier"] for r in rows] == ["auto", "light", "standard", "reasoning"]
+
+    def test_invalid_model_tier_rejected(self):
+        """Invalid model tier should be rejected by argparse."""
+        cli("create", "tier-inv", "--dir", "/tmp")
+        out, err, code = cli("ticket", "add", "tier-inv", "Bad task", "--model", "turbo")
+        assert code != 0
+
+    def test_ticket_edit_model_tier(self):
+        """Editing model_tier via ticket edit should work."""
+        cli("create", "tier-edit", "--dir", "/tmp")
+        cli("ticket", "add", "tier-edit", "Edit me")
+        cli("ticket", "edit", "tier-edit", "1", "--model", "reasoning")
+        conn = agentplan.get_connection()
+        row = conn.execute("SELECT model_tier FROM tickets WHERE num=1").fetchone()
+        conn.close()
+        assert row["model_tier"] == "reasoning"
+
+    def test_next_output_includes_model_tier(self):
+        """next command should show model tier when not auto."""
+        cli("create", "tier-next", "--dir", "/tmp")
+        cli("ticket", "add", "tier-next", "Reasoning task", "--model", "reasoning")
+        out, err, code = cli("next", "tier-next")
+        assert code == 0
+        assert "model: reasoning" in out.lower() or "reasoning" in out.lower()
+
+    def test_claim_output_includes_model_tier(self):
+        """claim command should show model tier when not auto."""
+        cli("create", "tier-claim", "--dir", "/tmp")
+        cli("ticket", "add", "tier-claim", "Light task", "--model", "light")
+        out, err, code = cli("claim", "tier-claim")
+        assert code == 0
+        assert "model: light" in out.lower() or "light" in out.lower()
+
+    def test_ticket_list_includes_model_tier(self):
+        """ticket list should show model tier when not auto."""
+        cli("create", "tier-list", "--dir", "/tmp")
+        cli("ticket", "add", "tier-list", "Standard task", "--model", "standard")
+        out, err, code = cli("ticket", "list", "tier-list")
+        assert code == 0
+        assert "model: standard" in out.lower() or "standard" in out.lower()
+
+    def test_status_includes_model_tier(self):
+        """status command should show model tier when not auto."""
+        cli("create", "tier-status", "--dir", "/tmp")
+        cli("ticket", "add", "tier-status", "Reasoning task", "--model", "reasoning")
+        out, err, code = cli("status", "tier-status")
+        assert code == 0
+        assert "model: reasoning" in out.lower() or "reasoning" in out.lower()
+
+    def test_migration_adds_model_tier(self):
+        """Existing DB without model_tier column should get it added via migration."""
+        import sqlite3
+        db_path = "/tmp/test_migration_model_tier.db"
+        try:
+            # Create a DB with tickets table missing model_tier
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            conn.execute("""CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                notes TEXT,
+                dir TEXT,
+                timeout_sec INTEGER,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS tickets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                num INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                priority TEXT NOT NULL DEFAULT 'none',
+                tags TEXT NOT NULL DEFAULT '',
+                depends_on TEXT DEFAULT '[]',
+                notes TEXT,
+                started_by TEXT,
+                done_by TEXT,
+                due_date TEXT,
+                claimed_at TEXT,
+                claim_timeout INTEGER,
+                timeout_sec INTEGER,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
+                completed_at TEXT
+            )""")
+            conn.execute("INSERT INTO projects (slug, title) VALUES ('mig-test', 'Migration Test')")
+            conn.execute("INSERT INTO tickets (project_id, num, title) VALUES (1, 1, 'Old ticket')")
+            conn.commit()
+            conn.close()
+
+            # Now open via agentplan which should run migrations
+            os.environ["AGENTPLAN_DB"] = db_path
+            conn2 = agentplan.get_connection(db_path)
+            agentplan.init_db(conn2)
+            conn2.commit()
+            row = conn2.execute("SELECT model_tier FROM tickets WHERE num=1").fetchone()
+            conn2.close()
+            assert row["model_tier"] == "auto"
+        finally:
+            if os.path.exists(db_path):
+                os.remove(db_path)
