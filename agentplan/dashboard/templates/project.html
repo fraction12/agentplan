@@ -59,7 +59,7 @@
   {%- endif -%}
   </span>
   <input id="project-dir-input" class="project-dir-input" name="directory" type="text" value="{{ project.dir or '' }}" placeholder="~/path/to/repo" hidden>
-  <button id="project-dir-edit-btn" class="btn btn-sm" type="button">Edit</button>
+  <button id="project-dir-edit-btn" class="btn btn-sm btn-secondary" type="button">Edit</button>
   <button id="project-dir-save-btn" class="btn btn-sm btn-primary" type="button" hidden>Save</button>
   <button id="project-dir-cancel-btn" class="btn btn-sm" type="button" hidden>Cancel</button>
 </div>
@@ -74,7 +74,7 @@
 
 <div class="project-meta">
   <span>{{ done_count }}/{{ total_count }} done</span>
-  <button id="add-ticket-btn" class="btn btn-primary btn-sm" type="button">+ Add Ticket</button>
+  <button id="add-ticket-btn" class="btn btn-primary project-action-btn" type="button">+ Add Ticket</button>
 </div>
 
 <dialog id="add-ticket-dialog" class="ticket-dialog">
@@ -126,30 +126,7 @@
   </form>
 </dialog>
 
-<details class="context-panel" aria-label="project context">
-  <summary>
-    <span>Project Context</span>
-    <button id="generate-context-btn" class="btn btn-sm btn-primary" type="button">
-      <span class="btn-label">Generate Repo Context</span>
-      <span class="btn-spinner" aria-hidden="true"></span>
-    </button>
-  </summary>
-  <div class="context-body">
-  {% if context_payload.exists %}
-  <div class="context-content">{{ context_payload.html|safe }}</div>
-  {% else %}
-  <div class="context-empty">No context file yet. The first agent to work on this project will create one.</div>
-  {% endif %}
-  </div>
-</details>
-
 <form method="get" class="filters" aria-label="filters">
-  <select name="status" aria-label="Status filter">
-    <option value="" {{ "selected" if not filters.status else "" }}>All statuses</option>
-    {% for status in ["pending", "in-progress", "blocked", "needs-review", "failed", "done"] %}
-    <option value="{{ status }}" {{ "selected" if filters.status == status else "" }}>{{ status }}</option>
-    {% endfor %}
-  </select>
   <select name="priority" aria-label="Priority filter">
     <option value="" {{ "selected" if not filters.priority else "" }}>All priorities</option>
     {% for priority in ["high", "medium", "low", "none"] %}
@@ -163,8 +140,8 @@
     {% endfor %}
   </select>
   <div class="filter-actions">
-    <button class="btn btn-primary" type="submit">Apply filters</button>
-    <a class="btn" href="{{ url_for('project_detail', slug=project.slug) }}">Reset</a>
+    <button class="btn btn-sm btn-primary" type="submit">Apply filters</button>
+    <a class="btn btn-sm btn-secondary" href="{{ url_for('project_detail', slug=project.slug) }}">Reset</a>
   </div>
 </form>
 

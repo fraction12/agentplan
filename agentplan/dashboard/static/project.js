@@ -627,10 +627,8 @@
   const dirSaveBtn = document.getElementById("project-dir-save-btn");
   const dirCancelBtn = document.getElementById("project-dir-cancel-btn");
   const dirWarning = document.getElementById("project-dir-warning");
-  const generateContextBtn = document.getElementById("generate-context-btn");
   const projectHeaderMenuButton = document.getElementById("project-header-menu-button");
   const projectHeaderMenu = document.getElementById("project-header-menu");
-  let contextPollingTimer = null;
 
   function closeProjectMenu() {
     if (projectHeaderMenuButton) projectHeaderMenuButton.setAttribute("aria-expanded", "false");
@@ -864,65 +862,6 @@
     });
   }
 
-  function setContextButtonState(isLoading) {
-    if (!generateContextBtn) return;
-    const label = generateContextBtn.querySelector(".btn-label");
-    generateContextBtn.disabled = Boolean(isLoading);
-    generateContextBtn.classList.toggle("is-loading", Boolean(isLoading));
-    if (label) label.textContent = isLoading ? "Generating..." : "Generate Repo Context";
-  }
-
-  function stopContextPolling() {
-    if (contextPollingTimer) {
-      clearInterval(contextPollingTimer);
-      contextPollingTimer = null;
-    }
-  }
-
-  async function pollContextStatus() {
-    try {
-      const response = await fetch(`/api/project/${encodeURIComponent(projectSlug)}/context-status`);
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error((payload && payload.error) || `HTTP ${response.status}`);
-      if (payload && payload.running) return;
-      stopContextPolling();
-      setContextButtonState(false);
-      window.location.reload();
-    } catch (error) {
-      stopContextPolling();
-      setContextButtonState(false);
-      showToast(error.message || "Failed to check context generation status.");
-    }
-  }
-
-  async function generateContext() {
-    setContextButtonState(true);
-    try {
-      const response = await fetch(`/api/project/${encodeURIComponent(projectSlug)}/generate-context`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error((payload && payload.error) || `HTTP ${response.status}`);
-      stopContextPolling();
-      contextPollingTimer = setInterval(pollContextStatus, 3000);
-      await pollContextStatus();
-    } catch (error) {
-      stopContextPolling();
-      setContextButtonState(false);
-      showToast(error.message || "Failed to start context generation.");
-    }
-  }
-
-  if (generateContextBtn) {
-    generateContextBtn.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      generateContext();
-    });
-  }
-
   if (projectHeaderMenuButton && projectHeaderMenu) {
     projectHeaderMenuButton.addEventListener("click", (event) => {
       event.preventDefault();
@@ -996,7 +935,6 @@
   });
 
   const params = new URLSearchParams({ project: projectSlug });
-  if (cfg.filters && cfg.filters.status) params.set("status", cfg.filters.status);
   if (cfg.filters && cfg.filters.priority) params.set("priority", cfg.filters.priority);
   if (cfg.filters && cfg.filters.tag) params.set("tag", cfg.filters.tag);
 

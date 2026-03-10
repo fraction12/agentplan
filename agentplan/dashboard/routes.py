@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Read-only web dashboard for agentplan projects and tickets."""
 
-import html
 import json
 import logging
 import os
@@ -231,57 +230,6 @@ def _context_path_for_project(project):
     return os.path.join(project_dir, ".agentplan.md")
 
 
-def _markdown_to_html(md_text):
-    if not md_text:
-        return ""
-    lines = md_text.splitlines()
-    rendered = []
-    in_list = False
-    for raw in lines:
-        line = raw.rstrip()
-        esc = html.escape(line)
-        if line.startswith("# "):
-            if in_list:
-                rendered.append("</ul>")
-                in_list = False
-            rendered.append(f"<h3>{html.escape(line[2:])}</h3>")
-        elif line.startswith("## "):
-            if in_list:
-                rendered.append("</ul>")
-                in_list = False
-            rendered.append(f"<h4>{html.escape(line[3:])}</h4>")
-        elif line.startswith("- "):
-            if not in_list:
-                rendered.append("<ul>")
-                in_list = True
-            rendered.append(f"<li>{html.escape(line[2:])}</li>")
-        elif line.strip() == "":
-            if in_list:
-                rendered.append("</ul>")
-                in_list = False
-            rendered.append("<br>")
-        else:
-            if in_list:
-                rendered.append("</ul>")
-                in_list = False
-            rendered.append(f"<p>{esc}</p>")
-    if in_list:
-        rendered.append("</ul>")
-    return "\n".join(rendered)
-
-
-def _project_context_payload(project):
-    context_path = _context_path_for_project(project)
-    if not context_path or not os.path.exists(context_path):
-        return {"exists": False, "html": "", "raw": ""}
-    try:
-        with open(context_path, "r", encoding="utf-8") as f:
-            raw = f.read()
-    except Exception:
-        return {"exists": False, "html": "", "raw": ""}
-    return {"exists": True, "html": _markdown_to_html(raw), "raw": raw}
-
-
 def _titleize_status(status):
     words = [part for part in str(status or "").replace("_", "-").split("-") if part]
     if not words:
@@ -369,11 +317,7 @@ def _fetch_projects_with_stats(conn):
     return out
 
 
-def _ticket_matches(ticket, status_filter, priority_filter, tag_filter):
-    if status_filter:
-        normalized_status = "pending" if status_filter == "todo" else status_filter
-        if ticket["status"] != normalized_status:
-            return False
+def _ticket_matches(ticket, priority_filter, tag_filter):
     if priority_filter:
         ticket_priority = str(ticket.get("priority") or "").strip().lower()
         if ticket_priority != priority_filter:
@@ -704,8 +648,7 @@ def _ticket_detail_payload(conn, project_id, ticket_num):
 
 
 
-def _project_board_payload(slug, status_filter="", priority_filter="", tag_filter=""):
-    status_filter = (status_filter or "").strip().lower()
+def _project_board_payload(slug, priority_filter="", tag_filter=""):
     priority_filter = (priority_filter or "").strip().lower()
     tag_filter = (tag_filter or "").strip().lower()
 
@@ -776,7 +719,7 @@ def _project_board_payload(slug, status_filter="", priority_filter="", tag_filte
             group_key = "done"
         if group_key not in grouped:
             continue
-        if _ticket_matches(ticket, status_filter, priority_filter, tag_filter):
+        if _ticket_matches(ticket, priority_filter, tag_filter):
             grouped[group_key].append(ticket)
 
     return {
@@ -823,7 +766,6 @@ def create_app():
         except (ValueError, TypeError):
             interval = 2
         project_slug = (request.args.get("project") or "").strip()
-        status_filter = request.args.get("status", "")
         priority_filter = request.args.get("priority", "")
         tag_filter = request.args.get("tag", "")
 
@@ -834,7 +776,7 @@ def create_app():
                 yield f"event: project_stats\ndata: {json.dumps(stats_payload)}\n\n"
                 yield f"event: activity_feed\ndata: {json.dumps(activity_payload)}\n\n"
                 if project_slug:
-                    board_payload = _project_board_payload(project_slug, status_filter, priority_filter, tag_filter)
+                    board_payload = _project_board_payload(project_slug, priority_filter, tag_filter)
                     if board_payload is not None:
                         yield f"event: project_board\ndata: {json.dumps(board_payload)}\n\n"
                 time.sleep(interval)
@@ -911,7 +853,6 @@ def create_app():
 
     @app.route("/project/<slug>")
     def project_detail(slug):
-        status_filter = request.args.get("status", "").strip().lower()
         priority_filter = request.args.get("priority", "").strip().lower()
         tag_filter = request.args.get("tag", "").strip().lower()
 
@@ -958,8 +899,6 @@ def create_app():
                     r["ticket_id"]: {"done": int(r["done"] or 0), "total": int(r["total"] or 0)} for r in progress_rows
                 }
 
-            context_payload = _project_context_payload(project)
-
             chain = get_chain_state(conn, project["id"]) or {}
             chain_current_ticket_num = None
             if chain.get("current_ticket_id"):
@@ -997,7 +936,7 @@ def create_app():
                 group_key = "done"
             if group_key not in grouped:
                 continue
-            if _ticket_matches(ticket, status_filter, priority_filter, tag_filter):
+            if _ticket_matches(ticket, priority_filter, tag_filter):
                 grouped[group_key].append(ticket)
 
         chain_status = (chain.get("status") or "stopped").lower()
@@ -1017,13 +956,12 @@ def create_app():
             status_labels=KANBAN_STATUS_LABELS,
             done_count=done_count,
             total_count=len(rows),
-            filters={"status": status_filter, "priority": priority_filter, "tag": tag_filter},
+            filters={"priority": priority_filter, "tag": tag_filter},
             available_tags=available_tags,
             chain=chain,
             chain_current_ticket_num=chain_current_ticket_num,
             chain_pause_reason=chain_pause_reason,
             chain_text=chain_text,
-            context_payload=context_payload,
             directory_warning=bool(project["dir"] and not os.path.isdir(project["dir"])),
         )
 

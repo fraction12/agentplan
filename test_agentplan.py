@@ -1622,11 +1622,10 @@ def test_dashboard_project_board_marks_ticket_cards_draggable_using_real_status(
 
 
 
-def test_dashboard_project_detail_shows_linked_directory_and_context_content():
+def test_dashboard_project_detail_shows_linked_directory():
     from agentplan.dashboard import app
 
     os.makedirs("/tmp/web-context", exist_ok=True)
-    Path("/tmp/web-context/.agentplan.md").write_text("# Context\n- Run tests", encoding="utf-8")
     cli("create", "Web Context", "--dir", "/tmp/web-context")
 
     client = app.test_client()
@@ -1634,11 +1633,9 @@ def test_dashboard_project_detail_shows_linked_directory_and_context_content():
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "/tmp/web-context" in body
-    assert "Project Context" in body
-    assert "Run tests" in body
 
 
-def test_dashboard_project_detail_shows_no_directory_and_no_context_message():
+def test_dashboard_project_detail_shows_no_directory_message():
     from agentplan.dashboard import app
 
     cli("create", "Web No Context")
@@ -1647,7 +1644,6 @@ def test_dashboard_project_detail_shows_no_directory_and_no_context_message():
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "No directory set" in body
-    assert "No context file yet. The first agent to work on this project will create one." in body
 
 
 def test_dashboard_project_detail_includes_editable_directory_field():
@@ -1661,6 +1657,21 @@ def test_dashboard_project_detail_includes_editable_directory_field():
     body = resp.get_data(as_text=True)
     assert 'id="project-dir-edit-btn"' in body
     assert 'id="project-dir-input"' in body
+
+
+def test_dashboard_project_detail_does_not_render_status_filter():
+    from agentplan.dashboard import app
+
+    cli("create", "Web No Status Filter")
+
+    client = app.test_client()
+    resp = client.get("/project/web-no-status-filter")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'name="status"' not in body
+    assert "All statuses" not in body
+    assert 'name="priority"' in body
+    assert 'name="tag"' in body
 
 
 def test_dashboard_project_detail_includes_ticket_field_edit_dialog():
@@ -2360,6 +2371,8 @@ def test_dashboard_activity_page_returns_html():
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "<html" in body.lower() or "<!doctype" in body.lower()
+    assert 'id="agent-filters"' not in body
+    assert 'id="action-filters"' not in body
 
 
 def test_dashboard_agents_page_supports_crud_and_detected_tools():
@@ -3512,18 +3525,18 @@ def test_dashboard_priority_filter_string_labels():
     none_ticket = {"priority": "none", "status": "pending", "tags": ""}
 
     # String label filters must match
-    assert _ticket_matches(high_ticket, "", "high", "") is True
-    assert _ticket_matches(medium_ticket, "", "medium", "") is True
-    assert _ticket_matches(low_ticket, "", "low", "") is True
-    assert _ticket_matches(none_ticket, "", "none", "") is True
+    assert _ticket_matches(high_ticket, "high", "") is True
+    assert _ticket_matches(medium_ticket, "medium", "") is True
+    assert _ticket_matches(low_ticket, "low", "") is True
+    assert _ticket_matches(none_ticket, "none", "") is True
 
     # Non-matching priority must not match
-    assert _ticket_matches(high_ticket, "", "low", "") is False
-    assert _ticket_matches(low_ticket, "", "high", "") is False
+    assert _ticket_matches(high_ticket, "low", "") is False
+    assert _ticket_matches(low_ticket, "high", "") is False
 
     # Numeric values (old bug) must NOT accidentally match string priorities
-    assert _ticket_matches(high_ticket, "", "1", "") is False
-    assert _ticket_matches(medium_ticket, "", "3", "") is False
+    assert _ticket_matches(high_ticket, "1", "") is False
+    assert _ticket_matches(medium_ticket, "3", "") is False
 
 
 def test_dashboard_priority_filter_via_api():
