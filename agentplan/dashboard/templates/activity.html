@@ -6,8 +6,6 @@
 
 {% block content %}
 <section class="activity-shell">
-  <div id="agent-filters" class="filters-row"></div>
-  <div id="action-filters" class="filters-row"></div>
   <p id="presence-line" class="presence-line" hidden></p>
   <div id="feed" class="feed"></div>
 </section>
@@ -16,8 +14,7 @@
 {% block scripts %}
 <script>
   const FEED_LIMIT = 300;
-  const ACTION_OPTIONS = ["all", "created", "started", "done", "blocked", "skipped", "log"];
-  const feedState = { events: [], activeAgent: "all", activeAction: "all" };
+  const feedState = { events: [] };
 
   function esc(v) {
     return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
@@ -58,42 +55,6 @@
     line.hidden = false;
     const parts = presence.map((a) => `${esc(a.name)} (${esc(relativeTime(a.last_seen))})`);
     line.innerHTML = `Active agents ${parts.join(" · ")}`;
-  }
-
-  function renderAgentFilters(events) {
-    const wrap = document.getElementById("agent-filters");
-    const agents = [...new Set((events || []).map((e) => e.agent || "system"))].sort();
-    const options = ["all", ...agents];
-    wrap.innerHTML = "";
-    options.forEach((agent) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = `filter-pill${feedState.activeAgent === agent ? " active" : ""}`;
-      btn.textContent = agent === "all" ? "All" : agent;
-      btn.addEventListener("click", () => {
-        feedState.activeAgent = agent;
-        renderAgentFilters(events);
-        renderFeed();
-      });
-      wrap.appendChild(btn);
-    });
-  }
-
-  function renderActionFilters() {
-    const wrap = document.getElementById("action-filters");
-    wrap.innerHTML = "";
-    ACTION_OPTIONS.forEach((action) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = `filter-pill${feedState.activeAction === action ? " active" : ""}`;
-      btn.textContent = action === "all" ? "All" : action;
-      btn.addEventListener("click", () => {
-        feedState.activeAction = action;
-        renderActionFilters();
-        renderFeed();
-      });
-      wrap.appendChild(btn);
-    });
   }
 
   function collapseCreated(rows) {
@@ -162,10 +123,7 @@
     const pinnedBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 28;
     container.innerHTML = "";
 
-    let rows = feedState.events.slice();
-    rows = rows.filter((item) => feedState.activeAgent === "all" || (item.agent || "system") === feedState.activeAgent);
-    rows = rows.filter((item) => feedState.activeAction === "all" || (item.action_type || "other") === feedState.activeAction);
-    rows = collapseCreated(rows);
+    const rows = collapseCreated(feedState.events.slice());
 
     let lastDay = "";
     rows.forEach((item) => {
@@ -188,8 +146,6 @@
 
   function applyActivity(payload) {
     feedState.events = (payload.events || []).slice(-FEED_LIMIT);
-    renderAgentFilters(feedState.events);
-    renderActionFilters();
     renderPresence(payload.active_agents || []);
     renderFeed();
   }
