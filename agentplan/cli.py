@@ -46,7 +46,7 @@ from agentplan.db import (
     update_role as db_update_role,
     create_agent as db_create_agent,
     get_agent as db_get_agent,
-    get_agent_by_role as db_get_agent_by_role,
+
     list_agents as db_list_agents,
     delete_agent as db_delete_agent,
     update_agent as db_update_agent,
@@ -600,130 +600,6 @@ def _infer_working_dir(project_notes):
     return os.environ.get("AGENTPLAN_WORKDIR") or os.getcwd()
 
 
-def _project_context_file_path(project):
-    project_dir = (project.get("dir") if hasattr(project, "get") else project["dir"]) if project else None
-    if not project_dir:
-        return None
-    return os.path.join(project_dir, ".agentplan.md")
-
-
-def _read_project_context_file(project):
-    path = _project_context_file_path(project)
-    if not path or not os.path.isfile(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    except Exception:
-        return None
-
-
-def _project_prompt_context(project):
-    project_dir = (project.get("dir") if hasattr(project, "get") else project["dir"]) if project else None
-    if not project_dir:
-        return ""
-
-    context = _read_project_context_file(project)
-    if context:
-        return (
-            "\n\n[Project Context from .agentplan.md]\n"
-            f"{context}\n"
-            "[End Project Context]\n"
-        )
-
-    return (
-        "\n\nNo .agentplan.md found in project directory. Before starting work, scan the project and create "
-        ".agentplan.md with: verify command, key conventions, and anything future agents should know.\n"
-    )
-
-
-def _writer_agent_from_registry(conn):
-    return db_get_agent_by_role(conn, "writing")
-
-
-def build_context_prompt(project, tickets, existing_context=None):
-    project_title = (project.get("title") if hasattr(project, "get") else project["title"]) if project else ""
-    project_slug = (project.get("slug") if hasattr(project, "get") else project["slug"]) if project else ""
-    project_dir = (project.get("dir") if hasattr(project, "get") else project["dir"]) if project else ""
-
-    status_buckets = ["pending", "in-progress", "blocked", "needs-review", "failed", "done"]
-    counts = {status: 0 for status in status_buckets}
-    active_ticket_lines = []
-    for t in tickets or []:
-        num = t.get("num") if hasattr(t, "get") else t["num"]
-        title = t.get("title") if hasattr(t, "get") else t["title"]
-        status = t.get("status") if hasattr(t, "get") else t["status"]
-        priority = t.get("priority") if hasattr(t, "get") else t["priority"]
-        if status in counts:
-            counts[status] += 1
-        if status in {"pending", "in-progress"} and len(active_ticket_lines) < 10:
-            active_ticket_lines.append(
-                f"- #{num}: {title} [status={status}, priority={_priority_label(priority)}]"
-            )
-    if not active_ticket_lines:
-        active_ticket_lines = ["- (no open/in-progress tickets)"]
-
-    context_section = "None found."
-    mode_instruction = "Create .agentplan.md from scratch."
-    if existing_context is None:
-        mode_instruction = (
-            "Create from scratch."
-        )
-    else:
-        context_section = existing_context
-        mode_instruction = (
-            "Preserve valid info, refresh stale sections."
-        )
-
-    return "\n".join(
-        [
-            "You are generating project context for agentplan.",
-            f"Project title: {project_title}",
-            f"Project slug: {project_slug}",
-            f"Directory path: {project_dir}",
-            "",
-            "Ticket summary counts:",
-            f"- pending: {counts['pending']}",
-            f"- in-progress: {counts['in-progress']}",
-            f"- blocked: {counts['blocked']}",
-            f"- needs-review: {counts['needs-review']}",
-            f"- failed: {counts['failed']}",
-            f"- done: {counts['done']}",
-            "",
-            "Open/in-progress tickets (capped at 10):",
-            *active_ticket_lines,
-            "",
-            "Existing .agentplan.md content:",
-            context_section,
-            "",
-            "Instructions:",
-            f"- {mode_instruction}",
-            "- If an appended regenerate instruction says to rewrite from scratch, do a full rewrite.",
-            "- Investigate first by running local commands before writing.",
-            "",
-            "Investigation commands (run these):",
-            f"- agentplan ticket list {project_slug} --status open",
-            f"- agentplan ticket list {project_slug} --status in-progress",
-            f"- agentplan ticket list {project_slug} --status blocked",
-            "- ls -la",
-            "- rg --files | head -200",
-            "- Inspect project-specific key files before writing.",
-            "",
-            "Required output structure for `.agentplan.md` (use these exact section headers):",
-            "- Project Summary",
-            "- Current Objective",
-            "- Working Directory & Verify Commands",
-            "- Architecture Map",
-            "- Conventions & Guardrails",
-            "- Ticket Snapshot (open/in-progress)",
-            "- Agent Runbook",
-            "- Hands-Off Zones",
-            "- Last Updated + Generation Notes",
-            "- Return after saving `.agentplan.md`.",
-        ]
-    )
-
-
 def _render_command_template(template, project_slug="", ticket_ref="", ticket_id="", project_dir=""):
     command = (template or "").strip()
     return (
@@ -774,20 +650,6 @@ def _render_temp_prompt_command(base_cmd, prompt, project_slug, project_dir=None
     if use_project_dir:
         return f"cd {shlex.quote(project_dir)} && {rendered}; {cleanup}"
     return f"{rendered}; {cleanup}"
-
-
-def _render_prompt_agent_command(template, prompt, project_slug, project_dir):
-    base_cmd = _render_command_template(
-        template,
-        project_slug=project_slug,
-        project_dir=project_dir,
-    )
-    return _render_temp_prompt_command(
-        base_cmd,
-        prompt,
-        project_slug=project_slug,
-        project_dir=project_dir,
-    )
 
 
 def _warn_if_missing_project_dir(project):
@@ -1261,7 +1123,7 @@ def _next_chain_candidate(conn, project_id):
     return items[0] if items else None
 
 
-def _render_agent_command(template, ticket, project, extra_context="", project_dir=None):
+def _render_agent_command(template, ticket, project, project_dir=None):
     try:
         project_slug = project["slug"]
     except Exception:
@@ -1286,15 +1148,6 @@ def _render_agent_command(template, ticket, project, extra_context="", project_d
         ticket_id=ticket_num,
         project_dir=project_dir or "",
     )
-    context = (extra_context or "").strip()
-    if context:
-        prompt = f"{ticket_ref}\n{context}"
-        rendered = _render_temp_prompt_command(
-            rendered,
-            prompt,
-            project_slug=project_slug,
-            project_dir=project_dir,
-        )
     return rendered
 
 
@@ -1576,7 +1429,6 @@ def cmd_chain(args):
             agent.get("command_template"),
             ticket,
             proj,
-            extra_context=_project_prompt_context(proj),
             project_dir=project_dir,
         )
         deadline_preview = (datetime.now() + timedelta(seconds=timeout_sec)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -1688,89 +1540,7 @@ def cmd_context(args):
         conn.close()
         return
 
-    project_dir = proj["dir"] if "dir" in proj.keys() else None
-    if not project_dir:
-        print("No directory linked to this project")
-        conn.close()
-        return
-
-    writer_agent = _writer_agent_from_registry(conn)
-    if not writer_agent:
-        conn.close()
-        fail(
-            "No writer-role agent configured.",
-            suggestions=[
-                "Create an agent with a role containing 'writing': agentplan agent add <name> --command '<cmd>' --roles writing",
-            ],
-        )
-
-    context_path = os.path.join(project_dir, ".agentplan.md")
-    existing_context = None
-    if os.path.exists(context_path):
-        try:
-            with open(context_path, "r", encoding="utf-8") as f:
-                existing_context = f.read().strip()
-        except Exception:
-            existing_context = None
-
-    if getattr(args, "regenerate", False):
-        existing_context = None
-        if os.path.exists(context_path):
-            try:
-                os.remove(context_path)
-            except Exception:
-                pass
-
-    tickets = conn.execute(
-        "SELECT num, title, status, priority FROM tickets WHERE project_id=? ORDER BY num",
-        (proj["id"],),
-    ).fetchall()
-    prompt = build_context_prompt(proj, tickets, existing_context=existing_context)
-    if getattr(args, "regenerate", False):
-        prompt = f"{prompt}\n- Regenerate from scratch. Ignore old context and write a brand new .agentplan.md.\n"
-    command = _render_prompt_agent_command(
-        writer_agent.get("command_template"),
-        prompt,
-        proj["slug"],
-        project_dir,
-    )
-    if _is_ci_mode():
-        try:
-            proc = _spawn_headless_subprocess(command, cwd=project_dir)
-        except OSError as exc:
-            conn.close()
-            fail(
-                f"Failed to start context generation: {exc}",
-                suggestions=["Check the agent command template and project directory permissions."],
-            )
-        print(f"Started context generation with agent '{writer_agent['name']}' (headless, pid={proc.pid}).")
-        conn.close()
-        return
-
-    spawn_result = spawn_terminal(command, title=f"agentplan:{writer_agent['name']}")
-    if spawn_result == 0:
-        print(f"Started context generation with agent '{writer_agent['name']}' in terminal.")
-        conn.close()
-        return
-
-    try:
-        proc = subprocess.Popen(
-            command,
-            shell=True,
-            executable="/bin/bash",
-            cwd=project_dir,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    except OSError as exc:
-        conn.close()
-        fail(
-            f"Failed to start context generation: {exc}",
-            suggestions=["Check the agent command template and project directory permissions."],
-        )
-    print(f"Started context generation with agent '{writer_agent['name']}' (pid={proc.pid}).")
+    print("Project context generation has been removed. Use `agentplan status {0}` for project overview.".format(proj["slug"]))
     conn.close()
 
 
@@ -1799,7 +1569,6 @@ def cmd_route(args):
             agent.get("command_template"),
             ticket,
             proj,
-            extra_context=_project_prompt_context(proj),
             project_dir=proj["dir"] if "dir" in proj.keys() else None,
         )
         pid = spawn_terminal(command, title=f"agentplan:{agent['name']}")
@@ -2251,7 +2020,6 @@ def _fire_chain_hook(project_slug, default_agent_name=None):
             agent.get("command_template"),
             ticket,
             proj,
-            extra_context=_project_prompt_context(proj),
             project_dir=proj["dir"] if "dir" in proj.keys() else None,
         )
         spawn_terminal(command, title=f"agentplan:{agent['name']}")
@@ -3957,11 +3725,10 @@ def build_parser():
     hs.add_argument("project")
     hs.add_argument("ticket_id")
 
-    ctx = sub.add_parser("context", help="Show linked .agentplan.md or generate ticket context block")
+    ctx = sub.add_parser("context", help="Show ticket context block")
     ctx.add_argument("project")
     ctx.add_argument("ticket_id", nargs="?")
     ctx.add_argument("--agent", help="Agent name for command templates")
-    ctx.add_argument("--regenerate", action="store_true", help="Delete existing .agentplan.md so it is recreated on next agent run")
 
     rt = _add_deprecated_parser(sub, "route")
     rt.add_argument("project")
