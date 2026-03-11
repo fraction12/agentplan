@@ -57,7 +57,7 @@ from agentplan.db import (
     is_valid_iso_local_timestamp,
 )
 
-__version__ = "0.8.8"
+__version__ = "0.8.9"
 
 # ---------------------------------------------------------------------------
 # Input validation limits

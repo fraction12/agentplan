@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.8.9 - 2026-03-11
+
+### Removed
+- **Project-level context generation** — the `.agentplan.md` auto-generation system that spawned Claude Code instances on ticket completion. Was stacking processes without dedup and adding unnecessary overhead. `agentplan context <project>` now redirects to `agentplan status`. (PR #30, closes #29)
+- `get_agent_by_role` from db.py (dead code after context gen removal)
+- `build_context_prompt`, `_render_prompt_agent_command`, and related internal functions
+- Dashboard context monitoring routes (`generate-context`, `context-status`)
+- `extra_context` parameter from agent command rendering
+- `--regenerate` flag from `context` subcommand
+
 ## v0.8.8 - 2026-03-10
 
 ### Added
