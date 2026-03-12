@@ -14,6 +14,7 @@ from functools import wraps
 from urllib.parse import urlparse
 
 from flask import Flask, abort, redirect, render_template, request, url_for
+from werkzeug.utils import secure_filename
 
 from agentplan.cli import slugify, spawn_terminal
 from agentplan.db import (
@@ -220,13 +221,11 @@ def _group_projects_by_space(conn, projects):
 
 def _safe_space_dir(space_slug):
     """Return the realpath for a space dir, or None if it escapes the data directory."""
-    data_dir, _ = get_db_path()
-    safe_root = os.path.realpath(os.path.join(data_dir, "spaces"))
-    # Re-derive slug through the safe root (don't pass user input to get_space_directory)
-    candidate = os.path.realpath(os.path.join(safe_root, space_slug))
-    if not candidate.startswith(safe_root + os.sep) and candidate != safe_root:
+    safe_slug = secure_filename(space_slug)
+    if not safe_slug:
         return None
-    return candidate
+    data_dir, _ = get_db_path()
+    return os.path.join(os.path.realpath(os.path.join(data_dir, "spaces")), safe_slug)
 
 
 def _safe_doc_path(space_slug, filename):
@@ -234,10 +233,10 @@ def _safe_doc_path(space_slug, filename):
     space_dir = _safe_space_dir(space_slug)
     if space_dir is None:
         return None, None
-    fpath = os.path.realpath(os.path.join(space_dir, filename))
-    if not fpath.startswith(space_dir + os.sep):
+    safe_name = secure_filename(filename)
+    if not safe_name:
         return None, None
-    return space_dir, fpath
+    return space_dir, os.path.join(space_dir, safe_name)
 
 
 def _count_space_docs(space_slug):
@@ -263,9 +262,10 @@ def _list_space_docs(space_slug):
         for fname in sorted(os.listdir(space_dir)):
             if not fname.endswith(".md"):
                 continue
-            fpath = os.path.realpath(os.path.join(space_dir, fname))
-            if not fpath.startswith(space_dir + os.sep):
+            safe_fname = secure_filename(fname)
+            if not safe_fname:
                 continue
+            fpath = os.path.join(space_dir, safe_fname)
             try:
                 stat = os.stat(fpath)
                 docs.append({
