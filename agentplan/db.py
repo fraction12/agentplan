@@ -483,19 +483,23 @@ def update_role(conn, name_or_id, new_name=None, new_description=None):
 
 
 def get_unblocked(tickets):
-    """Return only pending tickets whose dependencies are fully done/skipped.
+    """Return failed tickets (to retry first), then pending tickets, both with dependencies met.
 
-    blocked/failed/needs-review are intentionally excluded until manually transitioned.
+    blocked/needs-review are intentionally excluded until manually transitioned.
+    Failed tickets take priority over pending ones.
     """
     done_nums = {t["num"] for t in tickets if t["status"] in ("done", "skipped")}
-    out = []
+    failed = []
+    pending = []
     for t in tickets:
-        if t["status"] != "pending":
-            continue
         deps = json.loads(t["depends_on"] or "[]")
-        if all(d in done_nums for d in deps):
-            out.append(t)
-    return out
+        if not all(d in done_nums for d in deps):
+            continue
+        if t["status"] == "failed":
+            failed.append(t)
+        elif t["status"] == "pending":
+            pending.append(t)
+    return failed + pending
 
 
 def has_cycle(tickets, ticket_num, new_deps):
