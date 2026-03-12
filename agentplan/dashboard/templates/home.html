@@ -289,15 +289,25 @@
     return sections;
   }
 
-  function groupProjectsBySpace(projects) {
+  function groupProjectsBySpace(projects, allSpaces) {
     const spacesMap = new Map();
     const spacesOrder = [];
-    const seenSpaces = new Set();
-    
+
+    // Seed with all known spaces so empties stay visible
+    (allSpaces || window.__allSpaces || []).forEach((s) => {
+      spacesMap.set(s.slug, {
+        slug: s.slug,
+        title: s.title,
+        projects: [],
+        doc_count: 0,
+      });
+      spacesOrder.push(s.slug);
+    });
+
     (projects || []).forEach((project) => {
       const spaceSlug = project.space_slug || "default";
       const spaceTitle = project.space_title || "Default";
-      
+
       if (!spacesMap.has(spaceSlug)) {
         spacesMap.set(spaceSlug, {
           slug: spaceSlug,
@@ -305,23 +315,25 @@
           projects: [],
           doc_count: project.space_doc_count || 0,
         });
-        if (!seenSpaces.has(spaceSlug)) {
-          spacesOrder.push(spaceSlug);
-          seenSpaces.add(spaceSlug);
-        }
+        spacesOrder.push(spaceSlug);
       }
-      
-      spacesMap.get(spaceSlug).projects.push(project);
+
+      const entry = spacesMap.get(spaceSlug);
+      entry.projects.push(project);
+      // Update doc_count from project data if available
+      if (project.space_doc_count) entry.doc_count = project.space_doc_count;
     });
-    
+
     // Move default space to the end
     let spaces = spacesOrder.filter(s => s !== "default").map(s => spacesMap.get(s));
     const defaultSpace = spacesMap.get("default");
     if (defaultSpace) {
       spaces.push(defaultSpace);
     }
-    
-    return spaces;
+
+    // Deduplicate (spacesOrder may have dupes if seed + project both add same slug)
+    const seen = new Set();
+    return spaces.filter(s => { if (seen.has(s.slug)) return false; seen.add(s.slug); return true; });
   }
 
   function renderProjectSection(section) {
@@ -391,6 +403,7 @@
 
   setClock("live-clock");
   setInterval(() => setClock("live-clock"), 1000);
+  window.__allSpaces = {{ spaces|tojson if spaces is defined else '[]' }};
   window.__latestProjects = {{ projects|tojson }};
   renderProjects(window.__latestProjects);
 
@@ -571,6 +584,7 @@
         try {
           const payload = JSON.parse(event.data);
           renderSummary(payload.summary || {});
+          if (payload.spaces) window.__allSpaces = payload.spaces;
           window.__latestProjects = payload.projects || [];
           renderProjects(window.__latestProjects);
           setClock("live-clock", payload.server_time || null);

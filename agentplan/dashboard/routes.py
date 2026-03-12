@@ -337,11 +337,11 @@ def _fetch_projects_with_stats(conn):
         )
         progress = int(round((done / total) * 100)) if total else 0
         
-        # Get space info
+        # Get space info — preserve NULL as unassigned
         space_id = p_dict.get("space_id")
-        space_info = spaces_by_id.get(space_id, {})
-        space_slug = space_info.get("slug", "default")
-        space_title = space_info.get("title", "Default")
+        space_info = spaces_by_id.get(space_id) if space_id else None
+        space_slug = space_info["slug"] if space_info else None
+        space_title = space_info["title"] if space_info else "Unassigned"
         
         out.append(
             {
@@ -426,6 +426,13 @@ def _project_stats_payload():
     try:
         projects = _fetch_projects_with_stats(conn)
 
+        all_spaces = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT id, slug, title FROM spaces ORDER BY slug"
+            ).fetchall()
+        ]
+
         completed_today = conn.execute(
             """
             SELECT COUNT(*) AS c
@@ -458,6 +465,7 @@ def _project_stats_payload():
 
     return {
         "projects": projects,
+        "spaces": all_spaces,
         "summary": summary,
         "server_time": datetime.now().isoformat(timespec="seconds"),
     }
@@ -809,6 +817,7 @@ def create_app():
         return render_template(
             "home.html",
             projects=projects,
+            spaces=payload.get("spaces", []),
             home_sections=_group_projects_for_home(projects),
             home_spaces=home_spaces,
             summary=payload["summary"],
