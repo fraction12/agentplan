@@ -28,7 +28,6 @@ from agentplan.db import (
     get_connection,
     get_db_path,
     get_subtask_progress_map as _get_subtask_progress_map,
-    has_cycle,
     init_db,
     list_project_slugs,
     get_unblocked as db_get_unblocked,
