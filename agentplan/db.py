@@ -57,9 +57,35 @@ def get_connection(db_path=None):
     return conn
 
 
+def get_space_directory(space_slug):
+    """Return the directory path for a space without creating it."""
+    dir_path, _ = get_db_path()
+    return os.path.join(dir_path, "spaces", space_slug)
+
+
+def ensure_space_directory(space_slug):
+    """Create the directory for a space: ~/.agentplan/spaces/<space_slug>/"""
+    space_dir = get_space_directory(space_slug)
+    os.makedirs(space_dir, exist_ok=True)
+    return space_dir
+
+
 def init_db(conn):
+    # Create the spaces root directory
+    dir_path, _ = get_db_path()
+    spaces_dir = os.path.join(dir_path, "spaces")
+    os.makedirs(spaces_dir, exist_ok=True)
+
     conn.executescript(
         """
+        CREATE TABLE IF NOT EXISTS spaces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+        );
         CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             slug TEXT NOT NULL UNIQUE,
@@ -313,6 +339,33 @@ def init_db(conn):
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE projects ADD COLUMN timeout_sec INTEGER")
 
+    # Project-level space link (with cascade delete)
+    try:
+        conn.execute("SELECT space_id FROM projects LIMIT 0")
+    except sqlite3.OperationalError:
+        # NOTE: SQLite cannot alter existing column constraints. Databases that ran
+        # this migration before the fix will still have ON DELETE CASCADE in the schema
+        # definition, but PRAGMA foreign_keys is OFF by default so it has no effect.
+        # The actual orphaning logic is handled in cmd_space_delete (cli.py).
+        conn.execute("ALTER TABLE projects ADD COLUMN space_id INTEGER REFERENCES spaces(id) ON DELETE SET NULL")
+
+    # Auto-create default space and assign existing projects
+    spaces_count = conn.execute("SELECT COUNT(*) FROM spaces").fetchone()[0]
+    if spaces_count == 0:
+        # Create default space (INSERT OR IGNORE to avoid race condition with concurrent init_db calls)
+        conn.execute(
+            "INSERT OR IGNORE INTO spaces (slug, title, description) VALUES (?, ?, ?)",
+            ("default", "Default", "Default space for existing projects")
+        )
+        conn.commit()
+        # Get the default space ID
+        default_space_id = conn.execute("SELECT id FROM spaces WHERE slug='default'").fetchone()[0]
+        # Create the default space directory
+        ensure_space_directory("default")
+        # Assign all projects without a space to the default space
+        conn.execute("UPDATE projects SET space_id=? WHERE space_id IS NULL", (default_space_id,))
+        conn.commit()
+
     # Chain heartbeat/deadline tracking
     for col in ("heartbeat_at", "deadline_at"):
         try:
@@ -483,23 +536,19 @@ def update_role(conn, name_or_id, new_name=None, new_description=None):
 
 
 def get_unblocked(tickets):
-    """Return failed tickets (to retry first), then pending tickets, both with dependencies met.
+    """Return only pending tickets whose dependencies are fully done/skipped.
 
-    blocked/needs-review are intentionally excluded until manually transitioned.
-    Failed tickets take priority over pending ones.
+    blocked/failed/needs-review are intentionally excluded until manually transitioned.
     """
     done_nums = {t["num"] for t in tickets if t["status"] in ("done", "skipped")}
-    failed = []
-    pending = []
+    out = []
     for t in tickets:
-        deps = json.loads(t["depends_on"] or "[]")
-        if not all(d in done_nums for d in deps):
+        if t["status"] != "pending":
             continue
-        if t["status"] == "failed":
-            failed.append(t)
-        elif t["status"] == "pending":
-            pending.append(t)
-    return failed + pending
+        deps = json.loads(t["depends_on"] or "[]")
+        if all(d in done_nums for d in deps):
+            out.append(t)
+    return out
 
 
 def has_cycle(tickets, ticket_num, new_deps):

@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% set active_page = 'home' %}
+
+{% block title %}{{ space.title }} — agentplan{% endblock %}
+{% block body_class %}space-detail{% endblock %}
+
+{% block content %}
+<div class="space-detail-header">
+  <a href="{{ url_for('index') }}" class="back-link">← Back to Spaces</a>
+  <h1 class="space-detail-title">{{ space.title }}</h1>
+  {% if space.description %}
+  <p class="space-detail-description">{{ space.description }}</p>
+  {% endif %}
+</div>
+
+<section class="space-detail-section">
+  <div class="space-detail-section-heading">
+    <h2>Docs</h2>
+    <span class="space-detail-section-count">{{ docs|length }}</span>
+  </div>
+  {% if docs %}
+  <div class="space-docs-list">
+    {% for doc in docs %}
+    <a href="{{ url_for('space_detail', slug=space.slug) }}/doc/{{ doc.filename }}" class="space-doc-row">
+      <span class="space-doc-icon">📄</span>
+      <span class="space-doc-name">{{ doc.filename }}</span>
+      <span class="space-doc-size">{{ doc.size_display }}</span>
+      <span class="space-doc-modified">{{ doc.modified }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="space-detail-empty">No docs in this space yet.</div>
+  {% endif %}
+  <div class="space-add-doc-row">
+    <form id="add-doc-form" class="add-doc-form" hidden>
+      <input id="add-doc-title" type="text" placeholder="Document title" required autocomplete="off" class="add-doc-input">
+      <button type="submit" class="btn btn-primary btn-sm">Create</button>
+      <button type="button" id="add-doc-cancel" class="btn btn-sm">Cancel</button>
+    </form>
+    <button type="button" id="add-doc-btn" class="btn btn-sm">+ Add Doc</button>
+    <span id="add-doc-error" class="add-doc-error"></span>
+  </div>
+</section>
+
+<section class="space-detail-section">
+  <div class="space-detail-section-heading">
+    <h2>Projects</h2>
+    <span class="space-detail-section-count">{{ projects|length }}</span>
+  </div>
+  {% if projects %}
+  <div class="space-projects-list">
+    {% for project in projects %}
+    <a href="{{ url_for('project_detail', slug=project.slug) }}" class="space-project-row">
+      <span class="space-project-title">{{ project.title }}</span>
+      <span class="space-project-progress">{{ project.done_count }}/{{ project.ticket_count }} tickets</span>
+      <span class="project-status-badge status-{{ project.status }}">{{ project.status_label }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="space-detail-empty">No projects in this space yet.</div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  // Clock + SSE connection
+  setClock("live-clock");
+  setInterval(() => setClock("live-clock"), 1000);
+  subscribeSSE("{{ url_for('events') }}", {
+    onOpen() { setConnection("sse-dot", "sse-label", true, "connected"); },
+    onError() { setConnection("sse-dot", "sse-label", false, "reconnecting…"); },
+    events: {
+      heartbeat(e) {
+        try {
+          const data = JSON.parse(e.data);
+          setClock("live-clock", data.server_time || null);
+          setConnection("sse-dot", "sse-label", true, "connected");
+        } catch (_) {}
+      },
+    },
+  });
+  const btn = document.getElementById("add-doc-btn");
+  const form = document.getElementById("add-doc-form");
+  const input = document.getElementById("add-doc-title");
+  const cancel = document.getElementById("add-doc-cancel");
+  const error = document.getElementById("add-doc-error");
+
+  btn.addEventListener("click", () => {
+    btn.hidden = true;
+    form.hidden = false;
+    input.focus();
+  });
+
+  cancel.addEventListener("click", () => {
+    form.hidden = true;
+    btn.hidden = false;
+    error.textContent = "";
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    error.textContent = "";
+    const title = input.value.trim();
+    if (!title) return;
+
+    try {
+      const resp = await fetch("/api/space/{{ space.slug }}/doc/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.redirect) {
+        window.location.href = data.redirect;
+      } else {
+        error.textContent = data.error || "Failed to create doc";
+      }
+    } catch (err) {
+      error.textContent = err.message;
+    }
+  });
+})();
+</script>
+{% endblock %}

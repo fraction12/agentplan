@@ -21,6 +21,7 @@ from agentplan.db import (
     delete_agent,
     get_chain_state,
     get_connection,
+    get_space_directory,
     has_cycle,
     list_agents,
     list_roles,
@@ -59,7 +60,9 @@ HOME_SECTION_ORDER = [
 
 
 def _db_path():
-    return os.environ.get("AGENTPLAN_DB", os.path.expanduser("~/.agentplan/agentplan.db"))
+    from agentplan.db import get_db_path
+    _, db_path = get_db_path()
+    return db_path
 
 
 def _is_loopback_host(host):
@@ -146,6 +149,7 @@ def _home_status_label(status):
 
 
 def _group_projects_for_home(projects):
+    """Group projects by status (original view)."""
     grouped = defaultdict(list)
     for project in projects:
         grouped[(project.get("status") or "unknown").strip().lower()].append(project)
@@ -169,10 +173,112 @@ def _group_projects_for_home(projects):
     return sections
 
 
+def _group_projects_by_space(conn, projects):
+    """Group projects by space."""
+    # Fetch all spaces
+    spaces_data = conn.execute(
+        "SELECT id, slug, title FROM spaces ORDER BY slug"
+    ).fetchall()
+    
+    # Create a mapping of space_id -> space info
+    spaces_by_id = {}
+    spaces_list = []
+    for s in spaces_data:
+        s_dict = dict(s)
+        space_info = {
+            "id": s_dict["id"],
+            "slug": s_dict["slug"],
+            "title": s_dict["title"],
+            "doc_count": _count_space_docs(s_dict["slug"]),
+            "projects": [],
+        }
+        spaces_by_id[s_dict["id"]] = space_info
+        spaces_list.append(space_info)
+    
+    # Group projects by space_id
+    for project in projects:
+        space_id = project.get("space_id")
+        if space_id in spaces_by_id:
+            spaces_by_id[space_id]["projects"].append(project)
+    
+    # Move default space to the end
+    default_space = None
+    other_spaces = []
+    for space in spaces_list:
+        if space["slug"] == "default":
+            default_space = space
+        else:
+            other_spaces.append(space)
+    
+    if default_space:
+        spaces_list = other_spaces + [default_space]
+    
+    return spaces_list
+
+
+def _count_space_docs(space_slug):
+    """Count markdown files in space directory."""
+    space_dir = get_space_directory(space_slug)
+    if not os.path.isdir(space_dir):
+        return 0
+    try:
+        return sum(1 for f in os.listdir(space_dir) if f.endswith(".md"))
+    except (OSError, IOError):
+        return 0
+
+
+def _list_space_docs(space_slug):
+    """List markdown files in a space directory with metadata."""
+    space_dir = get_space_directory(space_slug)
+    docs = []
+    if not os.path.isdir(space_dir):
+        return docs
+    try:
+        for fname in sorted(os.listdir(space_dir)):
+            if not fname.endswith(".md"):
+                continue
+            fpath = os.path.join(space_dir, fname)
+            try:
+                stat = os.stat(fpath)
+                docs.append({
+                    "filename": fname,
+                    "size": stat.st_size,
+                    "size_display": _human_size(stat.st_size),
+                    "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%b %-d"),
+                    "modified_iso": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                })
+            except OSError:
+                continue
+    except (OSError, IOError):
+        pass
+    return docs
+
+
+def _human_size(nbytes):
+    """Format bytes as human-readable size."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if nbytes < 1024:
+            return f"{nbytes:.1f} {unit}" if unit != "B" else f"{nbytes} B"
+        nbytes /= 1024
+    return f"{nbytes:.1f} TB"
+
+
 def _fetch_projects_with_stats(conn):
     projects = conn.execute(
-        "SELECT id, slug, title, status, updated_at, dir FROM projects ORDER BY updated_at DESC, id DESC LIMIT 100"
+        "SELECT id, slug, title, status, updated_at, dir, space_id FROM projects ORDER BY updated_at DESC, id DESC LIMIT 100"
     ).fetchall()
+    
+    # Fetch space information
+    spaces_data = conn.execute(
+        "SELECT id, slug, title FROM spaces ORDER BY slug"
+    ).fetchall()
+    spaces_by_id = {}
+    space_doc_counts = {}
+    for s in spaces_data:
+        s_dict = dict(s)
+        spaces_by_id[s_dict["id"]] = {"slug": s_dict["slug"], "title": s_dict["title"]}
+        space_doc_counts[s_dict["slug"]] = _count_space_docs(s_dict["slug"])
+    
     rows = conn.execute("SELECT project_id, status, COUNT(*) AS c FROM tickets GROUP BY project_id, status").fetchall()
 
     counts = defaultdict(lambda: defaultdict(int))
@@ -181,7 +287,8 @@ def _fetch_projects_with_stats(conn):
 
     out = []
     for p in projects:
-        project_counts = counts[p["id"]]
+        p_dict = dict(p)
+        project_counts = counts[p_dict["id"]]
         breakdown = {
             "pending": int(project_counts.get("pending", 0)),
             "in-progress": int(project_counts.get("in-progress", 0)),
@@ -201,20 +308,31 @@ def _fetch_projects_with_stats(conn):
             + breakdown["needs-review"]
         )
         progress = int(round((done / total) * 100)) if total else 0
+        
+        # Get space info
+        space_id = p_dict.get("space_id")
+        space_info = spaces_by_id.get(space_id, {})
+        space_slug = space_info.get("slug", "default")
+        space_title = space_info.get("title", "Default")
+        
         out.append(
             {
-                "id": p["id"],
-                "slug": p["slug"],
-                "title": p["title"],
-                "status": p["status"],
-                "updated_at": p["updated_at"],
+                "id": p_dict["id"],
+                "slug": p_dict["slug"],
+                "title": p_dict["title"],
+                "status": p_dict["status"],
+                "updated_at": p_dict["updated_at"],
+                "space_id": space_id,
+                "space_slug": space_slug,
+                "space_title": space_title,
+                "space_doc_count": space_doc_counts.get(space_slug, 0),
                 "breakdown": breakdown,
                 "ticket_count": total,
                 "done_count": done,
                 "in_flight_count": in_flight,
                 "progress_pct": progress,
-                "missing_directory": bool(p["dir"] and not os.path.isdir(p["dir"])),
-                "status_label": _home_status_label(p["status"]),
+                "missing_directory": bool(p_dict["dir"] and not os.path.isdir(p_dict["dir"])),
+                "status_label": _home_status_label(p_dict["status"]),
             }
         )
     return out
@@ -629,9 +747,14 @@ def _project_board_payload(slug, priority_filter="", tag_filter=""):
         if _ticket_matches(ticket, priority_filter, tag_filter):
             grouped[group_key].append(ticket)
 
+    done_count = sum(1 for row in rows if row["status"] in ("done", "skipped"))
+    total_count = len(rows)
+
     return {
         "project": {"slug": project["slug"], "title": project["title"]},
         "grouped": grouped,
+        "done_count": done_count,
+        "total_count": total_count,
         "chain_status": chain_state.get("status") or "stopped",
         "chain_current_ticket_num": chain_current_ticket_num,
         "chain_pause_reason": chain_state.get("pause_reason"),
@@ -650,10 +773,16 @@ def create_app():
     def index():
         payload = _project_stats_payload()
         projects = payload["projects"]
+        conn = get_connection(_db_path())
+        try:
+            home_spaces = _group_projects_by_space(conn, projects)
+        finally:
+            conn.close()
         return render_template(
             "home.html",
             projects=projects,
             home_sections=_group_projects_for_home(projects),
+            home_spaces=home_spaces,
             summary=payload["summary"],
         )
 
@@ -758,6 +887,168 @@ def create_app():
             conn.close()
         return agents()
 
+    @app.route("/space/<slug>")
+    def space_detail(slug):
+        conn = get_connection(_db_path())
+        try:
+            space_row = conn.execute(
+                "SELECT id, slug, title, description FROM spaces WHERE slug=?", (slug,)
+            ).fetchone()
+            if not space_row:
+                abort(404)
+            space = dict(space_row)
+
+            # Get projects in this space
+            proj_rows = conn.execute(
+                "SELECT id, slug, title, status, updated_at, dir, space_id FROM projects WHERE space_id=? ORDER BY updated_at DESC",
+                (space["id"],),
+            ).fetchall()
+            projects = []
+            for p in proj_rows:
+                pd = dict(p)
+                stats = conn.execute(
+                    "SELECT COUNT(*) as total, SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) as done FROM tickets WHERE project_id=?",
+                    (pd["id"],),
+                ).fetchone()
+                pd["ticket_count"] = stats["total"]
+                pd["done_count"] = stats["done"]
+                pd["progress_pct"] = round(100 * stats["done"] / stats["total"]) if stats["total"] else 0
+                pd["status_label"] = HOME_STATUS_LABELS.get(pd["status"], pd["status"])
+                pd["missing_directory"] = bool(pd.get("dir") and not os.path.isdir(os.path.expanduser(pd["dir"])))
+                projects.append(pd)
+
+            # Get docs from filesystem
+            docs = _list_space_docs(slug)
+        finally:
+            conn.close()
+
+        return render_template(
+            "space_detail.html",
+            space=space,
+            projects=projects,
+            docs=docs,
+        )
+
+    @app.route("/space/<slug>/doc/<filename>")
+    def space_doc_editor(slug, filename):
+        conn = get_connection(_db_path())
+        try:
+            space_row = conn.execute(
+                "SELECT id, slug, title FROM spaces WHERE slug=?", (slug,)
+            ).fetchone()
+            if not space_row:
+                abort(404)
+            space = dict(space_row)
+        finally:
+            conn.close()
+
+        # Validate filename
+        if "/" in filename or "\\" in filename or filename.startswith("."):
+            abort(400)
+        if not filename.endswith(".md"):
+            abort(400)
+
+        space_dir = os.path.realpath(get_space_directory(slug))
+        fpath = os.path.realpath(os.path.join(space_dir, filename))
+        if not fpath.startswith(space_dir + os.sep):
+            abort(400)
+        if not os.path.isfile(fpath):
+            abort(404)
+
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                content = f.read()
+        except (OSError, IOError):
+            abort(500)
+
+        return render_template(
+            "doc_editor.html",
+            space=space,
+            filename=filename,
+            content=content,
+            filepath=fpath,
+        )
+
+    @app.route("/api/space/<slug>/doc/add", methods=["POST"])
+    @_require_local_origin
+    def api_add_doc(slug):
+        conn = get_connection(_db_path())
+        try:
+            space_row = conn.execute(
+                "SELECT id FROM spaces WHERE slug=?", (slug,)
+            ).fetchone()
+            if not space_row:
+                abort(404)
+        finally:
+            conn.close()
+
+        data = request.get_json(silent=True) or {}
+        title = (data.get("title") or "").strip()
+        if not title:
+            return {"error": "Title is required"}, 400
+
+        # Slugify title to filename
+        fname = slugify(title) or "untitled"
+        if not fname.endswith(".md"):
+            fname += ".md"
+
+        space_dir = os.path.realpath(get_space_directory(slug))
+        os.makedirs(space_dir, exist_ok=True)
+        fpath = os.path.realpath(os.path.join(space_dir, fname))
+        if not fpath.startswith(space_dir + os.sep):
+            return {"error": "Invalid filename"}, 400
+
+        if os.path.exists(fpath):
+            return {"error": f"File {fname} already exists"}, 409
+
+        try:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(f"# {title}\n")
+        except (OSError, IOError) as e:
+            return {"error": str(e)}, 500
+
+        return {"ok": True, "filename": fname, "redirect": f"/space/{slug}/doc/{fname}"}
+
+    @app.route("/api/space/<slug>/doc/<filename>", methods=["POST"])
+    @_require_local_origin
+    def api_save_doc(slug, filename):
+        conn = get_connection(_db_path())
+        try:
+            space_row = conn.execute(
+                "SELECT id FROM spaces WHERE slug=?", (slug,)
+            ).fetchone()
+            if not space_row:
+                abort(404)
+        finally:
+            conn.close()
+
+        if "/" in filename or "\\" in filename or filename.startswith("."):
+            abort(400)
+        if not filename.endswith(".md"):
+            abort(400)
+
+        space_dir = os.path.realpath(get_space_directory(slug))
+        fpath = os.path.realpath(os.path.join(space_dir, filename))
+        if not fpath.startswith(space_dir + os.sep):
+            abort(400)
+        if not os.path.isfile(fpath):
+            abort(404)
+
+        data = request.get_json(silent=True) or {}
+        content = data.get("content")
+        if content is None:
+            return {"error": "Missing content"}, 400
+        if len(content) > 5_000_000:
+            return {"error": "Content too large (max 5MB)"}, 413
+
+        try:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(content)
+        except (OSError, IOError) as e:
+            return {"error": str(e)}, 500
+
+        return {"ok": True}
+
     @app.route("/project/<slug>")
     def project_detail(slug):
         priority_filter = request.args.get("priority", "").strip().lower()
@@ -765,9 +1056,18 @@ def create_app():
 
         conn = get_connection(_db_path())
         try:
-            project = conn.execute("SELECT id, slug, title, status, dir FROM projects WHERE slug=?", (slug,)).fetchone()
+            project = conn.execute("SELECT id, slug, title, status, dir, space_id FROM projects WHERE slug=?", (slug,)).fetchone()
             if not project:
                 abort(404)
+
+            space_info = None
+            if project["space_id"]:
+                space_row = conn.execute(
+                    "SELECT slug, title FROM spaces WHERE id=?", (project["space_id"],)
+                ).fetchone()
+                if space_row:
+                    space_info = dict(space_row)
+
             rows = conn.execute(
                 """
                 SELECT id, num, title, description, status, priority, tags, depends_on, started_by, done_by, due_date
@@ -870,6 +1170,7 @@ def create_app():
             chain_pause_reason=chain_pause_reason,
             chain_text=chain_text,
             directory_warning=bool(project["dir"] and not os.path.isdir(project["dir"])),
+            space_info=space_info,
         )
 
     @app.route("/api/chain/<slug>/start", methods=["POST"])
@@ -980,9 +1281,14 @@ def create_app():
             directory = (data.get("directory") or "").strip()
             directory = os.path.expanduser(directory) if directory else None
             slug = unique_slug(conn, slugify(title))
+            # Assign default space_id to match CLI behavior
+            default_space = conn.execute(
+                "SELECT id FROM spaces WHERE slug='default'"
+            ).fetchone()
+            space_id = default_space["id"] if default_space else None
             conn.execute(
-                "INSERT INTO projects (slug, title, notes, dir) VALUES (?,?,?,?)",
-                (slug, title, description, directory),
+                "INSERT INTO projects (slug, title, notes, dir, space_id) VALUES (?,?,?,?,?)",
+                (slug, title, description, directory, space_id),
             )
             conn.commit()
             return redirect(url_for("project_detail", slug=slug), code=303)

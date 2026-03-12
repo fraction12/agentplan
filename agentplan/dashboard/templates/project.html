@@ -24,6 +24,16 @@
 {% endblock %}
 
 {% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  {% if space_info %}
+  <a href="{{ url_for('space_detail', slug=space_info.slug) }}">{{ space_info.title }}</a>
+  <span class="breadcrumb-sep" aria-hidden="true">›</span>
+  {% else %}
+  <span class="breadcrumb-muted">Unassigned</span>
+  <span class="breadcrumb-sep" aria-hidden="true">›</span>
+  {% endif %}
+  <span class="breadcrumb-current">{{ project.title }}</span>
+</nav>
 <div class="project-title-row">
   <h1 class="project-title">{{ project.title }}</h1>
   <div class="project-header-actions">
@@ -73,7 +83,7 @@
 </div>
 
 <div class="project-meta">
-  <span>{{ done_count }}/{{ total_count }} done</span>
+  <span id="project-done-counter">{{ done_count }}/{{ total_count }} done</span>
   <button id="add-ticket-btn" class="btn btn-primary project-action-btn" type="button">+ Add Ticket</button>
 </div>
 

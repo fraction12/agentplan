@@ -4,7 +4,7 @@
 Thin entry point that wires CLI and DB modules.
 """
 
-from agentplan.db import get_connection, init_db
+from agentplan.db import get_connection, init_db, ensure_space_directory
 from agentplan.cli import __version__, _claim_next_ticket, main
 from agentplan.models import HistoryEntry, Project, Subtask, Ticket
 

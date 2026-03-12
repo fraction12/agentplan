@@ -25,6 +25,8 @@ from agentplan.db import (
     create_role as db_create_role,
     delete_role as db_delete_role,
     ensure as _ensure,
+    ensure_space_directory,
+    get_space_directory,
     get_connection,
     get_db_path,
     get_subtask_progress_map as _get_subtask_progress_map,
@@ -56,7 +58,7 @@ from agentplan.db import (
     is_valid_iso_local_timestamp,
 )
 
-__version__ = "0.8.9"
+__version__ = "0.9.0"
 
 # ---------------------------------------------------------------------------
 # Input validation limits
@@ -175,6 +177,8 @@ TOP_LEVEL_COMMANDS = [
     "remove",
     "history",
     "subtask",
+    "space",
+    "doc",
     "role",
     "hook",
     "agent",
@@ -1742,10 +1746,19 @@ def cmd_create(args):
     _validate_len(args.notes, MAX_NOTES_LEN, "Notes")
     timeout_sec = _validate_timeout_sec(getattr(args, "timeout", None))
     conn = _ensure(get_connection())
+    
+    # Validate and resolve space
+    space_slug = getattr(args, "space", "default")
+    space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space_slug,)).fetchone()
+    if not space_row:
+        conn.close()
+        fail(f"Space '{space_slug}' does not exist.")
+    space_id = space_row[0]
+    
     slug = unique_slug(conn, slugify(args.title))
     conn.execute(
-        "INSERT INTO projects (slug, title, notes, dir, timeout_sec) VALUES (?,?,?,?,?)",
-        (slug, args.title, args.notes, args.dir, timeout_sec),
+        "INSERT INTO projects (slug, title, notes, dir, timeout_sec, space_id) VALUES (?,?,?,?,?,?)",
+        (slug, args.title, args.notes, args.dir, timeout_sec, space_id),
     )
     pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     n = 0
@@ -1769,19 +1782,548 @@ def cmd_create(args):
 def cmd_project(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
-    dir_path = (args.dir or "").strip()
-    if not dir_path:
+    
+    # Check that at least one flag is provided
+    dir_path = (args.dir or "").strip() if hasattr(args, 'dir') else ""
+    space_slug = (args.space or "").strip() if hasattr(args, 'space') else ""
+    
+    if not dir_path and not space_slug:
         conn.close()
-        fail("Missing directory path.", suggestions=["Use: agentplan project <slug> --dir ~/path/to/repo"])
-
-    resolved_dir = os.path.expanduser(dir_path)
-    if not os.path.exists(resolved_dir):
-        print(f"Warning: directory does not exist on disk: {resolved_dir}")
-
-    conn.execute("UPDATE projects SET dir=?, updated_at=? WHERE id=?", (resolved_dir, _now(), proj["id"]))
+        fail("Missing arguments.", suggestions=["Use: agentplan project <slug> --dir ~/path/to/repo", "Or: agentplan project <slug> --space <space-slug>"])
+    
+    updates = []
+    params = []
+    
+    # Handle --dir flag
+    if dir_path:
+        resolved_dir = os.path.expanduser(dir_path)
+        if not os.path.exists(resolved_dir):
+            print(f"Warning: directory does not exist on disk: {resolved_dir}")
+        updates.append("dir=?")
+        params.append(resolved_dir)
+    
+    # Handle --space flag
+    if space_slug:
+        # Validate that the space exists
+        space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space_slug,)).fetchone()
+        if not space_row:
+            conn.close()
+            fail(f"Space '{space_slug}' does not exist.", suggestions=["Use: agentplan space list"])
+        space_id = space_row[0]
+        updates.append("space_id=?")
+        params.append(space_id)
+    
+    # Add updated_at timestamp
+    updates.append("updated_at=?")
+    params.append(_now())
+    params.append(proj["id"])
+    
+    # Execute update
+    update_stmt = "UPDATE projects SET " + ", ".join(updates) + " WHERE id=?"
+    conn.execute(update_stmt, params)
     conn.commit()
     conn.close()
-    print(f"Updated project '{proj['slug']}' directory to: {resolved_dir}")
+    
+    # Print confirmation messages
+    if dir_path and space_slug:
+        print(f"Updated project '{proj['slug']}' directory to: {resolved_dir} and moved to space '{space_slug}'")
+    elif dir_path:
+        print(f"Updated project '{proj['slug']}' directory to: {resolved_dir}")
+    else:
+        print(f"Moved project '{proj['slug']}' to space '{space_slug}'")
+
+
+def cmd_space_create(args):
+    """Create a new space."""
+    args.slug = slugify(args.slug) or ""
+    if not args.slug:
+        fail("Invalid space slug.", suggestions=["Use alphanumeric characters and dashes."])
+    args.slug = args.slug.lower()
+    _validate_len(args.slug, MAX_SLUG_LEN, "Space slug")
+    title = (args.title or "").strip()
+    if not title:
+        title = args.slug.replace("-", " ").title()
+    _validate_len(title, MAX_TITLE_LEN, "Space title")
+    description = (args.description or "").strip()
+    if description:
+        _validate_len(description, MAX_DESC_LEN, "Space description")
+    
+    conn = _ensure(get_connection())
+    
+    # Check if space already exists
+    existing = conn.execute("SELECT id FROM spaces WHERE slug=?", (args.slug,)).fetchone()
+    if existing:
+        conn.close()
+        fail(f"Space '{args.slug}' already exists.")
+    
+    # Insert space into database
+    conn.execute(
+        "INSERT INTO spaces (slug, title, description) VALUES (?,?,?)",
+        (args.slug, title, description if description else None),
+    )
+    conn.commit()
+    
+    # Create space directory
+    space_dir = ensure_space_directory(args.slug)
+    
+    conn.close()
+    msg = f"Created space '{args.slug}'"
+    if title != args.slug:
+        msg += f" ({title})"
+    print(msg)
+
+
+def cmd_space_list(args):
+    """List all spaces with project and doc counts."""
+    conn = _ensure(get_connection())
+    
+    # Get all spaces
+    spaces = conn.execute("SELECT id, slug, title FROM spaces ORDER BY slug").fetchall()
+    
+    if not spaces:
+        conn.close()
+        print("No spaces found.")
+        return
+    
+    # Get dir path for reading docs
+    dir_path, _ = get_db_path()
+    
+    # Prepare rows for display
+    rows = []
+    for space in spaces:
+        space_id = space["id"]
+        slug = space["slug"]
+        title = space["title"]
+        
+        # Count projects in this space
+        proj_result = conn.execute("SELECT COUNT(*) as cnt FROM projects WHERE space_id=?", (space_id,)).fetchone()
+        proj_count = proj_result["cnt"] if proj_result else 0
+        
+        # Count docs (markdown files) in this space's directory
+        space_dir = os.path.join(dir_path, "spaces", slug)
+        doc_count = 0
+        if os.path.isdir(space_dir):
+            doc_count = len([f for f in os.listdir(space_dir) if f.endswith(".md")])
+        
+        # Mark default space
+        marker = " (default)" if slug == "default" else ""
+        rows.append((slug, title + marker, proj_count, doc_count))
+    
+    conn.close()
+    
+    # Display as table
+    print(f"{'SLUG':<20} {'TITLE':<30} {'PROJECTS':<10} {'DOCS'}")
+    print("-" * 70)
+    
+    # Sort: non-default spaces first, then default last
+    non_default = [r for r in rows if "(default)" not in r[1]]
+    default = [r for r in rows if "(default)" in r[1]]
+    sorted_rows = non_default + default
+    
+    for slug, title, proj_count, doc_count in sorted_rows:
+        print(f"{slug:<20} {title:<30} {proj_count:<10} {doc_count}")
+
+
+def cmd_space_show(args):
+    """Show details about a specific space."""
+    conn = _ensure(get_connection())
+    
+    # Get space details
+    space = conn.execute("SELECT id, slug, title, description, created_at, updated_at FROM spaces WHERE slug=?", (args.slug,)).fetchone()
+    if not space:
+        conn.close()
+        fail(f"Space '{args.slug}' not found.")
+    
+    space_id = space["id"]
+    title = space["title"]
+    description = space["description"]
+    created_at = space["created_at"]
+    updated_at = space["updated_at"]
+    
+    # Get projects in this space
+    projects = conn.execute("SELECT id, slug, title, status FROM projects WHERE space_id=? ORDER BY slug", (space_id,)).fetchall()
+    
+    # Get docs in this space
+    dir_path, _ = get_db_path()
+    space_dir = os.path.join(dir_path, "spaces", args.slug)
+    docs = []
+    if os.path.isdir(space_dir):
+        docs = sorted([f for f in os.listdir(space_dir) if f.endswith(".md")])
+    
+    conn.close()
+    
+    # Display space details
+    print(f"Space: {title}")
+    print(f"Slug:  {args.slug}")
+    if description:
+        print(f"Description: {description}")
+    print(f"Created: {created_at}")
+    print(f"Updated: {updated_at}")
+    print()
+    
+    # Display projects
+    print(f"Projects ({len(projects)}):")
+    if projects:
+        for proj in projects:
+            status = proj["status"]
+            marker = f" [{status}]" if status != "active" else ""
+            print(f"  - {proj['slug']:<30} {proj['title']}{marker}")
+    else:
+        print("  (none)")
+    print()
+    
+    # Display docs
+    print(f"Docs ({len(docs)}):")
+    if docs:
+        for doc in docs:
+            print(f"  - {doc}")
+    else:
+        print("  (none)")
+
+
+def cmd_space_update(args):
+    """Update a space's title and/or description."""
+    conn = _ensure(get_connection())
+    
+    # Get existing space
+    space = conn.execute("SELECT id, slug, title, description FROM spaces WHERE slug=?", (args.slug,)).fetchone()
+    if not space:
+        conn.close()
+        fail(f"Space '{args.slug}' not found.")
+    
+    updates = []
+    values = []
+    
+    # Update title if provided
+    if args.title is not None:
+        title = args.title.strip()
+        _validate_len(title, MAX_TITLE_LEN, "Space title")
+        updates.append("title=?")
+        values.append(title)
+    
+    # Update description if provided
+    if args.description is not None:
+        description = args.description.strip()
+        if description:
+            _validate_len(description, MAX_DESC_LEN, "Space description")
+            updates.append("description=?")
+            values.append(description)
+        else:
+            # Allow clearing description with empty string
+            updates.append("description=?")
+            values.append(None)
+    
+    if not updates:
+        conn.close()
+        fail(
+            "No updates provided.",
+            suggestions=["Use at least one of: `--title`, `--description`."],
+        )
+    
+    # Update the space
+    updates.append("updated_at=?")
+    values.append(_now())
+    values.append(space["id"])
+    
+    conn.execute(f"UPDATE spaces SET {', '.join(updates)} WHERE id=?", values)
+    conn.commit()
+    print(f"Updated space '{args.slug}'.")
+    conn.close()
+
+
+def cmd_space_delete(args):
+    """Delete a space, orphaning its projects (sets space_id to NULL) and removing docs on disk."""
+    conn = _ensure(get_connection())
+    
+    # Get space details
+    space = conn.execute("SELECT id, slug, title FROM spaces WHERE slug=?", (args.slug,)).fetchone()
+    if not space:
+        conn.close()
+        fail(f"Space '{args.slug}' not found.")
+    
+    space_id = space["id"]
+    
+    # Prevent deletion of default space
+    if args.slug == "default":
+        conn.close()
+        fail("Cannot delete the default space.")
+    
+    # Count projects in this space
+    proj_count_result = conn.execute("SELECT COUNT(*) as cnt FROM projects WHERE space_id=?", (space_id,)).fetchone()
+    proj_count = proj_count_result["cnt"] if proj_count_result else 0
+    
+    # Count docs (markdown files) in this space's directory
+    dir_path, _ = get_db_path()
+    space_dir = os.path.join(dir_path, "spaces", args.slug)
+    doc_count = 0
+    if os.path.isdir(space_dir):
+        doc_count = len([f for f in os.listdir(space_dir) if f.endswith(".md")])
+    
+    # Ask for confirmation
+    confirmation_message = f"This will delete the space and orphan {proj_count} projects. {doc_count} docs will be removed."
+    print(confirmation_message)
+    if not getattr(args, "force", False):
+        confirmation_input = input(f"Type the space slug to confirm: ").strip()
+        if confirmation_input != args.slug:
+            conn.close()
+            print("Deletion cancelled.")
+            return
+    
+    # Reassign all projects in this space to no space (orphan them)
+    conn.execute("UPDATE projects SET space_id = NULL WHERE space_id = ?", (space_id,))
+    
+    # Delete the space row
+    conn.execute("DELETE FROM spaces WHERE id=?", (space_id,))
+    conn.commit()
+    
+    # Delete the space directory from disk
+    if os.path.isdir(space_dir):
+        shutil.rmtree(space_dir)
+    
+    print(f"Deleted space '{args.slug}'. {proj_count} projects reassigned to no space.")
+    conn.close()
+
+
+def cmd_doc_add(args):
+    """Create a new document in a space."""
+    space = (args.space or "").strip()
+    title = (args.title or "").strip()
+    
+    if not space:
+        fail("Space slug is required.", suggestions=["Use: agentplan doc add <space> '<title>'"])
+    if not title:
+        fail("Document title is required.", suggestions=["Use: agentplan doc add <space> '<title>'"])
+    
+    # Validate that space exists
+    conn = _ensure(get_connection())
+    space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space,)).fetchone()
+    if not space_row:
+        conn.close()
+        fail(f"Space '{space}' not found.", suggestions=["Create it first with: agentplan space create <slug>"])
+    conn.close()
+    
+    # Slugify the title for the filename
+    slug = slugify(title)
+    
+    # Get space directory
+    space_dir = ensure_space_directory(space)
+    
+    # Build file path
+    file_path = os.path.join(space_dir, f"{slug}.md")
+    
+    # Check if file already exists
+    if os.path.exists(file_path):
+        fail(f"Document already exists at {file_path}", suggestions=["Use a different title or check the existing file."])
+    
+    # Determine content source and read content
+    content = ""
+    
+    if args.file:
+        # Mode 2: --file <path> = copy content from existing file
+        file_arg = os.path.expanduser(args.file)
+        if not os.path.isfile(file_arg):
+            fail(f"Source file not found: {file_arg}")
+        try:
+            with open(file_arg, "r", encoding="utf-8") as f:
+                content = f.read()
+        except IOError as e:
+            fail(f"Failed to read source file: {e}")
+    elif args.stdin:
+        # Mode 3: --stdin = read from stdin
+        try:
+            content = sys.stdin.read()
+        except IOError as e:
+            fail(f"Failed to read from stdin: {e}")
+    # else: Mode 1 = create empty file, no content needed
+    
+    # Warn if content exceeds 1MB
+    content_bytes = content.encode("utf-8")
+    if len(content_bytes) > 1024 * 1024:
+        print(f"Warning: document content exceeds 1MB ({len(content_bytes)} bytes)", file=sys.stderr)
+    
+    # Write file
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except IOError as e:
+        fail(f"Failed to write document: {e}")
+    
+    print(file_path)
+
+
+def cmd_doc_list(args):
+    """List all documents in a space."""
+    space = (args.space or "").strip()
+    
+    if not space:
+        fail("Space slug is required.", suggestions=["Use: agentplan doc list <space>"])
+    
+    # Validate that space exists
+    conn = _ensure(get_connection())
+    space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space,)).fetchone()
+    if not space_row:
+        conn.close()
+        fail(f"Space '{space}' not found.", suggestions=["Create it first with: agentplan space create <slug>"])
+    conn.close()
+    
+    # Get space directory
+    space_dir = get_space_directory(space)
+    
+    # List all .md files in the directory
+    docs = []
+    if os.path.isdir(space_dir):
+        for filename in sorted(os.listdir(space_dir)):
+            if filename.endswith(".md"):
+                file_path = os.path.join(space_dir, filename)
+                try:
+                    stat_info = os.stat(file_path)
+                    size_bytes = stat_info.st_size
+                    modified_timestamp = stat_info.st_mtime
+                    
+                    # Format size as human-readable (e.g., 4.2 KB)
+                    if size_bytes < 1024:
+                        size_str = f"{size_bytes} B"
+                    elif size_bytes < 1024 * 1024:
+                        size_str = f"{size_bytes / 1024:.1f} KB"
+                    else:
+                        size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+                    
+                    # Format modified date
+                    modified_date = datetime.fromtimestamp(modified_timestamp).strftime("%Y-%m-%d")
+                    
+                    docs.append((filename, size_str, modified_date))
+                except OSError:
+                    pass
+    
+    # Display results
+    if docs:
+        for filename, size_str, modified_date in docs:
+            print(f"  - {filename} ({size_str}, modified {modified_date})")
+    else:
+        print("(no documents)")
+
+
+def cmd_doc_show(args):
+    """Print raw markdown content of a document to stdout."""
+    space = (args.space or "").strip()
+    filename = (args.filename or "").strip()
+    
+    if not space:
+        fail("Space slug is required.", suggestions=["Use: agentplan doc show <space> <filename>"])
+    if not filename:
+        fail("Filename is required.", suggestions=["Use: agentplan doc show <space> <filename>"])
+    
+    # Validate that space exists
+    conn = _ensure(get_connection())
+    space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space,)).fetchone()
+    if not space_row:
+        conn.close()
+        fail(f"Space '{space}' not found.", suggestions=["Create it first with: agentplan space create <slug>"])
+    conn.close()
+    
+    # Get space directory
+    space_dir = os.path.realpath(get_space_directory(space))
+    
+    # Construct file path
+    file_path = os.path.realpath(os.path.join(space_dir, filename))
+    if not file_path.startswith(space_dir + os.sep):
+        fail("Invalid filename.", suggestions=["Filenames must not contain path traversal characters."])
+    
+    # Check if file exists
+    if not os.path.isfile(file_path):
+        fail(f"File not found: {filename}", suggestions=[f"Check the file exists in space '{space}' with: agentplan doc list {space}"])
+    
+    # Large file warning
+    file_size = os.path.getsize(file_path)
+    if file_size > 1_000_000 and not getattr(args, "force", False):
+        fail(f"File is large ({file_size} bytes). Use --force to display anyway.")
+    
+    # Read and print the file content
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            sys.stdout.write(f.read())
+    except IOError as e:
+        fail(f"Failed to read document: {e}")
+
+
+def cmd_doc_path(args):
+    """Print the absolute file path of a document to stdout."""
+    space = (args.space or "").strip()
+    filename = (args.filename or "").strip()
+    
+    if not space:
+        fail("Space slug is required.", suggestions=["Use: agentplan doc path <space> <filename>"])
+    if not filename:
+        fail("Filename is required.", suggestions=["Use: agentplan doc path <space> <filename>"])
+    
+    # Validate that space exists
+    conn = _ensure(get_connection())
+    space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space,)).fetchone()
+    if not space_row:
+        conn.close()
+        fail(f"Space '{space}' not found.", suggestions=["Create it first with: agentplan space create <slug>"])
+    conn.close()
+    
+    # Get space directory
+    space_dir = os.path.realpath(get_space_directory(space))
+    
+    # Construct file path
+    file_path = os.path.realpath(os.path.join(space_dir, filename))
+    if not file_path.startswith(space_dir + os.sep):
+        fail("Invalid filename.", suggestions=["Filenames must not contain path traversal characters."])
+    
+    # Check if file exists
+    if not os.path.isfile(file_path):
+        fail(f"File not found: {filename}", suggestions=[f"Check the file exists in space '{space}' with: agentplan doc list {space}"])
+    
+    # Print the absolute path
+    print(os.path.abspath(file_path))
+
+
+def cmd_doc_remove(args):
+    """Delete a document from a space."""
+    space = (args.space or "").strip()
+    filename = (args.filename or "").strip()
+    
+    if not space:
+        fail("Space slug is required.", suggestions=["Use: agentplan doc remove <space> <filename>"])
+    if not filename:
+        fail("Filename is required.", suggestions=["Use: agentplan doc remove <space> <filename>"])
+    
+    # Validate that space exists
+    conn = _ensure(get_connection())
+    space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space,)).fetchone()
+    if not space_row:
+        conn.close()
+        fail(f"Space '{space}' not found.", suggestions=["Create it first with: agentplan space create <slug>"])
+    conn.close()
+    
+    # Get space directory
+    space_dir = os.path.realpath(get_space_directory(space))
+    
+    # Construct file path
+    file_path = os.path.realpath(os.path.join(space_dir, filename))
+    if not file_path.startswith(space_dir + os.sep):
+        fail("Invalid filename.", suggestions=["Filenames must not contain path traversal characters."])
+    
+    # Check if file exists
+    if not os.path.isfile(file_path):
+        fail(f"File not found: {filename}", suggestions=[f"Check the file exists in space '{space}' with: agentplan doc list {space}"])
+    
+    # Ask for confirmation
+    if not getattr(args, "force", False):
+        confirmation_input = input(f"Delete document '{filename}'? Type the filename to confirm: ").strip()
+        if confirmation_input != filename:
+            print("Deletion cancelled.")
+            return
+    
+    # Delete the file
+    try:
+        os.remove(file_path)
+    except OSError as e:
+        fail(f"Failed to delete document: {e}")
+    
+    print(f"Deleted document '{filename}' from space '{space}'.")
 
 
 def cmd_ticket_add(args):
@@ -2358,12 +2900,29 @@ def cmd_next(args):
     conn = _ensure(get_connection())
     fmt = args.format or "compact"
     tag_filter = (args.tag or "").strip().lower()
+    
+    # Resolve space if provided
+    space_id = None
+    space_slug = getattr(args, "space", None)
+    if space_slug:
+        space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space_slug,)).fetchone()
+        if not space_row:
+            conn.close()
+            fail(f"Space '{space_slug}' does not exist.")
+        space_id = space_row[0]
+    
     if args.project:
         projects = [resolve_project(conn, args.project)]
     else:
-        projects = conn.execute("SELECT * FROM projects WHERE status='active' ORDER BY id").fetchall()
+        if space_id:
+            projects = conn.execute("SELECT * FROM projects WHERE status='active' AND space_id=? ORDER BY id", (space_id,)).fetchall()
+        else:
+            projects = conn.execute("SELECT * FROM projects WHERE status='active' ORDER BY id").fetchall()
     if not projects:
-        print("No active projects.")
+        msg = "No active projects."
+        if space_slug:
+            msg += f" in space '{space_slug}'."
+        print(msg)
         conn.close()
         sys.exit(1)
 
@@ -2422,14 +2981,89 @@ def cmd_status(args):
     conn = _ensure(get_connection())
     fmt = args.format or "full"
     tag_filter = (args.tag or "").strip().lower()
+    space_slug = getattr(args, "space", None)
+    
+    # Handle space + project conflict
+    if args.project and space_slug:
+        conn.close()
+        fail(
+            "Cannot specify both --project and --space.",
+            suggestions=["Choose either: `agentplan status <project>` or `agentplan status --space <space>`"],
+        )
+    
+    # Get space_id if space is provided
+    space_id = None
+    if space_slug:
+        space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space_slug,)).fetchone()
+        if not space_row:
+            conn.close()
+            fail(f"Space '{space_slug}' does not exist.")
+        space_id = space_row[0]
+    
     if args.project:
         projects = [resolve_project(conn, args.project)]
+    elif space_id:
+        # Get all active projects in the space
+        projects = conn.execute(
+            "SELECT * FROM projects WHERE status='active' AND space_id=? ORDER BY id",
+            (space_id,)
+        ).fetchall()
     else:
         projects = conn.execute("SELECT * FROM projects WHERE status='active' ORDER BY id").fetchall()
     if not projects:
-        print("No active projects.")
+        if space_slug:
+            print(f"No active projects in space '{space_slug}'.")
+        else:
+            print("No active projects.")
         conn.close()
         sys.exit(1)
+    
+    # If showing space-level status, compute aggregate stats
+    if space_id and not args.project:
+        all_space_tickets = []
+        all_space_done_count = 0
+        all_space_failed_count = 0
+        all_space_needs_review_count = 0
+        all_space_blocked_count = 0
+        
+        for p in projects:
+            p_tickets = conn.execute(
+                "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
+            ).fetchall()
+            all_space_tickets.extend(p_tickets)
+            all_space_done_count += sum(1 for t in p_tickets if t["status"] in ("done", "skipped"))
+            all_space_failed_count += sum(1 for t in p_tickets if t["status"] == "failed")
+            all_space_needs_review_count += sum(1 for t in p_tickets if t["status"] == "needs-review")
+            
+            p_done_nums = {t["num"] for t in p_tickets if t["status"] in ("done", "skipped")}
+            open_tickets = [t for t in p_tickets if t["status"] in ("pending", "in-progress")]
+            all_space_blocked_count += sum(1 for t in open_tickets if _is_blocked(t, p_done_nums))
+            all_space_blocked_count += sum(1 for t in p_tickets if t["status"] == "blocked")
+        
+        total_space_tickets = len(all_space_tickets)
+        
+        # Print aggregate status
+        _extra = ""
+        if all_space_failed_count:
+            _extra += f", {all_space_failed_count} failed"
+        if all_space_needs_review_count:
+            _extra += f", {all_space_needs_review_count} needs-review"
+        
+        print(f"📋 Space '{space_slug}': {all_space_done_count}/{total_space_tickets} done, {all_space_blocked_count} blocked{_extra}")
+        print(f"  Across {len(projects)} project(s)")
+        
+        # List individual projects for reference
+        for p in projects:
+            p_tickets = conn.execute(
+                "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
+            ).fetchall()
+            p_done = sum(1 for t in p_tickets if t["status"] in ("done", "skipped"))
+            p_total = len(p_tickets)
+            print(f"    - {p['slug']}: {p_done}/{p_total} done")
+        
+        conn.close()
+        return
+    
     for p in projects:
         all_tickets = conn.execute(
             "SELECT * FROM tickets WHERE project_id=? ORDER BY num", (p["id"],)
@@ -2557,24 +3191,53 @@ def cmd_status(args):
 
 def cmd_list(args):
     conn = _ensure(get_connection())
+    
+    # Resolve space if provided
+    space_id = None
+    space_slug = getattr(args, "space", None)
+    if space_slug:
+        space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space_slug,)).fetchone()
+        if not space_row:
+            conn.close()
+            fail(f"Space '{space_slug}' does not exist.")
+        space_id = space_row[0]
+    
     if getattr(args, "all", False):
-        projects = conn.execute("SELECT * FROM projects ORDER BY id").fetchall()
+        if space_id:
+            projects = conn.execute("SELECT * FROM projects WHERE space_id=? ORDER BY id", (space_id,)).fetchall()
+        else:
+            projects = conn.execute("SELECT * FROM projects ORDER BY id").fetchall()
         filt = "all"
     else:
         filt = args.status or "active"
         if filt == "all":
-            projects = conn.execute(
-                "SELECT * FROM projects WHERE status!='archived' ORDER BY id"
-            ).fetchall()
+            if space_id:
+                projects = conn.execute(
+                    "SELECT * FROM projects WHERE status!='archived' AND space_id=? ORDER BY id", (space_id,)
+                ).fetchall()
+            else:
+                projects = conn.execute(
+                    "SELECT * FROM projects WHERE status!='archived' ORDER BY id"
+                ).fetchall()
         else:
-            projects = conn.execute(
-                "SELECT * FROM projects WHERE status=? ORDER BY id", (filt,)
-            ).fetchall()
+            if space_id:
+                projects = conn.execute(
+                    "SELECT * FROM projects WHERE status=? AND space_id=? ORDER BY id", (filt, space_id)
+                ).fetchall()
+            else:
+                projects = conn.execute(
+                    "SELECT * FROM projects WHERE status=? ORDER BY id", (filt,)
+                ).fetchall()
     if not projects:
         if filt == "all":
-            print("No projects.")
+            msg = "No projects."
         else:
-            print(f"No {filt} projects.")
+            msg = f"No {filt} projects."
+        if space_slug:
+            msg += f" in space '{space_slug}'."
+        else:
+            msg += ""
+        print(msg if msg.endswith('.') else msg)
         conn.close()
         sys.exit(1)
     for p in projects:
@@ -2612,30 +3275,97 @@ def cmd_search(args):
         conn.close()
         fail("Search query cannot be empty.", suggestions=["Run `agentplan search <text>` with a keyword."])
 
-    like = f"%{query.lower()}%"
-    rows = conn.execute(
-        """
+    query_lower = query.lower()
+    like = f"%{query_lower}%"
+    
+    docs_results = []
+    tickets_results = []
+    
+    # Search docs unless --tickets-only is set
+    if not args.tickets_only:
+        dir_path, _ = get_db_path()
+        spaces_dir = os.path.join(dir_path, "spaces")
+        
+        if os.path.isdir(spaces_dir):
+            # Get all spaces or filter by --space flag
+            if args.space:
+                spaces_to_search = [args.space]
+            else:
+                spaces_to_search = [d for d in os.listdir(spaces_dir) if os.path.isdir(os.path.join(spaces_dir, d))]
+            
+            # Search docs in each space
+            for space_slug in spaces_to_search:
+                space_path = os.path.join(spaces_dir, space_slug)
+                if not os.path.isdir(space_path):
+                    continue
+                
+                for filename in os.listdir(space_path):
+                    if not filename.endswith(".md"):
+                        continue
+                    
+                    filepath = os.path.join(space_path, filename)
+                    try:
+                        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                            content = f.read()
+                            if query_lower in content.lower():
+                                docs_results.append({
+                                    "type": "doc",
+                                    "space_slug": space_slug,
+                                    "filename": filename,
+                                    "content": content[:200] + ("..." if len(content) > 200 else "")
+                                })
+                    except (IOError, OSError):
+                        pass
+    
+    # Search tickets unless --docs-only is set
+    if not args.docs_only:
+        query_sql = """
         SELECT
             p.slug AS project_slug,
+            p.space_id,
+            s.slug AS space_slug,
             t.num AS ticket_num,
             t.title AS ticket_title
         FROM tickets t
         JOIN projects p ON p.id = t.project_id
+        LEFT JOIN spaces s ON p.space_id = s.id
         WHERE
-            LOWER(t.title) LIKE ?
-            OR LOWER(COALESCE(t.description, '')) LIKE ?
-        ORDER BY p.slug, t.num
-        """,
-        (like, like),
-    ).fetchall()
-    if not rows:
-        print("No matching tickets found.")
-        conn.close()
-        sys.exit(1)
-
-    for row in rows:
-        print(f"{row['project_slug']} #{row['ticket_num']}: {row['ticket_title']}")
+            (LOWER(t.title) LIKE ? OR LOWER(COALESCE(t.description, '')) LIKE ?)
+        """
+        
+        if args.space:
+            query_sql += " AND s.slug = ? "
+            tickets_results = conn.execute(
+                query_sql + " ORDER BY p.slug, t.num",
+                (like, like, args.space)
+            ).fetchall()
+        else:
+            tickets_results = conn.execute(
+                query_sql + " ORDER BY p.slug, t.num",
+                (like, like)
+            ).fetchall()
+    
     conn.close()
+    
+    # Check if we have any results
+    if not docs_results and not tickets_results:
+        print("No matching docs or tickets found.")
+        sys.exit(1)
+    
+    # Display docs first
+    if docs_results:
+        print(f"📄 Docs ({len(docs_results)}):")
+        for doc in docs_results:
+            print(f"  {doc['space_slug']}: {doc['filename']}")
+        print()
+    
+    # Display tickets
+    if tickets_results:
+        print(f"🎫 Tickets ({len(tickets_results)}):")
+        for row in tickets_results:
+            space_info = f" [{row['space_slug']}]" if row['space_slug'] else ""
+            print(f"  {row['project_slug']} #{row['ticket_num']}: {row['ticket_title']}{space_info}")
+    
 
 
 def cmd_attach(args):
@@ -3621,10 +4351,51 @@ def build_parser():
     c.add_argument("--notes")
     c.add_argument("--dir", help="Link this project to a local directory")
     c.add_argument("--timeout", type=int, help="Default per-ticket timeout in seconds for this project")
+    c.add_argument("--space", default="default", help="Space to assign this project to (defaults to 'default')")
 
     prj = sub.add_parser("project", help="Update project settings")
     prj.add_argument("project", help="Project slug or name")
-    prj.add_argument("--dir", required=True, help="Set or update the linked local directory")
+    prj.add_argument("--dir", help="Set or update the linked local directory")
+    prj.add_argument("--space", help="Move project to a different space (by slug)")
+
+    sp = sub.add_parser("space", help="Manage spaces")
+    sps = sp.add_subparsers(dest="space_command")
+    sc = sps.add_parser("create")
+    sc.add_argument("slug", help="Space slug (lowercase, no spaces)")
+    sc.add_argument("--title", help="Display title for the space")
+    sc.add_argument("--description", help="Description of the space")
+    sl = sps.add_parser("list")
+    # No arguments for list command
+    sh = sps.add_parser("show")
+    sh.add_argument("slug", help="Space slug")
+    su = sps.add_parser("update")
+    su.add_argument("slug", help="Space slug")
+    su.add_argument("--title", help="New display title for the space")
+    su.add_argument("--description", help="New description for the space")
+    sd = sps.add_parser("delete")
+    sd.add_argument("slug", help="Space slug")
+    sd.add_argument("--force", action="store_true", help="Skip confirmation prompt")
+
+    doc = sub.add_parser("doc", help="Manage documents in spaces")
+    docs = doc.add_subparsers(dest="doc_command")
+    da = docs.add_parser("add", help="Create a new document")
+    da.add_argument("space", help="Space slug")
+    da.add_argument("title", help="Document title")
+    da.add_argument("--file", help="Copy content from existing file (--file <path>)")
+    da.add_argument("--stdin", action="store_true", help="Read content from stdin")
+    dl = docs.add_parser("list", help="List all documents in a space")
+    dl.add_argument("space", help="Space slug")
+    ds = docs.add_parser("show", help="Print raw markdown content of a document")
+    ds.add_argument("space", help="Space slug")
+    ds.add_argument("filename", help="Filename (e.g., 'my-doc.md')")
+    ds.add_argument("--force", action="store_true", help="Show even if file is large (>1MB)")
+    dp = docs.add_parser("path", help="Print the absolute file path of a document")
+    dp.add_argument("space", help="Space slug")
+    dp.add_argument("filename", help="Filename (e.g., 'my-doc.md')")
+    dr = docs.add_parser("remove", help="Delete a document from a space")
+    dr.add_argument("space", help="Space slug")
+    dr.add_argument("filename", help="Filename (e.g., 'my-doc.md')")
+    dr.add_argument("--force", action="store_true", help="Skip confirmation prompt")
 
     tp = sub.add_parser("ticket", help="Manage tickets")
     ts = tp.add_subparsers(dest="ticket_command")
@@ -3672,6 +4443,7 @@ def build_parser():
     n.add_argument("project", nargs="?")
     n.add_argument("--format", choices=["compact", "json"], default="compact")
     n.add_argument("--tag", help="Filter by a single tag")
+    n.add_argument("--space", help="Show next unblocked tickets from projects in a specific space")
 
     clm = sub.add_parser("claim", help="Atomically claim the next unblocked ticket in a project")
     clm.add_argument("project")
@@ -3686,13 +4458,18 @@ def build_parser():
     ss.add_argument("project", nargs="?")
     ss.add_argument("--format", choices=["compact", "full", "json"], default="full")
     ss.add_argument("--tag", help="Filter tickets by a single tag")
+    ss.add_argument("--space", help="Scope status to projects in a specific space (by slug)")
 
-    srch = sub.add_parser("search", help="Search ticket titles and descriptions across all projects")
+    srch = sub.add_parser("search", help="Search doc content and ticket titles/descriptions across all projects")
     srch.add_argument("query")
+    srch.add_argument("--space", help="Filter by space slug")
+    srch.add_argument("--docs-only", action="store_true", help="Search only doc content")
+    srch.add_argument("--tickets-only", action="store_true", help="Search only tickets")
 
     ls = sub.add_parser("list", help="List projects")
     ls.add_argument("--status", choices=["active", "completed", "paused", "abandoned", "archived", "all"], default="active")
     ls.add_argument("--all", action="store_true", help="Include archived projects")
+    ls.add_argument("--space", help="Filter projects by space slug")
 
     ar = sub.add_parser("archive", help="Archive a completed or abandoned project")
     ar.add_argument("project")
@@ -3896,6 +4673,22 @@ SUBTASK_DISPATCH = {
     "list": cmd_subtask_list,
 }
 
+SPACE_DISPATCH = {
+    "create": cmd_space_create,
+    "list": cmd_space_list,
+    "show": cmd_space_show,
+    "update": cmd_space_update,
+    "delete": cmd_space_delete,
+}
+
+DOC_DISPATCH = {
+    "add": cmd_doc_add,
+    "list": cmd_doc_list,
+    "show": cmd_doc_show,
+    "path": cmd_doc_path,
+    "remove": cmd_doc_remove,
+}
+
 ROLE_DISPATCH = {
     "list": cmd_role_list,
     "add": cmd_role_add,
@@ -3959,6 +4752,14 @@ def main():
             if not getattr(args, "subtask_command", None):
                 parser.parse_args(["subtask", "--help"])
             SUBTASK_DISPATCH[args.subtask_command](args)
+        elif args.command == "space":
+            if not getattr(args, "space_command", None):
+                parser.parse_args(["space", "--help"])
+            SPACE_DISPATCH[args.space_command](args)
+        elif args.command == "doc":
+            if not getattr(args, "doc_command", None):
+                parser.parse_args(["doc", "--help"])
+            DOC_DISPATCH[args.doc_command](args)
         elif args.command == "role":
             if not getattr(args, "role_command", None):
                 parser.parse_args(["role", "--help"])

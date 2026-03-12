@@ -7,6 +7,17 @@ AgentPlan is the task board system for AI work sessions.
 - AgentPlan owns planning state, dependencies, and ticket lifecycle.
 - Use AgentPlan as the shared backlog, not as the execution runtime.
 
+## Before starting work
+
+When you claim a ticket, **always check if the project belongs to a space**:
+1. Run: `agentplan status <project>` and look for space association
+2. If the project has a space, list the docs: `agentplan doc list <space>`
+3. **Read the relevant docs first** (rules, vision, architecture, design docs)
+   - Run: `agentplan doc show <space> <doc-filename>` to read each doc
+4. Understand the project's context and constraints from these docs before claiming or starting work
+
+This ensures you're executing tickets with full knowledge of the project's vision, architectural decisions, and rules. Spaces provide a lightweight way to co-locate documentation with projects.
+
 ## Core workflow (always follow)
 
 1. **Before starting implementation:** claim work atomically.
