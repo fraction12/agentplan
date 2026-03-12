@@ -1111,6 +1111,7 @@ def monitor_process(pid: int, project_slug: str, ticket_num: int, timeout_sec: i
 
 
 def cmd_monitor_process(args):
+    """Monitor a running process and track its status against a ticket."""
     result = monitor_process(args.pid, args.project, args.ticket_id, timeout_sec=args.timeout)
     print(json.dumps(result))
 
@@ -1245,6 +1246,7 @@ def _monitor_chain_ticket(conn, project, ticket, pid, timeout_sec):
 
 
 def cmd_chain(args):
+    """Execute a chain of tickets in sequence via configured agents."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     chain_timeout_override = _validate_timeout_sec(getattr(args, "timeout", None))
@@ -1486,6 +1488,7 @@ def cmd_chain(args):
     conn.close()
 
 def cmd_context(args):
+    """Display ticket context and commands for agent execution."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
 
