@@ -22,6 +22,7 @@ from agentplan.db import (
     delete_agent,
     get_chain_state,
     get_connection,
+    get_db_path,
     get_space_directory,
     has_cycle,
     list_agents,
@@ -217,10 +218,32 @@ def _group_projects_by_space(conn, projects):
     return spaces_list
 
 
+def _safe_space_dir(space_slug):
+    """Return the realpath for a space dir, or None if it escapes the data directory."""
+    data_dir, _ = get_db_path()
+    safe_root = os.path.realpath(os.path.join(data_dir, "spaces"))
+    # Re-derive slug through the safe root (don't pass user input to get_space_directory)
+    candidate = os.path.realpath(os.path.join(safe_root, space_slug))
+    if not candidate.startswith(safe_root + os.sep) and candidate != safe_root:
+        return None
+    return candidate
+
+
+def _safe_doc_path(space_slug, filename):
+    """Return (space_dir, fpath) for a doc, or (None, None) if path escapes containment."""
+    space_dir = _safe_space_dir(space_slug)
+    if space_dir is None:
+        return None, None
+    fpath = os.path.realpath(os.path.join(space_dir, filename))
+    if not fpath.startswith(space_dir + os.sep):
+        return None, None
+    return space_dir, fpath
+
+
 def _count_space_docs(space_slug):
     """Count markdown files in space directory."""
-    space_dir = get_space_directory(space_slug)
-    if not os.path.isdir(space_dir):
+    space_dir = _safe_space_dir(space_slug)
+    if space_dir is None or not os.path.isdir(space_dir):
         return 0
     try:
         return sum(1 for f in os.listdir(space_dir) if f.endswith(".md"))
@@ -230,10 +253,8 @@ def _count_space_docs(space_slug):
 
 def _list_space_docs(space_slug):
     """List markdown files in a space directory with metadata."""
-    space_dir = os.path.realpath(get_space_directory(space_slug))
-    # Containment: space_dir must be inside the agentplan data directory
-    data_dir, _ = get_db_path()
-    if not space_dir.startswith(os.path.realpath(data_dir) + os.sep):
+    space_dir = _safe_space_dir(space_slug)
+    if space_dir is None:
         return []
     docs = []
     if not os.path.isdir(space_dir):
@@ -243,7 +264,6 @@ def _list_space_docs(space_slug):
             if not fname.endswith(".md"):
                 continue
             fpath = os.path.realpath(os.path.join(space_dir, fname))
-            # Containment check: resolved path must stay inside space_dir
             if not fpath.startswith(space_dir + os.sep):
                 continue
             try:
@@ -956,9 +976,8 @@ def create_app():
         if not filename.endswith(".md"):
             abort(400)
 
-        space_dir = os.path.realpath(get_space_directory(slug))
-        fpath = os.path.realpath(os.path.join(space_dir, filename))
-        if not fpath.startswith(space_dir + os.sep):
+        space_dir, fpath = _safe_doc_path(slug, filename)
+        if space_dir is None or fpath is None:
             abort(400)
         if not os.path.isfile(fpath):
             abort(404)
@@ -1000,15 +1019,10 @@ def create_app():
         if not fname.endswith(".md"):
             fname += ".md"
 
-        space_dir = os.path.realpath(get_space_directory(slug))
-        # Validate space_dir is inside the agentplan data directory
-        data_dir, _ = get_db_path()
-        if not space_dir.startswith(os.path.realpath(data_dir) + os.sep):
-            return {"error": "Invalid space"}, 400
-        os.makedirs(space_dir, exist_ok=True)
-        fpath = os.path.realpath(os.path.join(space_dir, fname))
-        if not fpath.startswith(space_dir + os.sep):
+        space_dir, fpath = _safe_doc_path(slug, fname)
+        if space_dir is None or fpath is None:
             return {"error": "Invalid filename"}, 400
+        os.makedirs(space_dir, exist_ok=True)
 
         if os.path.exists(fpath):
             return {"error": "File already exists"}, 409
@@ -1042,13 +1056,8 @@ def create_app():
         if not filename.endswith(".md"):
             abort(400)
 
-        space_dir = os.path.realpath(get_space_directory(slug))
-        # Containment: space_dir must be inside the agentplan data directory
-        data_dir, _ = get_db_path()
-        if not space_dir.startswith(os.path.realpath(data_dir) + os.sep):
-            abort(400)
-        fpath = os.path.realpath(os.path.join(space_dir, filename))
-        if not fpath.startswith(space_dir + os.sep):
+        space_dir, fpath = _safe_doc_path(slug, filename)
+        if space_dir is None or fpath is None:
             abort(400)
         if not os.path.isfile(fpath):
             abort(404)
