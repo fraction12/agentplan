@@ -70,6 +70,8 @@ MAX_AGENT_LEN = 100
 MAX_LOG_ENTRY_LEN = 4000
 MAX_TAG_LEN = 500
 MAX_SLUG_LEN = 60  # already enforced via slugify
+MAX_LABEL_LEN = 200
+MAX_LOCATION_LEN = 2000
 
 
 AUTO_DETECT_TOOL_COMMANDS = {
@@ -3375,6 +3377,8 @@ def cmd_search(args):
 
 
 def cmd_attach(args):
+    _validate_len(args.label, MAX_LABEL_LEN, "Attachment label")
+    _validate_len(args.location, MAX_LOCATION_LEN, "Attachment location")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     ticket_id = None
