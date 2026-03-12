@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read-only web dashboard for agentplan projects and tickets."""
 
+import html
 import json
 import logging
 import os
@@ -230,6 +231,10 @@ def _count_space_docs(space_slug):
 def _list_space_docs(space_slug):
     """List markdown files in a space directory with metadata."""
     space_dir = os.path.realpath(get_space_directory(space_slug))
+    # Containment: space_dir must be inside the agentplan data directory
+    data_dir, _ = get_db_path()
+    if not space_dir.startswith(os.path.realpath(data_dir) + os.sep):
+        return []
     docs = []
     if not os.path.isdir(space_dir):
         return docs
@@ -1014,9 +1019,9 @@ def create_app():
         except (OSError, IOError):
             return {"error": "Failed to create file"}, 500
 
-        # Sanitize slug and fname for response — both already went through slugify()
-        safe_slug = slug.replace("/", "").replace("\\", "")
-        safe_fname = fname.replace("/", "").replace("\\", "")
+        # Sanitize for response — html.escape prevents any reflected XSS
+        safe_slug = html.escape(slug, quote=True)
+        safe_fname = html.escape(fname, quote=True)
         return {"ok": True, "filename": safe_fname, "redirect": f"/space/{safe_slug}/doc/{safe_fname}"}
 
     @app.route("/api/space/<slug>/doc/<filename>", methods=["POST"])
@@ -1038,6 +1043,10 @@ def create_app():
             abort(400)
 
         space_dir = os.path.realpath(get_space_directory(slug))
+        # Containment: space_dir must be inside the agentplan data directory
+        data_dir, _ = get_db_path()
+        if not space_dir.startswith(os.path.realpath(data_dir) + os.sep):
+            abort(400)
         fpath = os.path.realpath(os.path.join(space_dir, filename))
         if not fpath.startswith(space_dir + os.sep):
             abort(400)
