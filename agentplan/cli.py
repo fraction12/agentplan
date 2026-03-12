@@ -1728,6 +1728,7 @@ def cmd_auto_tag(args):
 
 
 def cmd_init(args):
+    """Initialize the agentplan database and auto-detect installed AI tools."""
     dir_path, db_path = get_db_path()
     os.makedirs(dir_path, exist_ok=True)
     conn = get_connection(db_path)
@@ -1742,6 +1743,7 @@ def cmd_init(args):
 
 
 def cmd_create(args):
+    """Create a new project with optional inline tickets and directory link."""
     _validate_len(args.title, MAX_TITLE_LEN, "Project title")
     _validate_len(args.notes, MAX_NOTES_LEN, "Notes")
     timeout_sec = _validate_timeout_sec(getattr(args, "timeout", None))
@@ -2327,6 +2329,7 @@ def cmd_doc_remove(args):
 
 
 def cmd_ticket_add(args):
+    """Add a new ticket to a project with optional description, tags, priority, and dependencies."""
     _validate_len(args.title, MAX_TITLE_LEN, "Ticket title")
     _validate_len(args.desc, MAX_DESC_LEN, "Description")
     _validate_len(args.notes, MAX_NOTES_LEN, "Notes")
@@ -2790,6 +2793,7 @@ def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
 
 
 def cmd_claim(args):
+    """Atomically claim the next unblocked ticket in a project for an agent."""
     _validate_len(getattr(args, "agent", None), MAX_AGENT_LEN, "Agent name")
     timeout = getattr(args, "timeout", None)
     if timeout is not None and timeout <= 0:
@@ -2897,6 +2901,7 @@ def cmd_ticket_list(args):
 
 
 def cmd_next(args):
+    """Show next unblocked tickets ready for work (dependencies satisfied)."""
     conn = _ensure(get_connection())
     fmt = args.format or "compact"
     tag_filter = (args.tag or "").strip().lower()
@@ -2978,6 +2983,7 @@ def cmd_next(args):
 
 
 def cmd_status(args):
+    """Show status of a project or space with ticket breakdown and progress."""
     conn = _ensure(get_connection())
     fmt = args.format or "full"
     tag_filter = (args.tag or "").strip().lower()
