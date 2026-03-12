@@ -229,7 +229,7 @@ def _count_space_docs(space_slug):
 
 def _list_space_docs(space_slug):
     """List markdown files in a space directory with metadata."""
-    space_dir = get_space_directory(space_slug)
+    space_dir = os.path.realpath(get_space_directory(space_slug))
     docs = []
     if not os.path.isdir(space_dir):
         return docs
@@ -237,7 +237,10 @@ def _list_space_docs(space_slug):
         for fname in sorted(os.listdir(space_dir)):
             if not fname.endswith(".md"):
                 continue
-            fpath = os.path.join(space_dir, fname)
+            fpath = os.path.realpath(os.path.join(space_dir, fname))
+            # Containment check: resolved path must stay inside space_dir
+            if not fpath.startswith(space_dir + os.sep):
+                continue
             try:
                 stat = os.stat(fpath)
                 docs.append({
@@ -993,21 +996,28 @@ def create_app():
             fname += ".md"
 
         space_dir = os.path.realpath(get_space_directory(slug))
+        # Validate space_dir is inside the agentplan data directory
+        data_dir, _ = get_db_path()
+        if not space_dir.startswith(os.path.realpath(data_dir) + os.sep):
+            return {"error": "Invalid space"}, 400
         os.makedirs(space_dir, exist_ok=True)
         fpath = os.path.realpath(os.path.join(space_dir, fname))
         if not fpath.startswith(space_dir + os.sep):
             return {"error": "Invalid filename"}, 400
 
         if os.path.exists(fpath):
-            return {"error": f"File {fname} already exists"}, 409
+            return {"error": "File already exists"}, 409
 
         try:
             with open(fpath, "w", encoding="utf-8") as f:
                 f.write(f"# {title}\n")
-        except (OSError, IOError) as e:
-            return {"error": str(e)}, 500
+        except (OSError, IOError):
+            return {"error": "Failed to create file"}, 500
 
-        return {"ok": True, "filename": fname, "redirect": f"/space/{slug}/doc/{fname}"}
+        # Sanitize slug and fname for response — both already went through slugify()
+        safe_slug = slug.replace("/", "").replace("\\", "")
+        safe_fname = fname.replace("/", "").replace("\\", "")
+        return {"ok": True, "filename": safe_fname, "redirect": f"/space/{safe_slug}/doc/{safe_fname}"}
 
     @app.route("/api/space/<slug>/doc/<filename>", methods=["POST"])
     @_require_local_origin
@@ -1044,8 +1054,8 @@ def create_app():
         try:
             with open(fpath, "w", encoding="utf-8") as f:
                 f.write(content)
-        except (OSError, IOError) as e:
-            return {"error": str(e)}, 500
+        except (OSError, IOError):
+            return {"error": "Failed to save file"}, 500
 
         return {"ok": True}
 
