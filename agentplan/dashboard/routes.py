@@ -783,8 +783,8 @@ def _project_board_payload(slug, priority_filter="", tag_filter=""):
         if _ticket_matches(ticket, priority_filter, tag_filter):
             grouped[group_key].append(ticket)
 
-    done_count = sum(1 for row in rows if row["status"] in ("done", "skipped"))
-    total_count = len(rows)
+    done_count = len(grouped.get("done", []))
+    total_count = sum(len(grouped[s]) for s in KANBAN_STATUS_ORDER)
 
     return {
         "project": {"slug": project["slug"], "title": project["title"]},
