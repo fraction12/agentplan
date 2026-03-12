@@ -14,25 +14,13 @@
 
 agentplan is **Asana for AI agents** — a shared task board that AI tools can use as the source of truth for work.
 
-- Persistent project + ticket queue
-- Dependency tracking with automatic unblocking
+- **Spaces & Docs** — organize projects into spaces with markdown documents
+- Persistent project + ticket queue with dependency tracking
 - Atomic ticket claiming (safe for concurrent agents)
-- Web dashboard for visibility
+- Model tier routing (`light` / `standard` / `reasoning` / `auto`)
+- Web dashboard with live SSE updates
 - Local-first SQLite storage
 - Built-in plugins for Claude Code and Codex
-
-## What AgentPlan Is
-
-AgentPlan is the coordination layer for AI work.
-
-Use it to:
-- create a project for a repo
-- break work into small tickets
-- track dependencies and progress
-- let agents claim the next unblocked task
-- watch the work move in the dashboard
-
-AgentPlan is not the main execution engine. Claude Code, Codex, and other tools do the planning and implementation work. AgentPlan keeps the shared backlog, ticket state, and history in one place.
 
 ## Start in 3 steps
 
@@ -60,7 +48,7 @@ agentplan setup codex     # Codex CLI
 4. Have the AI tool work ticket-by-ticket using `agentplan next` and `agentplan claim`.
 5. Use the dashboard to monitor progress and inspect ticket state.
 
-Short version: plan in the AI tool, track in AgentPlan, execute through the AI tool's own loop or scheduled workflow.
+Short version: plan in the AI tool, track in AgentPlan, execute through the AI tool's own loop.
 
 ## Quickstart
 
@@ -68,27 +56,48 @@ Short version: plan in the AI tool, track in AgentPlan, execute through the AI t
 # Create a project linked to the current repo
 agentplan create "Ship v1" --dir .
 
-# Add a few tickets (with model tiers for AI routing)
+# Add tickets with model tiers for AI routing
 agentplan ticket add ship-v1 "Set up database" --priority high --model standard
 agentplan ticket add ship-v1 "Implement API" --priority high --model standard
 agentplan ticket add ship-v1 "Write tests" --priority medium --model light
 
-# Add dependencies where needed
+# Add dependencies
 agentplan depend ship-v1 2 --on 1
 agentplan depend ship-v1 3 --on 2
 
-# See what's ready to work on
-agentplan next ship-v1
-
-# Claim the next unblocked ticket
-agentplan claim ship-v1
-
-# Mark it done
+# Work through tickets
+agentplan next ship-v1       # See what's ready
+agentplan claim ship-v1      # Atomically claim the next one
 agentplan ticket done ship-v1 1
 
 # Check progress
 agentplan status ship-v1
 ```
+
+## Spaces & Docs
+
+Spaces organize projects and documents into logical groups. Documents are plain markdown files on disk — no database overhead, no lock-in.
+
+```bash
+# Create a space
+agentplan space create "Backend" --desc "API and data layer"
+
+# Move a project into a space
+agentplan project ship-v1 --space backend
+
+# Add documents to a space
+agentplan doc add backend "Architecture" --content "# Architecture\n\nSystem design notes."
+agentplan doc add backend "Runbook"
+
+# List and read docs
+agentplan doc list backend
+agentplan doc show backend architecture.md
+
+# Search across docs and tickets
+agentplan search "database migration"
+```
+
+Every project belongs to a space. Unassigned projects go to the `default` space automatically. Documents live at `~/.agentplan/spaces/<slug>/*.md` — edit them with any tool.
 
 ## Model tiers
 
@@ -107,11 +116,7 @@ agentplan ticket add my-project "Build auth module" --model standard
 agentplan ticket add my-project "Design plugin architecture" --model reasoning
 ```
 
-When an agent claims a ticket, the tier is shown in the output. Agents use this to route to the appropriate model or adjust execution depth. The tier is also visible on kanban cards and ticket detail in the dashboard.
-
 ## AI tool setup
-
-The `setup` command installs plugins from the pip package, so the AI tool can understand the AgentPlan workflow without cloning anything extra:
 
 ```bash
 # Claude Code — registers as a local marketplace plugin
@@ -123,21 +128,21 @@ agentplan setup codex
 
 After setup, restart the AI tool.
 
-### Claude Code flow
+### Claude Code
 
 - `/agentplan:plan` creates a project and tickets from the conversation
 - `/agentplan:status` shows project progress
-- `/agentplan:loop` generates the prompt/instructions for Claude's own loop or cron-driven workflow
+- `/agentplan:loop` generates instructions for Claude's own loop or cron-driven workflow
 
-### Codex flow
+### Codex
 
-- use the installed `agentplan` skill
-- create a project, add tickets, and work from `agentplan next` / `agentplan claim`
-- keep AgentPlan as the shared backlog if Claude and Codex are both working on the same repo
+- Use the installed `agentplan` skill
+- Create a project, add tickets, and work from `agentplan next` / `agentplan claim`
+- Share the backlog if Claude and Codex are both working on the same repo
 
-## Core CLI commands
+## CLI reference
 
-### Project lifecycle
+### Projects
 
 | Command | Description |
 |---------|-------------|
@@ -148,20 +153,35 @@ After setup, restart the AI tool.
 | `agentplan archive <project>` | Archive a project |
 | `agentplan remove <project>` | Permanently remove a project |
 
-### Ticket workflow
+### Tickets
 
 | Command | Description |
 |---------|-------------|
-| `agentplan ticket add <project> "title"` | Add a ticket (`--model light\|standard\|reasoning\|auto`) |
+| `agentplan ticket add <project> "title"` | Add a ticket (`--model`, `--priority`) |
 | `agentplan ticket list <project>` | List tickets |
 | `agentplan ticket done <project> <num>` | Mark ticket done |
 | `agentplan ticket skip <project> <num>` | Skip a ticket |
 | `agentplan ticket block <project> <num>` | Block a ticket |
 | `agentplan ticket fail <project> <num>` | Mark ticket failed |
-| `agentplan ticket edit <project> <num>` | Edit ticket details (title, desc, priority, model) |
+| `agentplan ticket edit <project> <num>` | Edit ticket details |
 | `agentplan next <project>` | Show next unblocked tickets |
 | `agentplan claim <project>` | Atomically claim the next unblocked ticket |
-| `agentplan search <query>` | Search tickets across all projects |
+| `agentplan search <query>` | Search across all projects and docs |
+
+### Spaces & Docs
+
+| Command | Description |
+|---------|-------------|
+| `agentplan space create "name"` | Create a space |
+| `agentplan space list` | List all spaces |
+| `agentplan space show <slug>` | Show space details, projects, and docs |
+| `agentplan space update <slug>` | Update space title or description |
+| `agentplan space delete <slug>` | Delete a space (projects become unassigned) |
+| `agentplan doc add <space> "title"` | Create a markdown document |
+| `agentplan doc list <space>` | List documents in a space |
+| `agentplan doc show <space> <file>` | Print document content |
+| `agentplan doc path <space> <file>` | Print absolute file path |
+| `agentplan doc remove <space> <file>` | Delete a document |
 
 ### Dependencies, logs, and notes
 
@@ -185,7 +205,7 @@ After setup, restart the AI tool.
 ## Dashboard
 
 ```bash
-# install with dashboard extras (requires Flask)
+# Install with dashboard extras (requires Flask)
 pip install "agentplan[dashboard]"
 
 agentplan dashboard
@@ -193,24 +213,18 @@ agentplan dashboard
 agentplan dashboard --background
 ```
 
-Open `http://127.0.0.1:5001` to view projects, ticket board, and activity. Create and edit tickets directly from the UI.
+Open `http://127.0.0.1:5001` to view projects, kanban board, and activity feed. The dashboard supports:
 
-## Advanced workflows
-
-AgentPlan also includes advanced and power-user surfaces for orchestration, CI, and other automation-heavy workflows. Those are intentionally de-emphasized in the main UX.
-
-If you are evaluating AgentPlan for the first time, start with:
-- project creation
-- tickets and dependencies
-- `next` and `claim`
-- dashboard visibility
-- Claude/Codex plugin flow
+- Live updates via SSE (server-sent events)
+- Space navigation with project grouping
+- Document viewing and editing
+- Ticket creation and status changes
+- Model tier badges on kanban cards
 
 ## Security + docs
 
 - Security policy: `docs/security/security.md`
 - Privacy: `docs/security/privacy.md`
-- Canonical docs alignment baseline: `docs/docs-alignment-canonical-story.md`
 
 ## License
 

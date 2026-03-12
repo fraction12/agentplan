@@ -36,8 +36,10 @@ Plan in the AI tool. Track in AgentPlan. Execute through the AI tool's own loop 
 
 These concepts should be front-and-center:
 - shared backlog for AI agents
+- spaces and docs for organizing projects with context
 - local-first task tracking
 - dependency-aware ticket queue
+- model tier routing (light/standard/reasoning/auto)
 - atomic claim to avoid duplicate work
 - dashboard visibility
 - works across Claude Code, Codex, and other tools
@@ -58,6 +60,7 @@ Use these phrases consistently:
 - "shared task board for AI tools"
 - "source of truth for task state"
 - "plan in Claude/Codex, track in AgentPlan"
+- "organize with spaces and docs"
 - "claim the next unblocked ticket"
 - "use the dashboard for visibility"
 
