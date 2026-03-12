@@ -10,6 +10,27 @@ RowLike = Mapping[str, Any]
 
 
 @dataclass(frozen=True)
+class Space:
+    id: int
+    slug: str
+    title: str
+    description: Optional[str]
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def from_row(cls, row: RowLike) -> "Space":
+        return cls(
+            id=int(row["id"]),
+            slug=str(row["slug"]),
+            title=str(row["title"]),
+            description=row["description"],
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
+
+
+@dataclass(frozen=True)
 class Project:
     id: int
     slug: str
@@ -144,4 +165,4 @@ class Role:
         )
 
 
-__all__ = ["Project", "Ticket", "Subtask", "HistoryEntry", "Role", "RowLike"]
+__all__ = ["Space", "Project", "Ticket", "Subtask", "HistoryEntry", "Role", "RowLike"]

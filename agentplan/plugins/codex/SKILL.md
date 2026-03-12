@@ -22,11 +22,23 @@ AgentPlan stores:
 - claim state
 - progress history
 
+## Before starting work
+
+When you claim a ticket, **always check if the project belongs to a space**:
+1. Run: `agentplan status <project>` and look for space association
+2. If the project has a space, list the docs: `agentplan doc list <space>`
+3. **Read the relevant docs first** (rules, vision, architecture, design docs)
+   - Run: `agentplan doc show <space> <doc-filename>` to read each doc
+4. Understand the project's context and constraints from these docs before claiming or starting work
+
+This ensures you're executing tickets with full knowledge of the project's vision, architectural decisions, and rules. Spaces provide a lightweight way to co-locate documentation with projects.
+
 ## Core workflow
 1. **Before starting:** `agentplan claim <project>` (atomic lock)
-2. **Do the work** for the claimed ticket
-3. **When done:** `agentplan ticket done <project> <num>` + `agentplan log <project> --ticket <num> "summary"`
-4. **Repeat** until `agentplan next <project>` returns nothing
+2. **Check the space:** Review space docs as described above
+3. **Do the work** for the claimed ticket
+4. **When done:** `agentplan ticket done <project> <num>` + `agentplan log <project> --ticket <num> "summary"`
+5. **Repeat** until `agentplan next <project>` returns nothing
 
 ## Creating a project
 ```bash

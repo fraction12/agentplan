@@ -523,6 +523,10 @@
 
   function applyBoardUpdate(payload) {
     if (!payload || !payload.grouped) return;
+    if (payload.done_count != null && payload.total_count != null) {
+      const counter = document.getElementById("project-done-counter");
+      if (counter) counter.textContent = `${payload.done_count}/${payload.total_count} done`;
+    }
     const allIncoming = new Map();
     cfg.statusOrder.forEach((status) => {
       (payload.grouped[status] || []).forEach((ticket) => allIncoming.set(String(ticket.num), { status, ticket }));

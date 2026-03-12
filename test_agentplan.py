@@ -861,7 +861,7 @@ def test_search_no_matches_exits_one_with_message():
     out, err, code = cli("search", "does-not-exist")
     assert code == 1
     assert err == ""
-    assert "No matching tickets found." in out
+    assert "No matching docs or tickets found." in out
 
 
 # ---------------------------------------------------------------------------
@@ -1223,36 +1223,23 @@ def test_dashboard_home_project_menu_is_outside_project_link():
     assert shell_html.index('class="project-card-menu"') < shell_html.index('class="project-link"')
 
 
-def test_dashboard_home_groups_projects_by_status_and_shows_status_badges():
+def test_dashboard_home_groups_projects_by_space_and_shows_badges():
     from agentplan.dashboard import app
 
     cli("create", "Web Home Active")
     cli("create", "Web Home Completed")
-    cli("create", "Web Home Closed")
-    cli("create", "Web Home Archived")
     cli("close", "web-home-completed")
-    cli("close", "web-home-closed", "--abandon")
-    cli("close", "web-home-archived")
-    cli("archive", "web-home-archived")
 
     client = app.test_client()
     resp = client.get("/")
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "Active Projects" in body
-    assert "Completed Projects" in body
-    assert "Closed Projects" in body
-    assert "Archived Projects" in body
-    assert 'data-status-section="archived"' in body
+    # Projects are grouped by space (default space)
+    assert 'data-space-slug="default"' in body
+    assert 'data-section-key="default"' in body
     assert "status-active" in body
     assert "status-completed" in body
-    assert "status-abandoned" in body
-    assert "status-archived" in body
-    assert ">Active<" in body
-    assert ">Completed<" in body
-    assert ">Closed<" in body
-    assert ">Archived<" in body
     assert "dot-breakdown" not in body
     assert 'id="show-completed"' not in body
 
@@ -1270,17 +1257,16 @@ def test_dashboard_home_sections_are_collapsible():
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'data-section-toggle' in body
-    assert 'data-section-key="active"' in body
-    assert 'data-section-key="completed"' in body
-    assert 'aria-expanded="true"' in body
-    assert 'aria-expanded="false"' in body
+    assert 'data-section-key="default"' in body
+    assert 'data-space-slug="default"' in body
+    assert 'aria-expanded=' in body
     assert 'sectionStateStorageKey' in body
     assert 'localStorage?.setItem' in body
     assert 'function setSectionExpanded(sectionKey, expanded)' in body
     assert 'grid.hidden = !expanded;' in body
 
 
-def test_dashboard_home_shows_archived_section_even_when_empty():
+def test_dashboard_home_shows_default_space_section():
     from agentplan.dashboard import app
 
     cli("create", "Only Active Home")
@@ -1290,9 +1276,8 @@ def test_dashboard_home_shows_archived_section_even_when_empty():
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'data-status-section="archived"' in body
-    assert "Archived Projects" in body
-    assert "No archived projects yet." in body
+    assert 'data-space-slug="default"' in body
+    assert "Only Active Home" in body
 
 
 def test_dashboard_home_hides_close_action_for_completed_projects():
@@ -4623,3 +4608,228 @@ class TestModelTier:
         finally:
             if os.path.exists(db_path):
                 os.remove(db_path)
+
+
+# ---------------------------------------------------------------------------
+# Ticket 30: Search across docs and tickets
+# ---------------------------------------------------------------------------
+
+def test_search_returns_both_docs_and_tickets_by_default():
+    """Search should return both docs and tickets, docs shown first."""
+    cli("create", "Search Both Project")
+    cli("ticket", "add", "search-both-project", "Database migration")
+    cli("space", "create", "docs-space")
+    
+    # Create and write a doc with specific content
+    dir_path = "/tmp/spaces/docs-space"
+    os.makedirs(dir_path, exist_ok=True)
+    doc_path = Path(dir_path) / "database-schema.md"
+    doc_path.write_text("This is about database optimization.", encoding="utf-8")
+    
+    out, err, code = cli("search", "database")
+    assert code == 0, err
+    assert "📄 Docs" in out
+    assert "🎫 Tickets" in out
+    assert "database-schema.md" in out
+    assert "Database migration" in out
+    
+    # Verify docs appear before tickets
+    docs_pos = out.index("📄 Docs")
+    tickets_pos = out.index("🎫 Tickets")
+    assert docs_pos < tickets_pos
+
+
+def test_search_docs_only_flag_excludes_tickets():
+    """--docs-only should return only docs, not tickets."""
+    cli("create", "Docs Only Project")
+    cli("ticket", "add", "docs-only-project", "Database migration")
+    cli("space", "create", "docs-only-space")
+    
+    dir_path = "/tmp/spaces/docs-only-space"
+    os.makedirs(dir_path, exist_ok=True)
+    doc_path = Path(dir_path) / "database-schema.md"
+    doc_path.write_text("This is about database optimization.", encoding="utf-8")
+    
+    out, err, code = cli("search", "database", "--docs-only")
+    assert code == 0, err
+    assert "📄 Docs" in out
+    assert "🎫 Tickets" not in out
+    assert "database-schema.md" in out
+    assert "Database migration" not in out
+
+
+def test_search_tickets_only_flag_excludes_docs():
+    """--tickets-only should return only tickets, not docs."""
+    cli("create", "Tickets Only Project")
+    cli("ticket", "add", "tickets-only-project", "Database migration")
+    cli("space", "create", "tickets-only-space")
+    
+    dir_path = "/tmp/spaces/tickets-only-space"
+    os.makedirs(dir_path, exist_ok=True)
+    doc_path = Path(dir_path) / "database-schema.md"
+    doc_path.write_text("This is about database optimization.", encoding="utf-8")
+    
+    out, err, code = cli("search", "database", "--tickets-only")
+    assert code == 0, err
+    assert "🎫 Tickets" in out
+    assert "📄 Docs" not in out
+    assert "database-schema.md" not in out
+    assert "Database migration" in out
+
+
+def test_search_space_flag_filters_docs_by_space():
+    """--space should filter docs to only the specified space."""
+    cli("create", "Space Filter Project")
+    cli("ticket", "add", "space-filter-project", "Database work")
+    
+    cli("space", "create", "dev-docs")
+    dev_dir = "/tmp/spaces/dev-docs"
+    os.makedirs(dev_dir, exist_ok=True)
+    dev_doc = Path(dev_dir) / "dev-guide.md"
+    dev_doc.write_text("Database tips for developers.", encoding="utf-8")
+    
+    cli("space", "create", "ops-docs")
+    ops_dir = "/tmp/spaces/ops-docs"
+    os.makedirs(ops_dir, exist_ok=True)
+    ops_doc = Path(ops_dir) / "ops-guide.md"
+    ops_doc.write_text("Database configuration for ops.", encoding="utf-8")
+    
+    # Search only in dev-docs space
+    out, err, code = cli("search", "database", "--space", "dev-docs")
+    assert code == 0, err
+    assert "dev-guide.md" in out
+    assert "ops-guide.md" not in out
+    # No tickets shown since projects aren't associated with spaces
+
+
+def test_search_doc_content_is_searched_not_just_filename():
+    """Search should find text in doc content, not just filenames."""
+    cli("space", "create", "content-search-space")
+    
+    dir_path = "/tmp/spaces/content-search-space"
+    os.makedirs(dir_path, exist_ok=True)
+    doc_path = Path(dir_path) / "random-title.md"
+    doc_path.write_text("The implementation uses PostgreSQL for persistence.", encoding="utf-8")
+    
+    # Search for content word, not in filename
+    out, err, code = cli("search", "PostgreSQL")
+    assert code == 0, err
+    assert "random-title.md" in out
+
+
+def test_search_fresh_results_reflect_file_edits():
+    """Editing a doc file and searching again should show updated content."""
+    cli("space", "create", "fresh-search-space")
+    
+    dir_path = "/tmp/spaces/fresh-search-space"
+    os.makedirs(dir_path, exist_ok=True)
+    doc_path = Path(dir_path) / "config.md"
+    
+    # Initial content
+    doc_path.write_text("Original: database is MySQL.", encoding="utf-8")
+    
+    out1, err1, code1 = cli("search", "MySQL")
+    assert code1 == 0, err1
+    assert "config.md" in out1
+    
+    # Edit the doc
+    doc_path.write_text("Updated: database is PostgreSQL.", encoding="utf-8")
+    
+    # Search again — should reflect new content
+    out2, err2, code2 = cli("search", "PostgreSQL")
+    assert code2 == 0, err2
+    assert "config.md" in out2
+    
+    # Old content should not be found
+    out3, err3, code3 = cli("search", "MySQL")
+    assert code3 == 1
+    assert "No matching docs or tickets found." in out3
+
+
+def test_search_case_insensitive_for_doc_content():
+    """Search should be case-insensitive for doc content."""
+    cli("space", "create", "case-search-space")
+    
+    dir_path = "/tmp/spaces/case-search-space"
+    os.makedirs(dir_path, exist_ok=True)
+    doc_path = Path(dir_path) / "guide.md"
+    doc_path.write_text("This guide covers DATABASE management.", encoding="utf-8")
+    
+    # Search with different cases
+    out1, err1, code1 = cli("search", "database")
+    assert code1 == 0, err1
+    assert "guide.md" in out1
+    
+    out2, err2, code2 = cli("search", "DATABASE")
+    assert code2 == 0, err2
+    assert "guide.md" in out2
+    
+    out3, err3, code3 = cli("search", "Database")
+    assert code3 == 0, err3
+    assert "guide.md" in out3
+
+
+def test_search_multiple_matches_in_single_doc():
+    """If a query matches multiple times in one doc, list doc once."""
+    cli("space", "create", "multi-match-space")
+    
+    dir_path = "/tmp/spaces/multi-match-space"
+    os.makedirs(dir_path, exist_ok=True)
+    doc_path = Path(dir_path) / "tips.md"
+    doc_path.write_text("API endpoints: /api/users, /api/posts, /api/comments.", encoding="utf-8")
+    
+    out, err, code = cli("search", "/api/")
+    assert code == 0, err
+    # Doc should appear only once, not three times
+    assert out.count("tips.md") == 1
+
+
+def test_search_multiple_tickets_match_same_query():
+    """If multiple tickets match, all should be listed."""
+    cli("create", "Multi-Ticket Search")
+    cli("ticket", "add", "multi-ticket-search", "Database migration v1")
+    cli("ticket", "add", "multi-ticket-search", "Database backup plan")
+    cli("ticket", "add", "multi-ticket-search", "Unrelated task")
+    
+    out, err, code = cli("search", "database")
+    assert code == 0, err
+    assert "Database migration v1" in out
+    assert "Database backup plan" in out
+    assert "Unrelated task" not in out
+    
+    # Both should appear with correct ticket numbers
+    assert "#1" in out and "Database migration v1" in out
+    assert "#2" in out and "Database backup plan" in out
+
+
+def test_search_docs_and_tickets_across_multiple_spaces_and_projects():
+    """Search should find content across all spaces and projects."""
+    cli("create", "Project Alpha")
+    cli("ticket", "add", "project-alpha", "Refactor cache")
+    
+    cli("create", "Project Beta")
+    cli("ticket", "add", "project-beta", "Optimize cache")
+    
+    cli("space", "create", "shared-docs")
+    doc_dir = "/tmp/spaces/shared-docs"
+    os.makedirs(doc_dir, exist_ok=True)
+    doc_path = Path(doc_dir) / "cache-strategy.md"
+    doc_path.write_text("Cache invalidation is hard.", encoding="utf-8")
+    
+    out, err, code = cli("search", "cache")
+    assert code == 0, err
+    
+    # Should find content from all sources
+    assert "cache-strategy.md" in out
+    assert "project-alpha" in out and "Refactor cache" in out
+    assert "project-beta" in out and "Optimize cache" in out
+
+
+def test_search_no_space_directory_handles_gracefully():
+    """Search should handle missing spaces directory gracefully."""
+    cli("create", "No Spaces Project")
+    cli("ticket", "add", "no-spaces-project", "Some task")
+    
+    out, err, code = cli("search", "task")
+    assert code == 0, err
+    assert "Some task" in out

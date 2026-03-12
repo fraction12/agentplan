@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set active_page = 'home' %}
+
+{% block title %}{{ filename }} — {{ space.title }} — agentplan{% endblock %}
+{% block body_class %}doc-editor{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('index') }}">Home</a>
+  <span class="breadcrumb-sep" aria-hidden="true">›</span>
+  <a href="{{ url_for('space_detail', slug=space.slug) }}">{{ space.title }}</a>
+  <span class="breadcrumb-sep" aria-hidden="true">›</span>
+  <span class="breadcrumb-current">{{ filename }}</span>
+</nav>
+
+<div class="doc-editor-header">
+  <h1 class="doc-editor-title">{{ filename }}</h1>
+  <div class="doc-editor-meta">{{ filepath }}</div>
+</div>
+
+<div class="doc-editor-body">
+  <textarea id="doc-content" class="doc-textarea" spellcheck="false">{{ content }}</textarea>
+  <div class="doc-editor-actions">
+    <span id="doc-save-status" class="doc-save-status"></span>
+    <button id="doc-save-btn" class="btn btn-primary" type="button">Save</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  const textarea = document.getElementById("doc-content");
+  const saveBtn = document.getElementById("doc-save-btn");
+  const status = document.getElementById("doc-save-status");
+  const endpoint = "/api/space/{{ space.slug }}/doc/{{ filename }}";
+
+  saveBtn.addEventListener("click", async () => {
+    saveBtn.disabled = true;
+    status.textContent = "Saving…";
+    try {
+      const resp = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: textarea.value }),
+      });
+      if (resp.ok) {
+        status.textContent = "Saved ✓";
+        setTimeout(() => { status.textContent = ""; }, 2000);
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        status.textContent = "Error: " + (data.error || resp.statusText);
+      }
+    } catch (err) {
+      status.textContent = "Error: " + err.message;
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  // Ctrl+S / Cmd+S shortcut
+  textarea.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      e.preventDefault();
+      saveBtn.click();
+    }
+  });
+})();
+</script>
+{% endblock %}

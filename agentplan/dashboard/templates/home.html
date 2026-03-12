@@ -2,7 +2,7 @@
 {% set active_page = 'home' %}
 
 {% block title %}agentplan dashboard{% endblock %}
-{% block body_class %}dashboard-home{% endblock %}
+{% block body_class %}dashboard-home spaces-view{% endblock %}
 
 {% macro project_card(project) -%}
 <article class="project-card-shell" data-project-shell data-project-slug="{{ project.slug }}">
@@ -48,7 +48,7 @@
         </div>
       </div>
       <div class="project-meta">
-        <div class="project-progress-text"><strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done</div>
+        <div class="project-progress-text">{% if project.ticket_count %}<strong class="project-progress-done">{{ project.done_count }}</strong>/<span class="project-progress-total">{{ project.ticket_count }}</span> done{% else %}<span class="project-progress-total">0 tickets</span>{% endif %}</div>
         <div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="{{ project.updated_at or '' }}">{{ project.updated_at or "n/a" }}</span></div>
         {% if project.missing_directory %}
         <div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>
@@ -99,31 +99,33 @@
   </form>
 </dialog>
 
-<div id="project-sections" class="project-sections"{% if not projects %} hidden{% endif %}>
-  {% if projects %}
-  {% for section in home_sections %}
-  {% set section_open = home_sections|length == 1 or section.key == "active" %}
-  <section class="project-section" data-project-section data-status-section="{{ section.key }}">
+<div id="project-sections" class="project-sections spaces-view"{% if not projects %} hidden{% endif %}>
+  {% if home_spaces %}
+  {% for space in home_spaces %}
+  {% set space_open = home_spaces|length == 1 or space.slug != "default" %}
+  <section class="project-section space-section" data-project-section data-space-slug="{{ space.slug }}">
     <div class="project-section-heading">
       <button
         type="button"
         class="project-section-toggle"
         data-section-toggle
-        data-section-key="{{ section.key }}"
-        aria-expanded="{{ 'true' if section_open else 'false' }}"
+        data-section-key="{{ space.slug }}"
+        data-space-slug="{{ space.slug }}"
+        aria-expanded="{{ 'true' if space_open else 'false' }}"
       >
         <span class="project-section-toggle-icon" aria-hidden="true"></span>
-        <span class="project-section-title">{{ section.title }}</span>
+        <span class="project-section-title">{{ space.title }}</span>
+        <span class="space-doc-count">{{ space.doc_count }} doc{{ 's' if space.doc_count != 1 else '' }}</span>
       </button>
-      <span class="project-section-count">{{ section.projects|length }}</span>
+      <span class="project-section-count">{{ space.projects|length }}</span>
     </div>
-    <section class="projects-grid"{% if not section_open %} hidden{% endif %}>
-      {% if section.projects %}
-      {% for project in section.projects %}
+    <section class="projects-grid"{% if not space_open %} hidden{% endif %}>
+      {% if space.projects %}
+      {% for project in space.projects %}
       {{ project_card(project) }}
       {% endfor %}
       {% else %}
-      <div class="project-section-empty">No {{ section.title|lower }} yet.</div>
+      <div class="project-section-empty">No projects in this space yet.</div>
       {% endif %}
     </section>
   </section>
@@ -223,7 +225,12 @@
   }
 
   function setSectionExpanded(sectionKey, expanded) {
-    const section = document.querySelector(`[data-status-section="${CSS.escape(sectionKey)}"]`);
+    // Try to find space section first
+    let section = document.querySelector(`[data-space-slug="${CSS.escape(sectionKey)}"]`);
+    // Fall back to status section
+    if (!section) {
+      section = document.querySelector(`[data-status-section="${CSS.escape(sectionKey)}"]`);
+    }
     const toggle = section?.querySelector("[data-section-toggle]");
     const grid = section?.querySelector(".projects-grid");
     if (toggle) {
@@ -250,7 +257,7 @@
     const warningHtml = project.missing_directory ? `<div class="project-warning" title="Linked directory is missing on disk">⚠ Missing directory</div>` : "";
     const status = String(project.status || "").trim().toLowerCase();
     const statusLabel = esc(project.status_label || formatStatusLabel(status));
-    return `<article class="project-card-shell" data-project-shell data-project-slug="${esc(project.slug || "")}">${projectMenuMarkup(project)}<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(status)}" data-project-slug="${esc(project.slug || "")}" aria-label="Open ${esc(project.title)}"><article class="project-card"><div class="project-top"><div class="project-heading"><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div><div class="project-status-row"><span class="project-status-badge status-${esc(status)}">${statusLabel}</span></div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text"><strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count || 0}</span> done</div><div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a></article>`;
+    return `<article class="project-card-shell" data-project-shell data-project-slug="${esc(project.slug || "")}">${projectMenuMarkup(project)}<a class="project-link" href="/project/${encodeURIComponent(project.slug)}" data-project-id="${project.id}" data-project-status="${esc(status)}" data-project-slug="${esc(project.slug || "")}" aria-label="Open ${esc(project.title)}"><article class="project-card"><div class="project-top"><div class="project-heading"><h2 class="project-title">${esc(project.title)}</h2><div class="project-code">${esc(project.slug)}</div><div class="project-status-row"><span class="project-status-badge status-${esc(status)}">${statusLabel}</span></div></div><div class="progress-ring" style="--ring-progress: ${project.progress_pct || 0};" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="progress-ring-track" cx="18" cy="18" r="16"></circle><circle class="progress-ring-value" cx="18" cy="18" r="16"></circle></svg><span class="progress-ring-label project-progress-percent">${project.progress_pct || 0}%</span></div></div><div class="project-meta"><div class="project-progress-text">${(project.ticket_count || 0) > 0 ? `<strong class="project-progress-done">${project.done_count || 0}</strong>/<span class="project-progress-total">${project.ticket_count}</span> done` : `<span class="project-progress-total">0 tickets</span>`}</div><div class="project-last-activity">Last activity: <span class="project-updated-at" data-timestamp="${esc(project.updated_at || '')}">${formatRelative(project.updated_at)}</span></div>${warningHtml}</div></article></a></article>`;
   }
 
   function groupProjects(projects) {
@@ -282,12 +289,68 @@
     return sections;
   }
 
+  function groupProjectsBySpace(projects, allSpaces) {
+    const spacesMap = new Map();
+    const spacesOrder = [];
+
+    // Seed with all known spaces so empties stay visible
+    (allSpaces || window.__allSpaces || []).forEach((s) => {
+      spacesMap.set(s.slug, {
+        slug: s.slug,
+        title: s.title,
+        projects: [],
+        doc_count: 0,
+      });
+      spacesOrder.push(s.slug);
+    });
+
+    (projects || []).forEach((project) => {
+      const spaceSlug = project.space_slug || "default";
+      const spaceTitle = project.space_title || "Default";
+
+      if (!spacesMap.has(spaceSlug)) {
+        spacesMap.set(spaceSlug, {
+          slug: spaceSlug,
+          title: spaceTitle,
+          projects: [],
+          doc_count: project.space_doc_count || 0,
+        });
+        spacesOrder.push(spaceSlug);
+      }
+
+      const entry = spacesMap.get(spaceSlug);
+      entry.projects.push(project);
+      // Update doc_count from project data if available
+      if (project.space_doc_count) entry.doc_count = project.space_doc_count;
+    });
+
+    // Move default space to the end
+    let spaces = spacesOrder.filter(s => s !== "default").map(s => spacesMap.get(s));
+    const defaultSpace = spacesMap.get("default");
+    if (defaultSpace) {
+      spaces.push(defaultSpace);
+    }
+
+    // Deduplicate (spacesOrder may have dupes if seed + project both add same slug)
+    const seen = new Set();
+    return spaces.filter(s => { if (seen.has(s.slug)) return false; seen.add(s.slug); return true; });
+  }
+
   function renderProjectSection(section) {
     const expanded = isSectionOpen(section.key, groupProjects(window.__latestProjects || []).length || 1);
     const content = section.projects.length
       ? section.projects.map((project) => projectCard(project)).join("")
       : `<div class="project-section-empty">No ${esc(section.title.toLowerCase())} yet.</div>`;
     return `<section class="project-section" data-project-section data-status-section="${esc(section.key)}"><div class="project-section-heading"><button type="button" class="project-section-toggle" data-section-toggle data-section-key="${esc(section.key)}" aria-expanded="${expanded ? "true" : "false"}"><span class="project-section-toggle-icon" aria-hidden="true"></span><span class="project-section-title">${esc(section.title)}</span></button><span class="project-section-count">${section.projects.length}</span></div><section class="projects-grid"${expanded ? "" : " hidden"}>${content}</section></section>`;
+  }
+
+  function renderSpaceSection(space) {
+    const spaces = groupProjectsBySpace(window.__latestProjects || []);
+    const expanded = isSectionOpen(space.slug, spaces.length || 1);
+    const content = space.projects.length
+      ? space.projects.map((project) => projectCard(project)).join("")
+      : `<div class="project-section-empty">No projects in this space yet.</div>`;
+    return `<section class="project-section space-section" data-project-section data-space-slug="${esc(space.slug)}"><div class="project-section-heading"><button type="button" class="project-section-toggle" data-section-toggle data-section-key="${esc(space.slug)}" data-space-slug="${esc(space.slug)}" aria-expanded="${expanded ? "true" : "false"}"><span class="project-section-toggle-icon" aria-hidden="true"></span><span class="project-section-title">${esc(space.title)}</span><span class="space-doc-count">${space.doc_count || 0} doc${(space.doc_count || 0) !== 1 ? 's' : ''}</span></button><span class="project-section-count">${space.projects.length}</span></div><section class="projects-grid"${expanded ? "" : " hidden"}>${content}</section></section>`;
   }
 
   function getOpenProjectMenuSlug() {
@@ -327,18 +390,20 @@
     const openMenuSlug = getOpenProjectMenuSlug();
     const projectSections = document.getElementById("project-sections");
     const emptyState = document.getElementById("projects-empty-state");
-    const sections = groupProjects(projects || []);
+    // Use space-based grouping instead of status-based
+    const spaces = groupProjectsBySpace(projects || []);
     if (projectSections) {
-      projectSections.innerHTML = sections.map((section) => renderProjectSection(section)).join("");
-      projectSections.hidden = sections.length === 0;
+      projectSections.innerHTML = spaces.map((space) => renderSpaceSection(space)).join("");
+      projectSections.hidden = spaces.length === 0 || !projects || projects.length === 0;
     }
-    if (emptyState) emptyState.hidden = sections.length !== 0;
+    if (emptyState) emptyState.hidden = !projectSections || !projectSections.hidden;
     applyRelativeTimes();
     restoreProjectMenu(openMenuSlug);
   }
 
   setClock("live-clock");
   setInterval(() => setClock("live-clock"), 1000);
+  window.__allSpaces = {{ spaces|tojson if spaces is defined else '[]' }};
   window.__latestProjects = {{ projects|tojson }};
   renderProjects(window.__latestProjects);
 
@@ -519,6 +584,7 @@
         try {
           const payload = JSON.parse(event.data);
           renderSummary(payload.summary || {});
+          if (payload.spaces) window.__allSpaces = payload.spaces;
           window.__latestProjects = payload.projects || [];
           renderProjects(window.__latestProjects);
           setClock("live-clock", payload.server_time || null);
