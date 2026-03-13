@@ -2340,64 +2340,66 @@ def cmd_ticket_add(args):
     _validate_len(args.desc, MAX_DESC_LEN, "Description")
     _validate_len(args.notes, MAX_NOTES_LEN, "Notes")
     _validate_len(getattr(args, "tag", None), MAX_TAG_LEN, "Tags")
-    conn = _ensure(get_connection())
-    proj = resolve_project(conn, args.project)
-    # Ticket #17: validate --role against registered roles
-    role_tag = None
-    if getattr(args, "role", None):
-        role = db_get_role(conn, args.role)
-        if not role:
-            conn.close()
-            fail(
-                f"Role '{args.role}' is not registered.",
-                suggestions=["Add it first with: agentplan role add " + args.role],
-            )
-        role_tag = f"role:{role.name}"
-    deps = []
-    if args.depends:
-        deps = [int(x.strip()) for x in args.depends.split(",")]
-        for d in deps:
-            resolve_ticket(conn, proj["id"], d, proj["slug"])
-    num = _next_ticket_num(conn, proj["id"])
-    tags = _parse_tags(args.tag)
-    _validate_role_tags_or_fail(conn, tags)
-    if role_tag:
-        existing = [t for t in tags.split(",") if t] if tags else []
-        if role_tag not in existing:
-            existing.append(role_tag)
-        tags = ",".join(existing)
-    _validate_role_tags_or_fail(conn, tags)
+    # Validate non-database fields early, before opening connection
     due_date = _parse_due_date(getattr(args, "due", None))
     timeout_sec = _validate_timeout_sec(getattr(args, "timeout", None))
     model_tier = getattr(args, "model", None) or "auto"
     _validate_model_tier(model_tier)
-    conn.execute(
-        "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes, due_date, timeout_sec, model_tier) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (proj["id"], num, args.title, args.desc, args.priority or "none", tags, json.dumps(deps), args.notes, due_date, timeout_sec, model_tier),
-    )
-    ticket_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    _record_ticket_history(conn, ticket_id, None, "created")
-    if deps:
-        tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
-        if has_cycle(tickets, num, deps):
-            conn.execute("DELETE FROM tickets WHERE project_id=? AND num=?", (proj["id"], num))
-            conn.commit()
-            conn.close()
-            fail(
-                "Circular dependency detected.",
-                suggestions=["Remove one of the dependency links to break the cycle."],
-            )
-    # Reopen completed/abandoned projects when new tickets are added
-    conn.execute(
-        "UPDATE projects SET status='active', updated_at=? WHERE id=? AND status IN ('completed','abandoned','archived')",
-        (_now(), proj["id"]),
-    )
-    conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
-    conn.commit()
-    if proj["status"] in ("completed", "abandoned"):
-        print(f"📂 Reopened project '{proj['slug']}' (was {proj['status']})")
-    print(f"Added ticket #{num}: {args.title} [priority: {_priority_label(args.priority)}]")
-    conn.close()
+    
+    conn = _ensure(get_connection())
+    try:
+        proj = resolve_project(conn, args.project)
+        # Ticket #17: validate --role against registered roles
+        role_tag = None
+        if getattr(args, "role", None):
+            role = db_get_role(conn, args.role)
+            if not role:
+                fail(
+                    f"Role '{args.role}' is not registered.",
+                    suggestions=["Add it first with: agentplan role add " + args.role],
+                )
+            role_tag = f"role:{role.name}"
+        deps = []
+        if args.depends:
+            deps = [int(x.strip()) for x in args.depends.split(",")]
+            for d in deps:
+                resolve_ticket(conn, proj["id"], d, proj["slug"])
+        num = _next_ticket_num(conn, proj["id"])
+        tags = _parse_tags(args.tag)
+        _validate_role_tags_or_fail(conn, tags)
+        if role_tag:
+            existing = [t for t in tags.split(",") if t] if tags else []
+            if role_tag not in existing:
+                existing.append(role_tag)
+            tags = ",".join(existing)
+        _validate_role_tags_or_fail(conn, tags)
+        conn.execute(
+            "INSERT INTO tickets (project_id, num, title, description, priority, tags, depends_on, notes, due_date, timeout_sec, model_tier) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (proj["id"], num, args.title, args.desc, args.priority or "none", tags, json.dumps(deps), args.notes, due_date, timeout_sec, model_tier),
+        )
+        ticket_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        _record_ticket_history(conn, ticket_id, None, "created")
+        if deps:
+            tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
+            if has_cycle(tickets, num, deps):
+                conn.execute("DELETE FROM tickets WHERE project_id=? AND num=?", (proj["id"], num))
+                conn.commit()
+                fail(
+                    "Circular dependency detected.",
+                    suggestions=["Remove one of the dependency links to break the cycle."],
+                )
+        # Reopen completed/abandoned projects when new tickets are added
+        conn.execute(
+            "UPDATE projects SET status='active', updated_at=? WHERE id=? AND status IN ('completed','abandoned','archived')",
+            (_now(), proj["id"]),
+        )
+        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (_now(), proj["id"]))
+        conn.commit()
+        if proj["status"] in ("completed", "abandoned"):
+            print(f"📂 Reopened project '{proj['slug']}' (was {proj['status']})")
+        print(f"Added ticket #{num}: {args.title} [priority: {_priority_label(args.priority)}]")
+    finally:
+        conn.close()
 
 
 def cmd_ticket_update(args):
