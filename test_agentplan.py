@@ -185,7 +185,7 @@ def test_init_detect_installed_tools_handles_subprocess_exception():
     def fake_run(cmd, capture_output=True, text=True):
         tool = cmd[-1]
         if tool == "codex":
-            raise RuntimeError("boom")
+            raise FileNotFoundError("which: command not found")
         return type("Result", (), {"returncode": 0 if tool == "claude" else 1})()
 
     with patch("agentplan.cli.subprocess.run", side_effect=fake_run):
