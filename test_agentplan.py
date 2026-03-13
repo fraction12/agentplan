@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Pytest tests for agentplan CLI.
 
-All tests use a temp DB via the `temp_db` fixture (AGENTPLAN_DB=/tmp/... path).
+All tests use a temp DB via the `temp_db` fixture; AGENTPLAN_DIR is set to
+pytest's tmp_path so each test gets a fully isolated scratch directory.
 The real database is never touched.
 """
 import json
@@ -24,11 +25,17 @@ import agentplan.db as agentplan_db
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def temp_db():
-    """Use AGENTPLAN_DB=/tmp/test_agentplan.db; init schema; clean up after each test."""
+def temp_db(tmp_path):
+    """Use AGENTPLAN_DB=/tmp/test_agentplan.db; init schema; clean up after each test.
+
+    ``AGENTPLAN_DIR`` is set to pytest's ``tmp_path``, giving each test its own
+    isolated scratch directory.  No shared paths (e.g. ``/tmp/spaces``) are
+    touched, so parallel or repeated runs cannot interfere with each other.
+    pytest removes ``tmp_path`` automatically after the test finishes.
+    """
     db_path = "/tmp/test_agentplan.db"
     os.environ["AGENTPLAN_DB"] = db_path
-    os.environ["AGENTPLAN_DIR"] = "/tmp"
+    os.environ["AGENTPLAN_DIR"] = str(tmp_path)
     if os.path.exists(db_path):
         os.remove(db_path)
     # Initialise schema directly (no CLI side-effects)
@@ -41,6 +48,8 @@ def temp_db():
         os.remove(db_path)
     os.environ.pop("AGENTPLAN_DB", None)
     os.environ.pop("AGENTPLAN_DIR", None)
+    # tmp_path (and any spaces/ sub-directory created within it) is cleaned up
+    # automatically by pytest — no manual shutil.rmtree needed.
 
 
 def cli(*args):
@@ -4621,7 +4630,7 @@ def test_search_returns_both_docs_and_tickets_by_default():
     cli("space", "create", "docs-space")
     
     # Create and write a doc with specific content
-    dir_path = "/tmp/spaces/docs-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "docs-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "database-schema.md"
     doc_path.write_text("This is about database optimization.", encoding="utf-8")
@@ -4645,7 +4654,7 @@ def test_search_docs_only_flag_excludes_tickets():
     cli("ticket", "add", "docs-only-project", "Database migration")
     cli("space", "create", "docs-only-space")
     
-    dir_path = "/tmp/spaces/docs-only-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "docs-only-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "database-schema.md"
     doc_path.write_text("This is about database optimization.", encoding="utf-8")
@@ -4664,7 +4673,7 @@ def test_search_tickets_only_flag_excludes_docs():
     cli("ticket", "add", "tickets-only-project", "Database migration")
     cli("space", "create", "tickets-only-space")
     
-    dir_path = "/tmp/spaces/tickets-only-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "tickets-only-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "database-schema.md"
     doc_path.write_text("This is about database optimization.", encoding="utf-8")
@@ -4683,13 +4692,13 @@ def test_search_space_flag_filters_docs_by_space():
     cli("ticket", "add", "space-filter-project", "Database work")
     
     cli("space", "create", "dev-docs")
-    dev_dir = "/tmp/spaces/dev-docs"
+    dev_dir = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "dev-docs")
     os.makedirs(dev_dir, exist_ok=True)
     dev_doc = Path(dev_dir) / "dev-guide.md"
     dev_doc.write_text("Database tips for developers.", encoding="utf-8")
     
     cli("space", "create", "ops-docs")
-    ops_dir = "/tmp/spaces/ops-docs"
+    ops_dir = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "ops-docs")
     os.makedirs(ops_dir, exist_ok=True)
     ops_doc = Path(ops_dir) / "ops-guide.md"
     ops_doc.write_text("Database configuration for ops.", encoding="utf-8")
@@ -4706,7 +4715,7 @@ def test_search_doc_content_is_searched_not_just_filename():
     """Search should find text in doc content, not just filenames."""
     cli("space", "create", "content-search-space")
     
-    dir_path = "/tmp/spaces/content-search-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "content-search-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "random-title.md"
     doc_path.write_text("The implementation uses PostgreSQL for persistence.", encoding="utf-8")
@@ -4721,7 +4730,7 @@ def test_search_fresh_results_reflect_file_edits():
     """Editing a doc file and searching again should show updated content."""
     cli("space", "create", "fresh-search-space")
     
-    dir_path = "/tmp/spaces/fresh-search-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "fresh-search-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "config.md"
     
@@ -4750,7 +4759,7 @@ def test_search_case_insensitive_for_doc_content():
     """Search should be case-insensitive for doc content."""
     cli("space", "create", "case-search-space")
     
-    dir_path = "/tmp/spaces/case-search-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "case-search-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "guide.md"
     doc_path.write_text("This guide covers DATABASE management.", encoding="utf-8")
@@ -4773,7 +4782,7 @@ def test_search_multiple_matches_in_single_doc():
     """If a query matches multiple times in one doc, list doc once."""
     cli("space", "create", "multi-match-space")
     
-    dir_path = "/tmp/spaces/multi-match-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "multi-match-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "tips.md"
     doc_path.write_text("API endpoints: /api/users, /api/posts, /api/comments.", encoding="utf-8")
@@ -4811,7 +4820,7 @@ def test_search_docs_and_tickets_across_multiple_spaces_and_projects():
     cli("ticket", "add", "project-beta", "Optimize cache")
     
     cli("space", "create", "shared-docs")
-    doc_dir = "/tmp/spaces/shared-docs"
+    doc_dir = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "shared-docs")
     os.makedirs(doc_dir, exist_ok=True)
     doc_path = Path(doc_dir) / "cache-strategy.md"
     doc_path.write_text("Cache invalidation is hard.", encoding="utf-8")
@@ -4833,3 +4842,247 @@ def test_search_no_space_directory_handles_gracefully():
     out, err, code = cli("search", "task")
     assert code == 0, err
     assert "Some task" in out
+
+
+# ---------------------------------------------------------------------------
+# Space Commands Tests
+# ---------------------------------------------------------------------------
+
+def test_space_create_basic():
+    """Test basic space creation."""
+    out, err, code = cli("space", "create", "my-space")
+    assert code == 0, err
+    assert "Created space 'my-space'" in out
+
+
+def test_space_create_with_title_and_description():
+    """Test space creation with title and description."""
+    out, err, code = cli("space", "create", "prod-space", "--title", "Production", "--description", "Production environment")
+    assert code == 0, err
+    assert "Created space 'prod-space'" in out
+    assert "(Production)" in out
+
+
+def test_space_create_duplicate_slug_fails():
+    """Test that duplicate space slugs are rejected."""
+    cli("space", "create", "dup-space")
+    out, err, code = cli("space", "create", "dup-space")
+    assert code == 2
+    assert "already exists" in err
+
+
+def test_space_create_invalid_slug_falls_back_to_project():
+    """Test that empty/invalid slugs fall back to 'project'."""
+    out, err, code = cli("space", "create", "")
+    assert code == 0
+    assert "Created space 'project'" in out
+
+
+def test_space_list():
+    """Test listing spaces."""
+    cli("space", "create", "space-a", "--title", "Space A")
+    cli("space", "create", "space-b", "--title", "Space B")
+    out, err, code = cli("space", "list")
+    assert code == 0, err
+    assert "space-a" in out
+    assert "space-b" in out
+    assert "Space A" in out
+    assert "Space B" in out
+
+
+def test_space_list_empty():
+    """Test listing spaces when only default space exists."""
+    out, err, code = cli("space", "list")
+    assert code == 0, err
+    # Default space should always exist
+    assert "default" in out
+
+
+def test_space_show():
+    """Test showing space details."""
+    cli("space", "create", "test-space", "--title", "Test Space", "--description", "Test description")
+    out, err, code = cli("space", "show", "test-space")
+    assert code == 0, err
+    assert "test-space" in out
+    assert "Test Space" in out
+    assert "Test description" in out
+
+
+def test_space_show_nonexistent_fails():
+    """Test showing nonexistent space fails."""
+    out, err, code = cli("space", "show", "nonexistent-space")
+    assert code == 2
+    assert "not found" in err or "does not exist" in err
+
+
+def test_space_update_title():
+    """Test updating space title."""
+    cli("space", "create", "upd-space", "--title", "Old Title")
+    out, err, code = cli("space", "update", "upd-space", "--title", "New Title")
+    assert code == 0, err
+    
+    # Verify update took effect
+    out, err, code = cli("space", "show", "upd-space")
+    assert "New Title" in out
+
+
+def test_space_update_description():
+    """Test updating space description."""
+    cli("space", "create", "upd-space2")
+    out, err, code = cli("space", "update", "upd-space2", "--description", "New description")
+    assert code == 0, err
+    
+    # Verify update took effect
+    out, err, code = cli("space", "show", "upd-space2")
+    assert "New description" in out
+
+
+def test_space_delete():
+    """Test deleting a space."""
+    cli("space", "create", "del-space")
+    # Use --force to skip confirmation prompt
+    out, err, code = cli("space", "delete", "del-space", "--force")
+    assert code == 0, err
+    assert "deleted" in out or "removed" in out
+    
+    # Verify space is gone
+    out, err, code = cli("space", "show", "del-space")
+    assert code == 2
+
+
+def test_space_delete_nonexistent_fails():
+    """Test deleting nonexistent space fails."""
+    out, err, code = cli("space", "delete", "nonexistent", "--force")
+    assert code == 2
+
+
+def test_space_delete_with_projects_orphans_them():
+    """Test that deleting a space with projects orphans them."""
+    cli("space", "create", "protected-space")
+    cli("create", "test-project", "--space", "protected-space")
+    out, err, code = cli("space", "delete", "protected-space", "--force")
+    # Should succeed and orphan the projects
+    assert code == 0
+    assert "orphan" in out or "reassigned" in out
+
+
+# ---------------------------------------------------------------------------
+# Doc Commands Tests
+# ---------------------------------------------------------------------------
+
+def test_doc_add_empty():
+    """Test adding an empty document."""
+    cli("space", "create", "doc-space")
+    out, err, code = cli("doc", "add", "doc-space", "My First Doc")
+    assert code == 0, err
+    assert ".md" in out  # Should output the file path
+
+
+def test_doc_add_with_file():
+    """Test adding a document from a source file."""
+    cli("space", "create", "file-space")
+    # Create a temp source file
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write("# Source Document\n\nImported content.")
+        temp_file = f.name
+    
+    try:
+        out, err, code = cli("doc", "add", "file-space", "Imported Doc", "--file", temp_file)
+        assert code == 0, err
+        assert ".md" in out
+    finally:
+        os.remove(temp_file)
+
+
+def test_doc_add_requires_space():
+    """Test that doc add requires space argument."""
+    out, err, code = cli("doc", "add", "", "A Doc")
+    assert code == 2
+    assert "required" in err or "Space slug" in err
+
+
+def test_doc_add_requires_title():
+    """Test that doc add requires title argument."""
+    cli("space", "create", "title-space")
+    out, err, code = cli("doc", "add", "title-space", "")
+    assert code == 2
+    assert "required" in err or "title" in err
+
+
+def test_doc_add_nonexistent_space_fails():
+    """Test adding doc to nonexistent space fails."""
+    out, err, code = cli("doc", "add", "nonexistent-space", "A Doc")
+    assert code == 2
+    assert "not found" in err or "does not exist" in err
+
+
+def test_doc_list():
+    """Test listing documents in a space."""
+    cli("space", "create", "list-space")
+    cli("doc", "add", "list-space", "Doc One")
+    cli("doc", "add", "list-space", "Doc Two")
+    out, err, code = cli("doc", "list", "list-space")
+    assert code == 0, err
+    assert "doc-one.md" in out
+    assert "doc-two.md" in out
+
+
+def test_doc_list_empty_space():
+    """Test listing documents in empty space."""
+    cli("space", "create", "empty-space")
+    out, err, code = cli("doc", "list", "empty-space")
+    assert code == 0, err
+    assert "No documents" in out or "no documents" in out.lower()
+
+
+def test_doc_show():
+    """Test showing document content."""
+    cli("space", "create", "show-space")
+    from pathlib import Path
+    # Create a doc directly on filesystem
+    space_dir = Path(os.environ["AGENTPLAN_DIR"]) / "spaces" / "show-space"
+    doc_file = space_dir / "sample.md"
+    doc_file.write_text("# Sample Document\n\nThis is content.", encoding="utf-8")
+    
+    out, err, code = cli("doc", "show", "show-space", "sample.md")
+    assert code == 0, err
+    assert "Sample Document" in out
+    assert "This is content" in out
+
+
+def test_doc_show_nonexistent_fails():
+    """Test showing nonexistent document fails."""
+    cli("space", "create", "show-fail-space")
+    out, err, code = cli("doc", "show", "show-fail-space", "nonexistent.md")
+    assert code == 2
+
+
+def test_doc_path():
+    """Test getting document path."""
+    cli("space", "create", "path-space")
+    cli("doc", "add", "path-space", "Test Doc")
+    out, err, code = cli("doc", "path", "path-space", "test-doc.md")
+    assert code == 0, err
+    assert "path-space" in out
+    assert "test-doc.md" in out
+
+
+def test_doc_remove():
+    """Test removing a document."""
+    cli("space", "create", "remove-space")
+    cli("doc", "add", "remove-space", "Temporary Doc")
+    out, err, code = cli("doc", "remove", "remove-space", "temporary-doc.md", "--force")
+    assert code == 0, err
+    
+    # Verify doc is gone
+    out, err, code = cli("doc", "show", "remove-space", "temporary-doc.md")
+    assert code == 2
+
+
+def test_doc_remove_nonexistent_fails():
+    """Test removing nonexistent document fails."""
+    cli("space", "create", "remove-fail-space")
+    out, err, code = cli("doc", "remove", "remove-fail-space", "nonexistent.md", "--force")
+    assert code == 2
+
