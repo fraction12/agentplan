@@ -1800,6 +1800,7 @@ def cmd_project(args):
     
     updates = []
     params = []
+    resolved_dir = None
     
     # Handle --dir flag
     if dir_path:
