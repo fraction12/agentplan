@@ -2401,6 +2401,10 @@ def cmd_ticket_add(args):
 
 
 def cmd_ticket_update(args):
+    if args.title is not None:
+        _validate_len(args.title, MAX_TITLE_LEN, "Ticket title")
+    if args.notes is not None:
+        _validate_len(args.notes, MAX_NOTES_LEN, "Notes")
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
