@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Pytest tests for agentplan CLI.
 
-All tests use a temp DB via the `temp_db` fixture (AGENTPLAN_DB=/tmp/... path).
+All tests use a temp DB via the `temp_db` fixture; AGENTPLAN_DIR is set to
+pytest's tmp_path so each test gets a fully isolated scratch directory.
 The real database is never touched.
 """
 import json
@@ -24,17 +25,19 @@ import agentplan.db as agentplan_db
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def temp_db():
-    """Use AGENTPLAN_DB=/tmp/test_agentplan.db; init schema; clean up after each test."""
+def temp_db(tmp_path):
+    """Use AGENTPLAN_DB=/tmp/test_agentplan.db; init schema; clean up after each test.
+
+    ``AGENTPLAN_DIR`` is set to pytest's ``tmp_path``, giving each test its own
+    isolated scratch directory.  No shared paths (e.g. ``/tmp/spaces``) are
+    touched, so parallel or repeated runs cannot interfere with each other.
+    pytest removes ``tmp_path`` automatically after the test finishes.
+    """
     db_path = "/tmp/test_agentplan.db"
-    spaces_dir = "/tmp/spaces"
     os.environ["AGENTPLAN_DB"] = db_path
-    os.environ["AGENTPLAN_DIR"] = "/tmp"
+    os.environ["AGENTPLAN_DIR"] = str(tmp_path)
     if os.path.exists(db_path):
         os.remove(db_path)
-    if os.path.exists(spaces_dir):
-        import shutil
-        shutil.rmtree(spaces_dir)
     # Initialise schema directly (no CLI side-effects)
     conn = agentplan.get_connection(db_path)
     agentplan.init_db(conn)
@@ -43,11 +46,10 @@ def temp_db():
     yield db_path
     if os.path.exists(db_path):
         os.remove(db_path)
-    if os.path.exists(spaces_dir):
-        import shutil
-        shutil.rmtree(spaces_dir)
     os.environ.pop("AGENTPLAN_DB", None)
     os.environ.pop("AGENTPLAN_DIR", None)
+    # tmp_path (and any spaces/ sub-directory created within it) is cleaned up
+    # automatically by pytest — no manual shutil.rmtree needed.
 
 
 def cli(*args):
@@ -4628,7 +4630,7 @@ def test_search_returns_both_docs_and_tickets_by_default():
     cli("space", "create", "docs-space")
     
     # Create and write a doc with specific content
-    dir_path = "/tmp/spaces/docs-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "docs-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "database-schema.md"
     doc_path.write_text("This is about database optimization.", encoding="utf-8")
@@ -4652,7 +4654,7 @@ def test_search_docs_only_flag_excludes_tickets():
     cli("ticket", "add", "docs-only-project", "Database migration")
     cli("space", "create", "docs-only-space")
     
-    dir_path = "/tmp/spaces/docs-only-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "docs-only-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "database-schema.md"
     doc_path.write_text("This is about database optimization.", encoding="utf-8")
@@ -4671,7 +4673,7 @@ def test_search_tickets_only_flag_excludes_docs():
     cli("ticket", "add", "tickets-only-project", "Database migration")
     cli("space", "create", "tickets-only-space")
     
-    dir_path = "/tmp/spaces/tickets-only-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "tickets-only-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "database-schema.md"
     doc_path.write_text("This is about database optimization.", encoding="utf-8")
@@ -4690,13 +4692,13 @@ def test_search_space_flag_filters_docs_by_space():
     cli("ticket", "add", "space-filter-project", "Database work")
     
     cli("space", "create", "dev-docs")
-    dev_dir = "/tmp/spaces/dev-docs"
+    dev_dir = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "dev-docs")
     os.makedirs(dev_dir, exist_ok=True)
     dev_doc = Path(dev_dir) / "dev-guide.md"
     dev_doc.write_text("Database tips for developers.", encoding="utf-8")
     
     cli("space", "create", "ops-docs")
-    ops_dir = "/tmp/spaces/ops-docs"
+    ops_dir = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "ops-docs")
     os.makedirs(ops_dir, exist_ok=True)
     ops_doc = Path(ops_dir) / "ops-guide.md"
     ops_doc.write_text("Database configuration for ops.", encoding="utf-8")
@@ -4713,7 +4715,7 @@ def test_search_doc_content_is_searched_not_just_filename():
     """Search should find text in doc content, not just filenames."""
     cli("space", "create", "content-search-space")
     
-    dir_path = "/tmp/spaces/content-search-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "content-search-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "random-title.md"
     doc_path.write_text("The implementation uses PostgreSQL for persistence.", encoding="utf-8")
@@ -4728,7 +4730,7 @@ def test_search_fresh_results_reflect_file_edits():
     """Editing a doc file and searching again should show updated content."""
     cli("space", "create", "fresh-search-space")
     
-    dir_path = "/tmp/spaces/fresh-search-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "fresh-search-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "config.md"
     
@@ -4757,7 +4759,7 @@ def test_search_case_insensitive_for_doc_content():
     """Search should be case-insensitive for doc content."""
     cli("space", "create", "case-search-space")
     
-    dir_path = "/tmp/spaces/case-search-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "case-search-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "guide.md"
     doc_path.write_text("This guide covers DATABASE management.", encoding="utf-8")
@@ -4780,7 +4782,7 @@ def test_search_multiple_matches_in_single_doc():
     """If a query matches multiple times in one doc, list doc once."""
     cli("space", "create", "multi-match-space")
     
-    dir_path = "/tmp/spaces/multi-match-space"
+    dir_path = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "multi-match-space")
     os.makedirs(dir_path, exist_ok=True)
     doc_path = Path(dir_path) / "tips.md"
     doc_path.write_text("API endpoints: /api/users, /api/posts, /api/comments.", encoding="utf-8")
@@ -4818,7 +4820,7 @@ def test_search_docs_and_tickets_across_multiple_spaces_and_projects():
     cli("ticket", "add", "project-beta", "Optimize cache")
     
     cli("space", "create", "shared-docs")
-    doc_dir = "/tmp/spaces/shared-docs"
+    doc_dir = os.path.join(os.environ["AGENTPLAN_DIR"], "spaces", "shared-docs")
     os.makedirs(doc_dir, exist_ok=True)
     doc_path = Path(doc_dir) / "cache-strategy.md"
     doc_path.write_text("Cache invalidation is hard.", encoding="utf-8")
