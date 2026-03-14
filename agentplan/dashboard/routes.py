@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 from flask import Flask, abort, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from agentplan.cli import slugify, spawn_terminal
+from agentplan.cli import slugify
 from agentplan.db import (
     check_auto_complete,
     create_agent,
