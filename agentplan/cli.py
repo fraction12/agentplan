@@ -318,6 +318,34 @@ def resolve_subtask(conn, ticket_id, num_str, ticket_num, slug=""):
 # Dependency helpers (all use ticket num, not internal id)
 # ---------------------------------------------------------------------------
 
+def _parse_ticket_numbers(csv_input, context_slug=""):
+    """Parse comma-separated ticket numbers with error handling.
+    
+    Args:
+        csv_input: Comma-separated string of ticket numbers (e.g., "1,2,3")
+        context_slug: Project slug for error messages
+        
+    Returns:
+        List of integers
+        
+    Raises:
+        Calls fail() on invalid input
+    """
+    if not csv_input:
+        return []
+    try:
+        nums = [int(x.strip()) for x in csv_input.split(",") if x.strip()]
+        return nums
+    except ValueError:
+        fail(
+            f"Invalid ticket numbers in '{csv_input}'.",
+            suggestions=[
+                "Ticket IDs must be numeric (for example: `1,2,3`).",
+                f"Run `agentplan ticket list {context_slug or '<project>'}` to see ticket IDs.",
+            ],
+        )
+
+
 def has_cycle(tickets, ticket_num, new_deps):
     """Return True if setting ticket's deps to new_deps creates a cycle. Uses ticket nums."""
     adj = {}
@@ -2355,7 +2383,7 @@ def cmd_ticket_add(args):
         role_tag = f"role:{role.name}"
     deps = []
     if args.depends:
-        deps = [int(x.strip()) for x in args.depends.split(",")]
+        deps = _parse_ticket_numbers(args.depends, proj["slug"])
         for d in deps:
             resolve_ticket(conn, proj["id"], d, proj["slug"])
     num = _next_ticket_num(conn, proj["id"])
@@ -2414,7 +2442,7 @@ def cmd_ticket_update(args):
         updates.append("notes=?")
         values.append(args.notes)
     if args.depends is not None:
-        deps = [int(x.strip()) for x in args.depends.split(",") if x.strip()]
+        deps = _parse_ticket_numbers(args.depends, proj["slug"])
         for d in deps:
             resolve_ticket(conn, proj["id"], d, proj["slug"])
         tickets = conn.execute("SELECT * FROM tickets WHERE project_id=?", (proj["id"],)).fetchall()
@@ -3478,7 +3506,7 @@ def cmd_depend(args):
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
-    new_deps = [int(x.strip()) for x in args.on.split(",")]
+    new_deps = _parse_ticket_numbers(args.on, proj["slug"])
     for d in new_deps:
         resolve_ticket(conn, proj["id"], d, proj["slug"])
     existing = json.loads(t["depends_on"] or "[]")
