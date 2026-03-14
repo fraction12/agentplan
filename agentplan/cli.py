@@ -95,7 +95,7 @@ def _detect_installed_tools():
                 capture_output=True,
                 text=True,
             )
-        except Exception:
+        except OSError:
             continue
         if result.returncode == 0:
             installed.append(tool)
@@ -506,7 +506,7 @@ complete -c agentplan -f -a "(__agentplan_completion)"
 def _completion_project_slugs():
     try:
         return list_project_slugs()
-    except Exception:
+    except sqlite3.Error:
         return []
 
 
@@ -852,7 +852,7 @@ def _run_cmd(argv, cwd=None, capture_output=True):
 def _iterm2_running():
     try:
         result = subprocess.run(["pgrep", "-x", "iTerm2"], capture_output=True, text=True)
-    except Exception:
+    except OSError:
         return False
     return result.returncode == 0
 
@@ -866,7 +866,7 @@ def _iterm2_installed():
             capture_output=True,
             text=True,
         )
-    except Exception:
+    except OSError:
         return False
     return result.returncode == 0 and bool((result.stdout or "").strip())
 
@@ -1140,18 +1140,18 @@ def _next_chain_candidate(conn, project_id):
 def _render_agent_command(template, ticket, project, project_dir=None):
     try:
         project_slug = project["slug"]
-    except Exception:
+    except (KeyError, TypeError):
         project_slug = str(project)
 
     try:
         ticket_num = ticket["num"]
-    except Exception:
+    except (KeyError, TypeError, ValueError):
         ticket_num = int(ticket)
 
     if project_dir is None:
         try:
             project_dir = project.get("dir") if hasattr(project, "get") else project["dir"]
-        except Exception:
+        except (KeyError, AttributeError, TypeError):
             project_dir = None
 
     ticket_ref = f"{project_slug} {ticket_num}"
@@ -1186,7 +1186,7 @@ def _parse_local_timestamp(ts):
         return None
     try:
         return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S")
-    except Exception:
+    except ValueError:
         return None
 
 
