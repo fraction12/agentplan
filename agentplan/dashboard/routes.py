@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 from flask import Flask, abort, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from agentplan.cli import slugify, spawn_terminal
+from agentplan.cli import slugify, spawn_terminal, _detect_tool_status
 from agentplan.db import (
     check_auto_complete,
     create_agent,
@@ -122,17 +122,9 @@ def _require_local_origin(fn):
 
 
 def _detect_tools_status():
+    """Detect which tools are installed. Uses shared implementation from cli module."""
     tools = ["claude", "codex", "aider", "cursor", "openclaw"]
-    detected = []
-    for tool in tools:
-        found = False
-        try:
-            result = subprocess.run(["which", tool], capture_output=True, text=True)
-            found = result.returncode == 0
-        except Exception:
-            found = False
-        detected.append({"name": tool, "found": found})
-    return detected
+    return _detect_tool_status(tools=tools)
 
 
 def _parse_roles_from_form(form):

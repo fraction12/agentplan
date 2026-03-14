@@ -86,20 +86,41 @@ TERMINAL_CHOICES = {"auto", "iterm2", "terminal"}
 LOGGER = logging.getLogger(__name__)
 
 
-def _detect_installed_tools():
-    installed = []
-    for tool in AUTO_DETECT_TOOL_COMMANDS:
+def _detect_tool_status(tools=None):
+    """Detect which tools are installed and return status dict.
+    
+    Args:
+        tools: Optional list of tool names. If None, uses AUTO_DETECT_TOOL_COMMANDS keys.
+    
+    Returns:
+        List of dicts with 'name' and 'found' keys.
+    """
+    if tools is None:
+        tools = list(AUTO_DETECT_TOOL_COMMANDS.keys())
+    
+    detected = []
+    for tool in tools:
+        found = False
         try:
             result = subprocess.run(
                 ["which", tool],
                 capture_output=True,
                 text=True,
             )
+            found = result.returncode == 0
         except Exception:
-            continue
-        if result.returncode == 0:
-            installed.append(tool)
-    return installed
+            found = False
+        detected.append({"name": tool, "found": found})
+    return detected
+
+
+def _detect_installed_tools():
+    """Detect which tools are installed and return list of names.
+    
+    Returns:
+        List of tool names that are installed.
+    """
+    return [item["name"] for item in _detect_tool_status() if item["found"]]
 
 
 def _create_default_agents(conn, tools):
