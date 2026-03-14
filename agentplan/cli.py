@@ -624,44 +624,6 @@ def _render_command_template(template, project_slug="", ticket_ref="", ticket_id
     )
 
 
-def _render_temp_prompt_command(base_cmd, prompt, project_slug, project_dir=None):
-    import tempfile as _tempfile
-
-    use_project_dir = bool(project_dir and os.path.isdir(project_dir))
-    prompt_dir = project_dir if use_project_dir else _tempfile.gettempdir()
-    prompt_file = _tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".md",
-        prefix=f"agentplan-{project_slug or 'prompt'}-",
-        dir=prompt_dir,
-        delete=False,
-    )
-    prompt_file.write(prompt)
-    prompt_file.close()
-    prompt_file_quoted = shlex.quote(prompt_file.name)
-
-    has_placeholder = any(
-        p in base_cmd for p in ["{ticket}", "{prompt}", "{{ticket}}", "{{prompt}}"]
-    )
-    if has_placeholder:
-        stripped = (
-            base_cmd.replace("{{ticket}}", "")
-            .replace("{{prompt}}", "")
-            .replace("{ticket}", "")
-            .replace("{prompt}", "")
-            .strip()
-        )
-        target_cmd = stripped or "cat"
-        rendered = f'prompt=$(cat {prompt_file_quoted}) && {target_cmd} "$prompt"'
-    else:
-        rendered = f'prompt=$(cat {prompt_file_quoted}) && {base_cmd} "$prompt"'
-
-    cleanup = f"rm -f {prompt_file_quoted}"
-    if use_project_dir:
-        return f"cd {shlex.quote(project_dir)} && {rendered}; {cleanup}"
-    return f"{rendered}; {cleanup}"
-
-
 def _warn_if_missing_project_dir(project):
     project_dir = (project.get("dir") if hasattr(project, "get") else project["dir"]) if project else None
     if project_dir and not os.path.isdir(project_dir):
