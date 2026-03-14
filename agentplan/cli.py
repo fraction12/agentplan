@@ -1942,6 +1942,7 @@ def cmd_space_list(args):
 
 def cmd_space_show(args):
     """Show details about a specific space."""
+    _validate_len(args.slug, MAX_SLUG_LEN, "Space slug")
     conn = _ensure(get_connection())
     
     # Get space details
@@ -1999,6 +2000,7 @@ def cmd_space_show(args):
 
 def cmd_space_update(args):
     """Update a space's title and/or description."""
+    _validate_len(args.slug, MAX_SLUG_LEN, "Space slug")
     conn = _ensure(get_connection())
     
     # Get existing space
@@ -2049,6 +2051,7 @@ def cmd_space_update(args):
 
 def cmd_space_delete(args):
     """Delete a space, orphaning its projects (sets space_id to NULL) and removing docs on disk."""
+    _validate_len(args.slug, MAX_SLUG_LEN, "Space slug")
     conn = _ensure(get_connection())
     
     # Get space details
