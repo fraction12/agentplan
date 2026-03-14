@@ -2103,6 +2103,37 @@ def cmd_space_delete(args):
     conn.close()
 
 
+def _validate_doc_file_path(space, filename):
+    """Validate space and filename, return absolute file path. Raises CliError if invalid."""
+    space = (space or "").strip()
+    filename = (filename or "").strip()
+    
+    if not space:
+        fail("Space slug is required.", suggestions=["Use: agentplan doc <command> <space> <filename>"])
+    if not filename:
+        fail("Filename is required.", suggestions=["Use: agentplan doc <command> <space> <filename>"])
+    
+    # Validate that space exists
+    conn = _ensure(get_connection())
+    space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space,)).fetchone()
+    if not space_row:
+        conn.close()
+        fail(f"Space '{space}' not found.", suggestions=["Create it first with: agentplan space create <slug>"])
+    conn.close()
+    
+    # Get space directory and validate file path
+    space_dir = os.path.realpath(get_space_directory(space))
+    file_path = os.path.realpath(os.path.join(space_dir, filename))
+    if not file_path.startswith(space_dir + os.sep):
+        fail("Invalid filename.", suggestions=["Filenames must not contain path traversal characters."])
+    
+    # Check if file exists
+    if not os.path.isfile(file_path):
+        fail(f"File not found: {filename}", suggestions=[f"Check the file exists in space '{space}' with: agentplan doc list {space}"])
+    
+    return file_path
+
+
 def cmd_doc_add(args):
     """Create a new document in a space."""
     space = (args.space or "").strip()
@@ -2224,33 +2255,7 @@ def cmd_doc_list(args):
 
 def cmd_doc_show(args):
     """Print raw markdown content of a document to stdout."""
-    space = (args.space or "").strip()
-    filename = (args.filename or "").strip()
-    
-    if not space:
-        fail("Space slug is required.", suggestions=["Use: agentplan doc show <space> <filename>"])
-    if not filename:
-        fail("Filename is required.", suggestions=["Use: agentplan doc show <space> <filename>"])
-    
-    # Validate that space exists
-    conn = _ensure(get_connection())
-    space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space,)).fetchone()
-    if not space_row:
-        conn.close()
-        fail(f"Space '{space}' not found.", suggestions=["Create it first with: agentplan space create <slug>"])
-    conn.close()
-    
-    # Get space directory
-    space_dir = os.path.realpath(get_space_directory(space))
-    
-    # Construct file path
-    file_path = os.path.realpath(os.path.join(space_dir, filename))
-    if not file_path.startswith(space_dir + os.sep):
-        fail("Invalid filename.", suggestions=["Filenames must not contain path traversal characters."])
-    
-    # Check if file exists
-    if not os.path.isfile(file_path):
-        fail(f"File not found: {filename}", suggestions=[f"Check the file exists in space '{space}' with: agentplan doc list {space}"])
+    file_path = _validate_doc_file_path(args.space, args.filename)
     
     # Large file warning
     file_size = os.path.getsize(file_path)
@@ -2267,67 +2272,15 @@ def cmd_doc_show(args):
 
 def cmd_doc_path(args):
     """Print the absolute file path of a document to stdout."""
-    space = (args.space or "").strip()
-    filename = (args.filename or "").strip()
-    
-    if not space:
-        fail("Space slug is required.", suggestions=["Use: agentplan doc path <space> <filename>"])
-    if not filename:
-        fail("Filename is required.", suggestions=["Use: agentplan doc path <space> <filename>"])
-    
-    # Validate that space exists
-    conn = _ensure(get_connection())
-    space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space,)).fetchone()
-    if not space_row:
-        conn.close()
-        fail(f"Space '{space}' not found.", suggestions=["Create it first with: agentplan space create <slug>"])
-    conn.close()
-    
-    # Get space directory
-    space_dir = os.path.realpath(get_space_directory(space))
-    
-    # Construct file path
-    file_path = os.path.realpath(os.path.join(space_dir, filename))
-    if not file_path.startswith(space_dir + os.sep):
-        fail("Invalid filename.", suggestions=["Filenames must not contain path traversal characters."])
-    
-    # Check if file exists
-    if not os.path.isfile(file_path):
-        fail(f"File not found: {filename}", suggestions=[f"Check the file exists in space '{space}' with: agentplan doc list {space}"])
-    
-    # Print the absolute path
+    file_path = _validate_doc_file_path(args.space, args.filename)
     print(os.path.abspath(file_path))
 
 
 def cmd_doc_remove(args):
     """Delete a document from a space."""
+    file_path = _validate_doc_file_path(args.space, args.filename)
     space = (args.space or "").strip()
     filename = (args.filename or "").strip()
-    
-    if not space:
-        fail("Space slug is required.", suggestions=["Use: agentplan doc remove <space> <filename>"])
-    if not filename:
-        fail("Filename is required.", suggestions=["Use: agentplan doc remove <space> <filename>"])
-    
-    # Validate that space exists
-    conn = _ensure(get_connection())
-    space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space,)).fetchone()
-    if not space_row:
-        conn.close()
-        fail(f"Space '{space}' not found.", suggestions=["Create it first with: agentplan space create <slug>"])
-    conn.close()
-    
-    # Get space directory
-    space_dir = os.path.realpath(get_space_directory(space))
-    
-    # Construct file path
-    file_path = os.path.realpath(os.path.join(space_dir, filename))
-    if not file_path.startswith(space_dir + os.sep):
-        fail("Invalid filename.", suggestions=["Filenames must not contain path traversal characters."])
-    
-    # Check if file exists
-    if not os.path.isfile(file_path):
-        fail(f"File not found: {filename}", suggestions=[f"Check the file exists in space '{space}' with: agentplan doc list {space}"])
     
     # Ask for confirmation
     if not getattr(args, "force", False):
