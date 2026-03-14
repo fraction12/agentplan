@@ -242,6 +242,7 @@ class CliError(Exception):
 
 
 def fail(message, suggestions=None, exit_code=2):
+    """Raise a CliError with optional suggestions and exit code."""
     raise CliError(message, suggestions=suggestions, exit_code=exit_code)
 
 
@@ -250,6 +251,7 @@ def fail(message, suggestions=None, exit_code=2):
 # ---------------------------------------------------------------------------
 
 def slugify(title):
+    """Convert a title to a URL-safe slug (lowercase, alphanumeric + dashes, max 60 chars)."""
     s = title.lower()
     s = re.sub(r"[^a-z0-9\s-]", "", s)
     s = re.sub(r"[\s]+", "-", s.strip())
@@ -263,6 +265,7 @@ def slugify(title):
 # ---------------------------------------------------------------------------
 
 def resolve_project(conn, ident):
+    """Resolve a project by slug or ID, raising CliError if not found."""
     row = db_resolve_project(conn, ident)
     if not row:
         suggestions = []
@@ -275,6 +278,7 @@ def resolve_project(conn, ident):
 
 
 def resolve_ticket(conn, project_id, num_str, slug=""):
+    """Resolve a ticket by number within a project, raising CliError if not found or invalid."""
     try:
         int(num_str)
     except (ValueError, TypeError):
@@ -295,6 +299,7 @@ def resolve_ticket(conn, project_id, num_str, slug=""):
 
 
 def resolve_subtask(conn, ticket_id, num_str, ticket_num, slug=""):
+    """Resolve a subtask by number within a ticket, raising CliError if not found or invalid."""
     try:
         int(num_str)
     except (ValueError, TypeError):
@@ -890,6 +895,7 @@ def _spawn_headless_subprocess(command, cwd=None):
 
 
 def detect_terminal_app(preference=None):
+    """Detect available terminal app (iTerm2 or Terminal) based on preference and availability."""
     pref = _terminal_preference(preference)
     if pref == "terminal":
         return "terminal"
@@ -922,6 +928,7 @@ def _run_osascript(script):
 
 
 def spawn_terminal(command: str, title: str = None) -> int:
+    """Spawn a new terminal window running the given command. Returns 0 on success, 1 on failure."""
     terminal = detect_terminal_app()
     cmd = _build_terminal_command(command, title=title)
     escaped = _escape_applescript_string(cmd)
@@ -1052,6 +1059,7 @@ def _pid_is_alive(pid):
 
 
 def monitor_process(pid: int, project_slug: str, ticket_num: int, timeout_sec: int = 3600) -> dict:
+    """Monitor a running process and track its status against a ticket, returning result dict with exit code and ticket status."""
     start = time.monotonic()
     last_heartbeat = start
     poll_interval = 5
