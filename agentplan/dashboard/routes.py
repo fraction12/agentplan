@@ -5,6 +5,7 @@ import html
 import json
 import logging
 import os
+import sqlite3
 import subprocess
 import threading
 import time
@@ -129,7 +130,7 @@ def _detect_tools_status():
         try:
             result = subprocess.run(["which", tool], capture_output=True, text=True)
             found = result.returncode == 0
-        except Exception:
+        except OSError:
             found = False
         detected.append({"name": tool, "found": found})
     return detected
@@ -885,7 +886,7 @@ def create_app():
         conn = get_connection(_db_path())
         try:
             create_agent(conn, name, command_template, role_names=_parse_roles_from_form(request.form))
-        except Exception:
+        except sqlite3.Error:
             return ("Unable to add agent", 400)
         finally:
             conn.close()
@@ -907,7 +908,7 @@ def create_app():
             )
             if not updated:
                 return ("Agent not found", 404)
-        except Exception:
+        except sqlite3.Error:
             return ("Unable to update agent", 400)
         finally:
             conn.close()
