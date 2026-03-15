@@ -1122,6 +1122,11 @@ def monitor_process(pid: int, project_slug: str, ticket_num: int, timeout_sec: i
 
 def cmd_monitor_process(args):
     """Monitor a running process and track its status against a ticket."""
+    if not isinstance(args.pid, int) or args.pid <= 0:
+        fail("--pid must be a positive integer")
+    timeout = getattr(args, "timeout", None)
+    if timeout is not None and timeout <= 0:
+        fail("--timeout must be a positive integer")
     result = monitor_process(args.pid, args.project, args.ticket_id, timeout_sec=args.timeout)
     print(json.dumps(result))
 
