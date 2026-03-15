@@ -1528,6 +1528,10 @@ def cmd_context(args):
 
 
 def cmd_route(args):
+    """Route a ticket to an appropriate agent based on role tags.
+    
+    Optionally spawns a terminal window to execute the agent's command.
+    """
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
@@ -1570,6 +1574,10 @@ def cmd_route(args):
 
 
 def cmd_spawn_terminal(args):
+    """Spawn a new terminal window with the specified command.
+    
+    Sets AGENTPLAN_TERMINAL environment variable if terminal_pref is specified.
+    """
     if getattr(args, "terminal_pref", None):
         os.environ["AGENTPLAN_TERMINAL"] = args.terminal_pref
     spawn_terminal(args.command, title=getattr(args, "title", None))
@@ -1624,6 +1632,10 @@ def _normalize_role_prediction(raw):
 
 
 def cmd_auto_tag(args):
+    """Automatically classify tickets with role tags using an AI agent.
+    
+    Uses the configured agent command template to classify untagged tickets into roles.
+    """
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     roles = [r.name.lower() for r in db_list_roles(conn)]
@@ -1762,6 +1774,10 @@ def cmd_create(args):
 
 
 def cmd_project(args):
+    """Update project properties (directory or space association).
+    
+    Links a project to a filesystem directory or agentplan space.
+    """
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     
@@ -2543,6 +2559,10 @@ def _fire_on_complete_hooks(conn, project, ticket, agent_name=None):
 
 
 def cmd_ticket_done(args):
+    """Mark one or more tickets as done.
+    
+    Optionally records a close note and the agent that completed the ticket.
+    """
     close_note = getattr(args, 'note', None)
     done_by = getattr(args, "agent", None)
     _validate_len(close_note, MAX_NOTES_LEN, "Close note")
@@ -2581,6 +2601,7 @@ def cmd_ticket_done(args):
 
 
 def cmd_ticket_skip(args):
+    """Mark one or more tickets as skipped."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     for num_str in _expand_ticket_ids(args.ticket_ids):
@@ -2596,6 +2617,10 @@ def cmd_ticket_skip(args):
 
 
 def cmd_ticket_start(args):
+    """Mark a ticket as in-progress.
+    
+    Optionally records which agent started the work on this ticket.
+    """
     started_by = getattr(args, "agent", None)
     _validate_len(started_by, MAX_AGENT_LEN, "Agent name")
     conn = _ensure(get_connection())
@@ -2638,14 +2663,17 @@ def _set_ticket_state_with_reason(args, to_state, symbol):
 
 
 def cmd_ticket_block(args):
+    """Mark a ticket as blocked with a reason."""
     _set_ticket_state_with_reason(args, "blocked", "⛔")
 
 
 def cmd_ticket_fail(args):
+    """Mark a ticket as failed with a reason."""
     _set_ticket_state_with_reason(args, "failed", "✗")
 
 
 def cmd_ticket_review(args):
+    """Mark a ticket as needing review with a reason."""
     _set_ticket_state_with_reason(args, "needs-review", "👀")
 
 
