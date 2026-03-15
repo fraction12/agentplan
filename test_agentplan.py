@@ -5086,3 +5086,139 @@ def test_doc_remove_nonexistent_fails():
     out, err, code = cli("doc", "remove", "remove-fail-space", "nonexistent.md", "--force")
     assert code == 2
 
+
+# ---------------------------------------------------------------------------
+# Tests for previously untested commands
+# ---------------------------------------------------------------------------
+
+def test_artifact_status_no_artifact():
+    """Test artifact status when no artifact exists."""
+    cli("create", "artifact-status-test")
+    out, err, code = cli("artifact", "status", "artifact-status-test")
+    assert code == 0
+    assert "No runtime artifact found" in out
+
+
+def test_role_list_empty():
+    """Test listing roles when none exist."""
+    out, err, code = cli("role", "list")
+    assert code == 0
+    assert "No roles found" in out
+
+
+def test_role_list_with_roles():
+    """Test listing roles when roles exist."""
+    cli("role", "add", "backend")
+    cli("role", "add", "frontend")
+    out, err, code = cli("role", "list")
+    assert code == 0
+    assert "backend" in out
+    assert "frontend" in out
+
+
+def test_role_remove():
+    """Test removing a role."""
+    cli("role", "add", "to-delete")
+    out, err, code = cli("role", "remove", "to-delete")
+    assert code == 0
+    assert "Removed role" in out
+    
+    # Verify role is gone
+    out, err, code = cli("role", "list")
+    assert "to-delete" not in out
+
+
+def test_role_remove_nonexistent():
+    """Test removing a nonexistent role fails."""
+    out, err, code = cli("role", "remove", "does-not-exist")
+    assert code == 2
+    assert "not found" in err
+
+
+def test_hook_list_empty():
+    """Test listing hooks when none exist."""
+    cli("create", "hook-test")
+    out, err, code = cli("hook", "list", "hook-test")
+    assert code == 0
+    assert "No hooks found" in out
+
+
+def test_hook_list_with_hooks():
+    """Test listing hooks when hooks exist."""
+    cli("create", "hook-list-test")
+    cli("hook", "add", "hook-list-test", "--type", "webhook", "--target", "http://example.com/hook")
+    out, err, code = cli("hook", "list", "hook-list-test")
+    assert code == 0
+    assert "on-complete" in out
+    assert "webhook" in out
+
+
+def test_hook_remove():
+    """Test removing a hook."""
+    cli("create", "hook-remove-test")
+    cli("hook", "add", "hook-remove-test", "--type", "webhook", "--target", "http://example.com")
+    
+    # Get hook ID from list output
+    out, err, code = cli("hook", "list", "hook-remove-test")
+    assert code == 0
+    hook_id = out.split(":")[0].strip()
+    
+    # Remove the hook
+    out, err, code = cli("hook", "remove", "hook-remove-test", hook_id)
+    assert code == 0
+    assert "Removed hook" in out
+
+
+def test_subtask_list_empty():
+    """Test listing subtasks when none exist."""
+    cli("create", "subtask-test", "--ticket", "Task 1")
+    out, err, code = cli("subtask", "list", "subtask-test", "1")
+    assert code == 0
+    assert "No subtasks found" in out
+
+
+def test_subtask_list_with_subtasks():
+    """Test listing subtasks when subtasks exist."""
+    cli("create", "subtask-list-test", "--ticket", "Main Task")
+    cli("subtask", "add", "subtask-list-test", "1", "Subtask 1")
+    cli("subtask", "add", "subtask-list-test", "1", "Subtask 2")
+    out, err, code = cli("subtask", "list", "subtask-list-test", "1")
+    assert code == 0
+    assert "Subtask 1" in out
+    assert "Subtask 2" in out
+    assert "1." in out
+    assert "2." in out
+
+
+def test_ticket_block():
+    """Test blocking a ticket with a reason."""
+    cli("create", "block-test", "--ticket", "To Block")
+    out, err, code = cli("ticket", "block", "block-test", "1", "--reason", "Waiting for dependency")
+    assert code == 0
+    assert "blocked" in out.lower()
+    
+    # Verify ticket is blocked
+    out, err, code = cli("ticket", "list", "block-test")
+    assert "blocked" in out.lower() or "⛔" in out
+
+
+def test_ticket_block_without_reason():
+    """Test blocking a ticket without providing a reason."""
+    cli("create", "block-no-reason", "--ticket", "To Block")
+    out, err, code = cli("ticket", "block", "block-no-reason", "1")
+    assert code == 0
+    assert "blocked" in out.lower()
+
+
+def test_ticket_review():
+    """Test marking a ticket as needs-review."""
+    cli("create", "review-test", "--ticket", "To Review")
+    cli("ticket", "start", "review-test", "1")
+    out, err, code = cli("ticket", "review", "review-test", "1", "--reason", "Code review pending")
+    assert code == 0
+    assert "needs-review" in out.lower() or "👀" in out
+    
+    # Verify ticket is in needs-review state
+    out, err, code = cli("ticket", "list", "review-test")
+    assert "needs-review" in out.lower() or "👀" in out
+
