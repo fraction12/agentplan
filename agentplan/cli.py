@@ -1561,6 +1561,7 @@ def cmd_context(args):
 
 
 def cmd_route(args):
+    """Route a ticket to the appropriate agent based on role tags and priorities."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     ticket = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
@@ -1603,6 +1604,7 @@ def cmd_route(args):
 
 
 def cmd_spawn_terminal(args):
+    """Spawn a new terminal window running the given command."""
     if getattr(args, "terminal_pref", None):
         os.environ["AGENTPLAN_TERMINAL"] = args.terminal_pref
     spawn_terminal(args.command, title=getattr(args, "title", None))
@@ -1657,6 +1659,7 @@ def _normalize_role_prediction(raw):
 
 
 def cmd_auto_tag(args):
+    """Automatically tag untagged tickets using AI-assisted role classification."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     roles = [r.name.lower() for r in db_list_roles(conn)]
@@ -1795,6 +1798,7 @@ def cmd_create(args):
 
 
 def cmd_project(args):
+    """Update project settings such as directory link or space assignment."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     
@@ -2414,6 +2418,7 @@ def cmd_ticket_add(args):
 
 
 def cmd_ticket_update(args):
+    """Update ticket title, notes, dependencies, or priority."""
     if args.title is not None:
         _validate_len(args.title, MAX_TITLE_LEN, "Ticket title")
     if args.notes is not None:
@@ -2463,6 +2468,7 @@ def cmd_ticket_update(args):
 
 
 def cmd_ticket_edit(args):
+    """Edit ticket title, description, tags, priority, due date, timeout, or model tier."""
     _validate_len(args.title, MAX_TITLE_LEN, "Ticket title")
     _validate_len(args.desc, MAX_DESC_LEN, "Description")
     _validate_len(getattr(args, "tag", None), MAX_TAG_LEN, "Tags")
@@ -2623,6 +2629,7 @@ def _fire_on_complete_hooks(conn, project, ticket, agent_name=None):
 
 
 def cmd_ticket_done(args):
+    """Mark one or more tickets as done with optional closing note."""
     close_note = getattr(args, 'note', None)
     done_by = getattr(args, "agent", None)
     _validate_len(close_note, MAX_NOTES_LEN, "Close note")
@@ -2661,6 +2668,7 @@ def cmd_ticket_done(args):
 
 
 def cmd_ticket_skip(args):
+    """Mark one or more tickets as skipped."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     for num_str in _expand_ticket_ids(args.ticket_ids):
@@ -2676,6 +2684,7 @@ def cmd_ticket_skip(args):
 
 
 def cmd_ticket_start(args):
+    """Mark a ticket as in-progress and optionally record the starting agent."""
     started_by = getattr(args, "agent", None)
     _validate_len(started_by, MAX_AGENT_LEN, "Agent name")
     conn = _ensure(get_connection())
@@ -2718,14 +2727,17 @@ def _set_ticket_state_with_reason(args, to_state, symbol):
 
 
 def cmd_ticket_block(args):
+    """Mark a ticket as blocked with optional reason."""
     _set_ticket_state_with_reason(args, "blocked", "⛔")
 
 
 def cmd_ticket_fail(args):
+    """Mark a ticket as failed with optional reason."""
     _set_ticket_state_with_reason(args, "failed", "✗")
 
 
 def cmd_ticket_review(args):
+    """Mark a ticket as needing review with optional reason."""
     _set_ticket_state_with_reason(args, "needs-review", "👀")
 
 
@@ -2854,6 +2866,7 @@ def cmd_claim(args):
 
 
 def cmd_reap(args):
+    """Reclaim expired tickets that exceeded their claim timeout."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     conn.execute("BEGIN IMMEDIATE")
@@ -2875,6 +2888,7 @@ def cmd_reap(args):
 
 
 def cmd_ticket_list(args):
+    """List all tickets in a project, optionally filtered by status."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     filt = args.status or "all"
@@ -3219,6 +3233,7 @@ def cmd_status(args):
 
 
 def cmd_list(args):
+    """List all projects with ticket progress, filtered by status or space."""
     conn = _ensure(get_connection())
     
     # Resolve space if provided
@@ -3280,6 +3295,7 @@ def cmd_list(args):
 
 
 def cmd_archive(args):
+    """Archive a completed or abandoned project to hide it from active views."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     if proj["status"] not in ("completed", "abandoned"):
@@ -3298,6 +3314,7 @@ def cmd_archive(args):
 
 
 def cmd_search(args):
+    """Search for keywords across ticket titles, descriptions, and document content."""
     conn = _ensure(get_connection())
     query = (args.query or "").strip()
     if not query:
@@ -3398,6 +3415,7 @@ def cmd_search(args):
 
 
 def cmd_attach(args):
+    """Attach a file path or URL to a project or specific ticket."""
     _validate_len(args.label, MAX_LABEL_LEN, "Attachment label")
     _validate_len(args.location, MAX_LOCATION_LEN, "Attachment location")
     conn = _ensure(get_connection())
@@ -3419,6 +3437,7 @@ def cmd_attach(args):
 
 
 def cmd_log(args):
+    """Add a timestamped log entry to a project or ticket."""
     parts = list(getattr(args, "parts", []) or [])
     ticket_ref = getattr(args, "ticket", None)
     if ticket_ref is None and len(parts) >= 2 and str(parts[0]).isdigit():
@@ -3463,6 +3482,7 @@ def cmd_log(args):
 
 
 def cmd_close(args):
+    """Close a project as completed or abandoned (optionally abandoned with --abandon)."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     st = "abandoned" if args.abandon else "completed"
