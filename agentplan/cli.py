@@ -731,7 +731,7 @@ def _load_runtime_artifact(conn, project, artifact_type):
         return {"ok": False, "error": "sha256 mismatch", "expected": row["sha256"], "actual": digest}
     try:
         payload = json.loads(raw.decode("utf-8"))
-    except Exception as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         return {"ok": False, "error": f"invalid artifact json: {exc}"}
     return {"ok": True, "path": path, "sha256": digest, "payload": payload}
 
