@@ -22,11 +22,11 @@ class Space:
     def from_row(cls, row: RowLike) -> "Space":
         return cls(
             id=int(row["id"]),
-            slug=str(row["slug"]),
-            title=str(row["title"]),
+            slug=row["slug"],
+            title=row["title"],
             description=row["description"],
-            created_at=str(row["created_at"]),
-            updated_at=str(row["updated_at"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
         )
 
 
@@ -46,14 +46,14 @@ class Project:
     def from_row(cls, row: RowLike) -> "Project":
         return cls(
             id=int(row["id"]),
-            slug=str(row["slug"]),
-            title=str(row["title"]),
-            status=str(row["status"]),
+            slug=row["slug"],
+            title=row["title"],
+            status=row["status"],
             notes=row["notes"],
             dir=row["dir"] if "dir" in row else None,
             timeout_sec=row["timeout_sec"] if "timeout_sec" in row else None,
-            created_at=str(row["created_at"]),
-            updated_at=str(row["updated_at"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
         )
 
 
@@ -86,12 +86,12 @@ class Ticket:
             id=int(row["id"]),
             project_id=int(row["project_id"]),
             num=int(row["num"]),
-            title=str(row["title"]),
+            title=row["title"],
             description=row["description"],
-            status=str(row["status"]),
-            priority=str(row["priority"]),
-            tags=str(row["tags"]),
-            depends_on=str(row["depends_on"]),
+            status=row["status"],
+            priority=row["priority"],
+            tags=row["tags"],
+            depends_on=row["depends_on"],
             notes=row["notes"],
             started_by=row["started_by"],
             done_by=row["done_by"],
@@ -99,7 +99,7 @@ class Ticket:
             claimed_at=row["claimed_at"] if "claimed_at" in row else None,
             claim_timeout=row["claim_timeout"] if "claim_timeout" in row else None,
             timeout_sec=row["timeout_sec"] if "timeout_sec" in row else None,
-            created_at=str(row["created_at"]),
+            created_at=row["created_at"],
             completed_at=row["completed_at"],
             close_note=row["close_note"] if "close_note" in row else None,
             model_tier=row["model_tier"] if "model_tier" in row else "auto",
@@ -122,9 +122,9 @@ class Subtask:
             id=int(row["id"]),
             ticket_id=int(row["ticket_id"]),
             num=int(row["num"]),
-            title=str(row["title"]),
-            status=str(row["status"]),
-            created_at=str(row["created_at"]),
+            title=row["title"],
+            status=row["status"],
+            created_at=row["created_at"],
             completed_at=row["completed_at"],
         )
 
@@ -143,8 +143,8 @@ class HistoryEntry:
             id=int(row["id"]),
             ticket_id=int(row["ticket_id"]),
             old_state=row["old_state"],
-            new_state=str(row["new_state"]),
-            changed_at=str(row["changed_at"]),
+            new_state=row["new_state"],
+            changed_at=row["changed_at"],
         )
 
 
@@ -159,9 +159,9 @@ class Role:
     def from_row(cls, row: RowLike) -> "Role":
         return cls(
             id=int(row["id"]),
-            name=str(row["name"]),
+            name=row["name"],
             description=row["description"],
-            created_at=str(row["created_at"]),
+            created_at=row["created_at"],
         )
 
 
