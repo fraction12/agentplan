@@ -629,24 +629,38 @@ def get_agent(conn, name_or_id):
     if row is None:
         return None
     agent = dict(row)
+    # Fetch roles for this agent
     role_rows = conn.execute(
-        "SELECT r.name FROM roles r JOIN agent_roles ar ON ar.role_id=r.id WHERE ar.agent_id=?",
+        """
+        SELECT COALESCE(GROUP_CONCAT(r.name, ','), '') as roles_csv
+        FROM roles r
+        JOIN agent_roles ar ON ar.role_id = r.id
+        WHERE ar.agent_id = ?
+        """,
         (agent["id"],),
-    ).fetchall()
-    agent["roles"] = [r["name"] for r in role_rows]
+    ).fetchone()
+    agent["roles"] = [r for r in (role_rows["roles_csv"] or "").split(",") if r]
     return agent
 
 
 def list_agents(conn):
-    rows = conn.execute("SELECT * FROM agents ORDER BY priority ASC, id ASC").fetchall()
+    # Fetch all agents with their roles in a single query
+    rows = conn.execute(
+        """
+        SELECT a.*, COALESCE(GROUP_CONCAT(r.name, ','), '') as roles_csv
+        FROM agents a
+        LEFT JOIN agent_roles ar ON ar.agent_id = a.id
+        LEFT JOIN roles r ON r.id = ar.role_id
+        GROUP BY a.id
+        ORDER BY a.priority ASC, a.id ASC
+        """
+    ).fetchall()
     agents = []
     for row in rows:
         a = dict(row)
-        role_rows = conn.execute(
-            "SELECT r.name FROM roles r JOIN agent_roles ar ON ar.role_id=r.id WHERE ar.agent_id=?",
-            (a["id"],),
-        ).fetchall()
-        a["roles"] = [r["name"] for r in role_rows]
+        # Parse roles from CSV string
+        roles_csv = a.pop("roles_csv", "")
+        a["roles"] = [r for r in (roles_csv or "").split(",") if r]
         agents.append(a)
     return agents
 
