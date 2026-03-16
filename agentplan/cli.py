@@ -4030,6 +4030,9 @@ def cmd_issue_import(args):
     except urllib.error.URLError as exc:
         conn.close()
         fail(f"GitHub API request failed: {exc.reason}.")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        conn.close()
+        fail("GitHub API returned malformed JSON or non-UTF-8 data.")
 
     imported = 0
     updated = 0

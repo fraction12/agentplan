@@ -4358,6 +4358,28 @@ def test_issue_import_is_idempotent_and_updates_existing_ticket():
     assert rows[0]["title"] == "New title"
 
 
+@pytest.mark.parametrize("payload", [b"{not json", b"\xff\xfe"])
+def test_issue_import_handles_invalid_github_api_payload(payload):
+    cli("create", "Issue Import Bad Payload")
+
+    class FakeResp:
+        def read(self):
+            return payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    with patch("agentplan.cli.urllib.request.urlopen", return_value=FakeResp()):
+        out, err, code = cli("issue", "import", "issue-import-bad-payload", "--repo", "acme/repo", "--token", "tkn")
+
+    assert code == 2
+    assert out == ""
+    assert "GitHub API returned malformed JSON or non-UTF-8 data." in err
+
+
 def test_pr_automate_dry_run_prints_schema():
     os.makedirs("/tmp/pr-auto-dry", exist_ok=True)
     cli("create", "PR Auto Dry", "--dir", "/tmp/pr-auto-dry")
@@ -5085,4 +5107,3 @@ def test_doc_remove_nonexistent_fails():
     cli("space", "create", "remove-fail-space")
     out, err, code = cli("doc", "remove", "remove-fail-space", "nonexistent.md", "--force")
     assert code == 2
-
