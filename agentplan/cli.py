@@ -3926,6 +3926,7 @@ def _warn_if_command_missing(command_template):
 # ---------------------------------------------------------------------------
 
 def cmd_agent_add(args):
+    """Register a new agent with command template and optional role assignments."""
     command_template = getattr(args, "command_template", None)
     if command_template is None:
         command_template = getattr(args, "command", None)
@@ -3949,6 +3950,7 @@ def cmd_agent_add(args):
 
 
 def cmd_agent_list(_args):
+    """List all registered agents with their command templates and role mappings."""
     conn = _ensure(get_connection())
     agents = db_list_agents(conn)
     conn.close()
@@ -3962,6 +3964,7 @@ def cmd_agent_list(_args):
 
 
 def cmd_agent_remove(args):
+    """Remove a registered agent from the system."""
     conn = _ensure(get_connection())
     if not db_delete_agent(conn, args.name):
         conn.close()
@@ -3971,6 +3974,7 @@ def cmd_agent_remove(args):
 
 
 def cmd_agent_update(args):
+    """Update an agent's name, command template, roles, or priority."""
     command_template = getattr(args, "command_template", None)
     if command_template is None:
         command_template = getattr(args, "command", None)
@@ -4222,6 +4226,7 @@ def cmd_pr_automate(args):
 
 
 def cmd_artifact_status(args):
+    """Show the status and metadata of a project's runtime chain-state artifact."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     data = _load_runtime_artifact(conn, proj, "chain-state")
@@ -4242,6 +4247,7 @@ def cmd_artifact_status(args):
 
 
 def cmd_artifact_verify(args):
+    """Verify the integrity of a project's runtime chain-state artifact."""
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
     data = _load_runtime_artifact(conn, proj, "chain-state")
