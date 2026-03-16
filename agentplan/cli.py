@@ -142,6 +142,15 @@ def _validate_timeout_sec(timeout, flag_name="--timeout"):
     return int(timeout)
 
 
+def _normalize_project_dir(path_value):
+    if path_value is None:
+        return None
+    path_value = str(path_value).strip()
+    if not path_value:
+        return None
+    return os.path.abspath(os.path.expanduser(path_value))
+
+
 def _effective_ticket_timeout_sec(project, ticket, override_timeout=None):
     if override_timeout is not None:
         return override_timeout
@@ -1736,11 +1745,12 @@ def cmd_create(args):
         conn.close()
         fail(f"Space '{space_slug}' does not exist.")
     space_id = space_row[0]
+    project_dir = _normalize_project_dir(getattr(args, "dir", None))
     
     slug = unique_slug(conn, slugify(args.title))
     conn.execute(
         "INSERT INTO projects (slug, title, notes, dir, timeout_sec, space_id) VALUES (?,?,?,?,?,?)",
-        (slug, args.title, args.notes, args.dir, timeout_sec, space_id),
+        (slug, args.title, args.notes, project_dir, timeout_sec, space_id),
     )
     pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     n = 0
@@ -1779,7 +1789,7 @@ def cmd_project(args):
     
     # Handle --dir flag
     if dir_path:
-        resolved_dir = os.path.expanduser(dir_path)
+        resolved_dir = _normalize_project_dir(dir_path)
         if not os.path.exists(resolved_dir):
             print(f"Warning: directory does not exist on disk: {resolved_dir}")
         updates.append("dir=?")

@@ -247,6 +247,29 @@ def test_project_command_sets_and_updates_directory():
     assert row["dir"] == "/tmp/project-dir-cmd-b"
 
 
+def test_project_directory_commands_normalize_relative_paths(tmp_path):
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    updated_dir = tmp_path / "updated"
+    updated_dir.mkdir()
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        cli("create", "Relative Dir Project", "--dir", "repo")
+        conn = agentplan.get_connection("/tmp/test_agentplan.db")
+        created_row = conn.execute("SELECT dir FROM projects WHERE slug='relative-dir-project'").fetchone()
+        conn.close()
+        assert created_row["dir"] == str(repo_dir)
+        cli("project", "relative-dir-project", "--dir", "updated")
+    finally:
+        os.chdir(original_cwd)
+
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT dir FROM projects WHERE slug='relative-dir-project'").fetchone()
+    conn.close()
+    assert row["dir"] == str(updated_dir)
+
+
 def test_list_projects_after_create():
     cli("create", "Alpha Project")
     out, err, code = cli("list")
@@ -5085,4 +5108,3 @@ def test_doc_remove_nonexistent_fails():
     cli("space", "create", "remove-fail-space")
     out, err, code = cli("doc", "remove", "remove-fail-space", "nonexistent.md", "--force")
     assert code == 2
-
