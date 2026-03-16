@@ -20,6 +20,14 @@ class Space:
 
     @classmethod
     def from_row(cls, row: RowLike) -> "Space":
+        """Convert a database row to a Space instance.
+
+        Args:
+            row: Dictionary-like object with space fields from database.
+
+        Returns:
+            Space instance with values extracted from row.
+        """
         return cls(
             id=int(row["id"]),
             slug=row["slug"],
@@ -44,6 +52,14 @@ class Project:
 
     @classmethod
     def from_row(cls, row: RowLike) -> "Project":
+        """Convert a database row to a Project instance.
+
+        Args:
+            row: Dictionary-like object with project fields from database.
+
+        Returns:
+            Project instance with values extracted from row.
+        """
         return cls(
             id=int(row["id"]),
             slug=row["slug"],
@@ -82,6 +98,14 @@ class Ticket:
 
     @classmethod
     def from_row(cls, row: RowLike) -> "Ticket":
+        """Convert a database row to a Ticket instance.
+
+        Args:
+            row: Dictionary-like object with ticket fields from database.
+
+        Returns:
+            Ticket instance with values extracted from row, handling optional fields.
+        """
         return cls(
             id=int(row["id"]),
             project_id=int(row["project_id"]),
@@ -118,6 +142,14 @@ class Subtask:
 
     @classmethod
     def from_row(cls, row: RowLike) -> "Subtask":
+        """Convert a database row to a Subtask instance.
+
+        Args:
+            row: Dictionary-like object with subtask fields from database.
+
+        Returns:
+            Subtask instance with values extracted from row.
+        """
         return cls(
             id=int(row["id"]),
             ticket_id=int(row["ticket_id"]),
@@ -139,6 +171,14 @@ class HistoryEntry:
 
     @classmethod
     def from_row(cls, row: RowLike) -> "HistoryEntry":
+        """Convert a database row to a HistoryEntry instance.
+
+        Args:
+            row: Dictionary-like object with history entry fields from database.
+
+        Returns:
+            HistoryEntry instance with values extracted from row.
+        """
         return cls(
             id=int(row["id"]),
             ticket_id=int(row["ticket_id"]),
@@ -157,6 +197,14 @@ class Role:
 
     @classmethod
     def from_row(cls, row: RowLike) -> "Role":
+        """Convert a database row to a Role instance.
+
+        Args:
+            row: Dictionary-like object with role fields from database.
+
+        Returns:
+            Role instance with values extracted from row.
+        """
         return cls(
             id=int(row["id"]),
             name=row["name"],
