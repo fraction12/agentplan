@@ -1404,7 +1404,7 @@ def create_app():
         else:
             if new_status != "in-progress":
                 claimed_at = None
-        if new_status == "pending":
+        if new_status in {"pending", "in-progress"}:
             close_note = None
 
         conn.execute(

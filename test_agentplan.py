@@ -1555,6 +1555,8 @@ def test_dashboard_ticket_transition_endpoint_updates_status():
 
     cli("create", "Web Generic Transition")
     cli("ticket", "add", "web-generic-transition", "Move me")
+    cli("ticket", "start", "web-generic-transition", "1")
+    cli("ticket", "fail", "web-generic-transition", "1", "--reason", "stale failure")
 
     test_app = create_app()
     client = test_app.test_client()
@@ -1568,14 +1570,15 @@ def test_dashboard_ticket_transition_endpoint_updates_status():
     assert resp.get_json() == {"ok": True}
 
     conn = agentplan.get_connection("/tmp/test_agentplan.db")
-    row = conn.execute("SELECT status FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    row = conn.execute("SELECT status, close_note FROM tickets WHERE project_id=1 AND num=1").fetchone()
     history = conn.execute(
         "SELECT old_state, new_state FROM ticket_history WHERE ticket_id=1 ORDER BY id DESC LIMIT 1"
     ).fetchone()
     conn.close()
 
     assert row["status"] == "in-progress"
-    assert history["old_state"] == "pending"
+    assert row["close_note"] is None
+    assert history["old_state"] == "failed"
     assert history["new_state"] == "in-progress"
 
 
@@ -2937,9 +2940,11 @@ def test_ticket_failed_and_needs_review_states_show_in_status_and_can_move_to_in
     cli("create", "Failure Review Project")
     cli("ticket", "add", "failure-review-project", "Fails")
     cli("ticket", "add", "failure-review-project", "Needs review")
+    cli("ticket", "add", "failure-review-project", "Blocked")
 
     cli("ticket", "start", "failure-review-project", "1", "--agent", "dash")
     cli("ticket", "start", "failure-review-project", "2", "--agent", "dash")
+    cli("ticket", "start", "failure-review-project", "3", "--agent", "dash")
 
     out1, err1, code1 = cli("ticket", "fail", "failure-review-project", "1", "--reason", "test failure")
     assert code1 == 0, err1
@@ -2949,10 +2954,17 @@ def test_ticket_failed_and_needs_review_states_show_in_status_and_can_move_to_in
     assert code2 == 0, err2
     assert "→ needs-review" in out2
 
+    out_blocked, err_blocked, code_blocked = cli(
+        "ticket", "block", "failure-review-project", "3", "--reason", "waiting on API"
+    )
+    assert code_blocked == 0, err_blocked
+    assert "→ blocked" in out_blocked
+
     status_out, status_err, status_code = cli("status", "failure-review-project")
     assert status_code == 0, status_err
     assert "failed" in status_out
     assert "needs-review" in status_out
+    assert "blocked" in status_out
 
     out3, err3, code3 = cli("ticket", "start", "failure-review-project", "1", "--agent", "dash")
     assert code3 == 0, err3
@@ -2962,10 +2974,17 @@ def test_ticket_failed_and_needs_review_states_show_in_status_and_can_move_to_in
     assert code4 == 0, err4
     assert "→ in-progress" in out4
 
+    out5, err5, code5 = cli("ticket", "start", "failure-review-project", "3", "--agent", "dash")
+    assert code5 == 0, err5
+    assert "→ in-progress" in out5
+
     conn = agentplan.get_connection("/tmp/test_agentplan.db")
-    rows = conn.execute("SELECT num, status FROM tickets WHERE project_id=1 ORDER BY num").fetchall()
+    rows = conn.execute(
+        "SELECT num, status, close_note FROM tickets WHERE project_id=1 ORDER BY num"
+    ).fetchall()
     conn.close()
-    assert [r["status"] for r in rows] == ["in-progress", "in-progress"]
+    assert [r["status"] for r in rows] == ["in-progress", "in-progress", "in-progress"]
+    assert [r["close_note"] for r in rows] == [None, None, None]
 
 # ---------------------------------------------------------------------------
 # Ticket 5: Event hooks
@@ -5085,4 +5104,3 @@ def test_doc_remove_nonexistent_fails():
     cli("space", "create", "remove-fail-space")
     out, err, code = cli("doc", "remove", "remove-fail-space", "nonexistent.md", "--force")
     assert code == 2
-

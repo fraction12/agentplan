@@ -2603,7 +2603,7 @@ def cmd_ticket_start(args):
     t = resolve_ticket(conn, proj["id"], args.ticket_id, proj["slug"])
     _validate_ticket_transition_or_fail(t, "in-progress")
     conn.execute(
-        "UPDATE tickets SET status='in-progress', started_by=? WHERE id=?",
+        "UPDATE tickets SET status='in-progress', started_by=?, close_note=NULL WHERE id=?",
         (started_by, t["id"]),
     )
     _record_ticket_history(conn, t["id"], t["status"], "started")
