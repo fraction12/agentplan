@@ -50,8 +50,8 @@ class Project:
             title=row["title"],
             status=row["status"],
             notes=row["notes"],
-            dir=row["dir"] if "dir" in row else None,
-            timeout_sec=row["timeout_sec"] if "timeout_sec" in row else None,
+            dir=row.get("dir"),
+            timeout_sec=row.get("timeout_sec"),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -96,13 +96,13 @@ class Ticket:
             started_by=row["started_by"],
             done_by=row["done_by"],
             due_date=row["due_date"],
-            claimed_at=row["claimed_at"] if "claimed_at" in row else None,
-            claim_timeout=row["claim_timeout"] if "claim_timeout" in row else None,
-            timeout_sec=row["timeout_sec"] if "timeout_sec" in row else None,
+            claimed_at=row.get("claimed_at"),
+            claim_timeout=row.get("claim_timeout"),
+            timeout_sec=row.get("timeout_sec"),
             created_at=row["created_at"],
             completed_at=row["completed_at"],
-            close_note=row["close_note"] if "close_note" in row else None,
-            model_tier=row["model_tier"] if "model_tier" in row else "auto",
+            close_note=row.get("close_note"),
+            model_tier=row.get("model_tier", "auto"),
         )
 
 
