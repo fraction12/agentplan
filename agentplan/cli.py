@@ -3224,34 +3224,36 @@ def cmd_search(args):
         conn.close()
         fail("Search query cannot be empty.", suggestions=["Run `agentplan search <text>` with a keyword."])
 
+    requested_space_slug = (getattr(args, "space", None) or "").strip()
+
     query_lower = query.lower()
     like = f"%{query_lower}%"
-    
+
     docs_results = []
     tickets_results = []
-    
+
     # Search docs unless --tickets-only is set
     if not args.tickets_only:
         dir_path, _ = get_db_path()
         spaces_dir = os.path.join(dir_path, "spaces")
-        
+
         if os.path.isdir(spaces_dir):
             # Get all spaces or filter by --space flag
-            if args.space:
-                spaces_to_search = [args.space]
+            if requested_space_slug:
+                spaces_to_search = [requested_space_slug]
             else:
                 spaces_to_search = [d for d in os.listdir(spaces_dir) if os.path.isdir(os.path.join(spaces_dir, d))]
-            
+
             # Search docs in each space
-            for space_slug in spaces_to_search:
-                space_path = os.path.join(spaces_dir, space_slug)
+            for doc_space_slug in spaces_to_search:
+                space_path = os.path.join(spaces_dir, doc_space_slug)
                 if not os.path.isdir(space_path):
                     continue
-                
+
                 for filename in os.listdir(space_path):
                     if not filename.endswith(".md"):
                         continue
-                    
+
                     filepath = os.path.join(space_path, filename)
                     try:
                         with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
@@ -3259,13 +3261,13 @@ def cmd_search(args):
                             if query_lower in content.lower():
                                 docs_results.append({
                                     "type": "doc",
-                                    "space_slug": space_slug,
+                                    "space_slug": doc_space_slug,
                                     "filename": filename,
                                     "content": content[:200] + ("..." if len(content) > 200 else "")
                                 })
                     except (IOError, OSError):
                         pass
-    
+
     # Search tickets unless --docs-only is set
     if not args.docs_only:
         query_sql = """
@@ -3281,12 +3283,12 @@ def cmd_search(args):
         WHERE
             (LOWER(t.title) LIKE ? OR LOWER(COALESCE(t.description, '')) LIKE ?)
         """
-        
-        if args.space:
+
+        if requested_space_slug:
             query_sql += " AND s.slug = ? "
             tickets_results = conn.execute(
                 query_sql + " ORDER BY p.slug, t.num",
-                (like, like, args.space)
+                (like, like, requested_space_slug)
             ).fetchall()
         else:
             tickets_results = conn.execute(
