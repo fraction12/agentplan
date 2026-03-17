@@ -2756,7 +2756,7 @@ def test_role_add_list_remove_round_trip():
     assert "No roles found." in out
 
 
-def test_role_add_duplicate_name_fails_gracefully():
+def test_role_add_duplicate_name_reports_clear_error():
     out1, err1, code1 = cli("role", "add", "qa")
     assert code1 == 0, err1
     assert "Added role 'qa'." in out1
@@ -2764,8 +2764,19 @@ def test_role_add_duplicate_name_fails_gracefully():
     out2, err2, code2 = cli("role", "add", "qa")
     assert code2 == 2
     assert out2 == ""
-    assert "Could not add role 'qa'" in err2
-    assert "UNIQUE constraint failed" in err2
+    assert "Role 'qa' already exists." in err2
+    assert "UNIQUE constraint failed" not in err2
+
+
+def test_role_update_rename_to_existing_conflict_reports_clear_error():
+    cli("role", "add", "backend")
+    cli("role", "add", "frontend")
+
+    out, err, code = cli("role", "update", "backend", "--name", "frontend")
+    assert code == 2
+    assert out == ""
+    assert "Role 'frontend' already exists." in err
+    assert "UNIQUE constraint failed" not in err
 
 
 def test_ticket_add_rejects_undefined_prefixed_role_tag():

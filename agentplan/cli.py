@@ -3854,10 +3854,13 @@ def cmd_role_add(args):
     conn = _ensure(get_connection())
     try:
         role = db_create_role(conn, args.name, args.description)
-        print(f"Added role '{role.name}'.")
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise CliError(f"Role '{args.name}' already exists.")
     except Exception as e:
         conn.close()
         fail(f"Could not add role '{args.name}': {e}")
+    print(f"Added role '{role.name}'.")
     conn.close()
 
 
@@ -3878,12 +3881,17 @@ def cmd_role_update(args):
             suggestions=["Use at least one of: `--name`, `--description`."],
         )
     conn = _ensure(get_connection())
-    role = db_update_role(
-        conn,
-        args.name,
-        new_name=args.new_name,
-        new_description=args.description,
-    )
+    try:
+        role = db_update_role(
+            conn,
+            args.name,
+            new_name=args.new_name,
+            new_description=args.description,
+        )
+    except sqlite3.IntegrityError:
+        conn.close()
+        conflict_name = args.new_name or args.name
+        raise CliError(f"Role '{conflict_name}' already exists.")
     if not role:
         conn.close()
         fail(f"Role '{args.name}' not found.")
