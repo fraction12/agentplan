@@ -4353,7 +4353,7 @@ def build_parser():
     a = ts.add_parser("add")
     a.add_argument("project"); a.add_argument("title"); a.add_argument("--desc"); a.add_argument("--depends"); a.add_argument("--notes")
     a.add_argument("--tag", help="Comma-separated tags (e.g. security,css)")
-    a.add_argument("--priority", choices=PRIORITY_CHOICES[:-1], default="none")
+    a.add_argument("--priority", choices=PRIORITY_CHOICES, default="none")
     a.add_argument("--due", help="Due date in YYYY-MM-DD format")
     a.add_argument("--timeout", type=int, help="Per-ticket timeout in seconds")
     a.add_argument("--role", help="Assign a registered role to this ticket (must exist in role registry)")

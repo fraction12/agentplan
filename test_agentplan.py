@@ -561,6 +561,17 @@ def test_add_ticket_priority_persisted():
     assert row["priority"] == "high"
 
 
+def test_add_ticket_accepts_explicit_none_priority():
+    cli("create", "No Priority Project")
+    out, err, code = cli("ticket", "add", "no-priority-project", "Backlog item", "--priority", "none")
+    assert code == 0, err
+    assert "priority: none" in out.lower()
+    conn = agentplan.get_connection("/tmp/test_agentplan.db")
+    row = conn.execute("SELECT priority FROM tickets WHERE project_id=1 AND num=1").fetchone()
+    conn.close()
+    assert row["priority"] == "none"
+
+
 def test_add_ticket_tags_persisted():
     cli("create", "Tag Project")
     out, err, code = cli("ticket", "add", "tag-project", "Harden auth", "--tag", "security,css")
