@@ -2738,9 +2738,7 @@ def _claim_next_ticket(conn, project_id, started_by=None, tag=None):
 def cmd_claim(args):
     """Atomically claim the next unblocked ticket in a project for an agent."""
     _validate_len(getattr(args, "agent", None), MAX_AGENT_LEN, "Agent name")
-    timeout = getattr(args, "timeout", None)
-    if timeout is not None and timeout <= 0:
-        fail("--timeout must be a positive integer")
+    timeout = _validate_timeout_sec(getattr(args, "timeout", None))
 
     conn = _ensure(get_connection())
     proj = resolve_project(conn, args.project)
