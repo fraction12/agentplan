@@ -3939,7 +3939,7 @@ def cmd_agent_add(args):
         agent = db_create_agent(conn, args.name, command_template, role_names=roles, priority=getattr(args, "priority", 0))
     except sqlite3.IntegrityError:
         conn.close()
-        raise CliError(f"Agent '{args.name}' already exists.")
+        fail(f"Agent '{args.name}' already exists.")
     _warn_if_command_missing(command_template)
     role_str = ", ".join(agent["roles"]) if agent["roles"] else "(none)"
     print(f"Added agent '{agent['name']}' with roles: {role_str}")
@@ -3995,7 +3995,7 @@ def cmd_agent_update(args):
     except sqlite3.IntegrityError:
         conn.close()
         conflict_name = args.new_name or args.name
-        raise CliError(f"Agent '{conflict_name}' already exists.")
+        fail(f"Agent '{conflict_name}' already exists.")
     if not agent:
         conn.close()
         fail(f"Agent '{args.name}' not found.")
