@@ -79,6 +79,14 @@ def test_help_exits_zero():
     assert code == 0
 
 
+def test_help_hides_internal_complete_command():
+    out, err, code = cli("--help")
+    assert code == 0
+    assert err == ""
+    assert "__complete" not in out
+    assert "==SUPPRESS==" not in out
+
+
 def test_issue_and_artifact_help_exits_zero():
     out_issue, err_issue, code_issue = cli("issue", "--help")
     assert code_issue == 0

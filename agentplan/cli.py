@@ -4583,7 +4583,7 @@ def build_parser():
     cp = sub.add_parser("completion", help="Print shell completion script")
     cp.add_argument("shell", choices=COMPLETION_SHELLS)
 
-    internal = sub.add_parser("__complete", help=argparse.SUPPRESS)
+    internal = _add_deprecated_parser(sub, "__complete", help=argparse.SUPPRESS)
     internal.add_argument("shell", choices=COMPLETION_SHELLS, help=argparse.SUPPRESS)
     internal.add_argument("current", help=argparse.SUPPRESS)
     internal.add_argument("words", nargs="*", help=argparse.SUPPRESS)
