@@ -4178,8 +4178,13 @@ def cmd_pr_automate(args):
     if add.returncode != 0:
         fail(f"git add failed: {(add.stderr or add.stdout or '').strip()}")
 
-    staged_check = _run_cmd(commands[2], cwd=project_dir, capture_output=False)
-    has_staged_changes = staged_check.returncode != 0
+    staged_check = _run_cmd(commands[2], cwd=project_dir)
+    if staged_check.returncode == 0:
+        has_staged_changes = False
+    elif staged_check.returncode == 1:
+        has_staged_changes = True
+    else:
+        fail(f"git diff --cached failed: {(staged_check.stderr or staged_check.stdout or '').strip()}")
     if has_staged_changes:
         commit = _run_cmd(["git", "commit", "-m", commit_msg], cwd=project_dir)
         if commit.returncode != 0:

@@ -4397,6 +4397,25 @@ def test_pr_automate_creates_pr_when_none_exists():
     assert any(cmd[:3] == ["gh", "pr", "create"] for cmd in calls)
 
 
+def test_pr_automate_surfaces_git_diff_errors():
+    os.makedirs("/tmp/pr-auto-diff-error", exist_ok=True)
+    cli("create", "PR Auto Diff Error", "--dir", "/tmp/pr-auto-diff-error")
+    cli("ticket", "add", "pr-auto-diff-error", "Add guardrails")
+
+    def fake_run(argv, cwd=None, capture_output=True, text=True):
+        if argv[:3] == ["git", "diff", "--cached"]:
+            return type("R", (), {"returncode": 128, "stdout": "", "stderr": "fatal: not a git repository"})()
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with patch("agentplan.cli.shutil.which", return_value="/usr/bin/fake"), \
+         patch("agentplan.cli.subprocess.run", side_effect=fake_run):
+        out, err, code = cli("pr", "automate", "pr-auto-diff-error", "--ticket-id", "1")
+
+    assert out == ""
+    assert code == 2
+    assert "git diff --cached failed: fatal: not a git repository" in err
+
+
 def test_artifact_verify_detects_tampering():
     os.makedirs("/tmp/artifact-verify", exist_ok=True)
     cli("create", "Artifact Verify", "--dir", "/tmp/artifact-verify")
