@@ -3224,6 +3224,13 @@ def cmd_search(args):
         conn.close()
         fail("Search query cannot be empty.", suggestions=["Run `agentplan search <text>` with a keyword."])
 
+    space_slug = (getattr(args, "space", None) or "").strip()
+    if space_slug:
+        space_row = conn.execute("SELECT id FROM spaces WHERE slug=?", (space_slug,)).fetchone()
+        if not space_row:
+            conn.close()
+            fail(f"Space '{space_slug}' not found.", suggestions=["Create it first with: agentplan space create <slug>"])
+
     query_lower = query.lower()
     like = f"%{query_lower}%"
     

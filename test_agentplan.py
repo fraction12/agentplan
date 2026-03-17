@@ -4711,6 +4711,14 @@ def test_search_space_flag_filters_docs_by_space():
     # No tickets shown since projects aren't associated with spaces
 
 
+def test_search_unknown_space_fails_helpfully():
+    out, err, code = cli("search", "database", "--space", "missing-space")
+    assert code == 2
+    assert out == ""
+    assert "Space 'missing-space' not found." in err
+    assert "Create it first with: agentplan space create <slug>" in err
+
+
 def test_search_doc_content_is_searched_not_just_filename():
     """Search should find text in doc content, not just filenames."""
     cli("space", "create", "content-search-space")
