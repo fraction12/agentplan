@@ -22,7 +22,7 @@ permissions: read-all
 
 jobs:
   chain:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, dushyantpc, home-linux-trusted]
     concurrency:
       group: agentplan-${{ github.repository }}-marketplace
       cancel-in-progress: false
